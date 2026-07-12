@@ -3,18 +3,18 @@
 ## Step 1 — Code Structure
 
 - Set up core `include/` folder with foundational shared headers.
-- Create `main.c` as the program entry point.
+- Create `main.c` as the program entry point and sole compilation unit.
 
 ## Step 2 — Tokenizer (Basic) + File Reader
 
-- File reader: loads a source file from disk into memory as a character buffer.
+- File reader: loads a source file from disk into memory as a character buffer + simple ANSI string library.
 - Tokenizer: takes any character buffer as input, outputs a token buffer.
 
 ## Step 3 — Tokenizer (Complete)
 
 - Extend the tokenizer to cover the full C token set:
-  - All C operators
-  - All C keywords
+  - All core C operators
+  - All core C keywords
   - All C symbols / punctuators
   - Identifiers
 

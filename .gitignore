@@ -12,3 +12,11 @@ build/*
 # Ignore AI Model-specific files.
 
 CLAUDE.md
+
+# Ignore CMake build system files.
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
