@@ -1,0 +1,14 @@
+# Ignore VS stuff
+
+*.sln
+*.vcx-proj
+/.vs/
+
+# Ignore Build folder outside .aidoc file.
+
+build/*
+!build/.aidoc
+
+# Ignore AI Model-specific files.
+
+CLAUDE.md

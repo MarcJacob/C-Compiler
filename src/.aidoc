@@ -1,0 +1,1 @@
+Root folder for the project's source code, meaning implementation (.c) files and local includes (.h) that are not going to be shared to children or siblings in the folder hierarchy. 
