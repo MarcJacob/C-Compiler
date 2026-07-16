@@ -1,4 +1,4 @@
-\# Project Description
+# Project Description
 
 
 
@@ -6,7 +6,7 @@ This is my attempt #2 at building a C Compiler in C (C99 standard, specifically)
 
 
 
-\-- AI agents may stop reading here --
+-- AI agents may stop reading here --
 
 
 
@@ -16,7 +16,7 @@ So let's start fresh !
 
 
 
-\## On the usage of AI
+## On the usage of AI
 
 
 
