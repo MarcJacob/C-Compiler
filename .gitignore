@@ -4,10 +4,10 @@
 *.vcx-proj
 /.vs/
 
-# Ignore Build folder outside .aidoc file.
+# Ignore Build folder outside imprint.md file.
 
 build/*
-!build/.aidoc
+!build/imprint.md
 
 # Ignore AI Model-specific files.
 

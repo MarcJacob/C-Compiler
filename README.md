@@ -32,7 +32,7 @@ On other, more complex projects I would use AI to generate code \*sometimes\*, s
 
 
 
-However, on this project, I specifically want to write all the code myself. As such I want to simply test the .aidoc file structure as the backbone of even a simple model's ability to understand the project and meaningfully contribute to it at some point, and more importantly help me manage an overall implementation plan and well-scoped tasks in an, admittedly, small project.
+However, on this project, I specifically want to write all the code myself. As such I want to simply test the imprint.md file structure as the backbone of even a simple model's ability to understand the project and meaningfully contribute to it at some point, and more importantly help me manage an overall implementation plan and well-scoped tasks in an, admittedly, small project.
 
 
 
