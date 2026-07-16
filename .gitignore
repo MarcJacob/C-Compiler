@@ -4,10 +4,11 @@
 *.vcx-proj
 /.vs/
 
-# Ignore Build folder outside imprint.md file.
+# Ignore Build folder outside imprint.md file and tests folder.
 
 build/*
 !build/imprint.md
+!build/tests/
 
 # Ignore AI Model-specific files.
 

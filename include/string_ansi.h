@@ -2,6 +2,7 @@
 
 #include <malloc.h>
 #include <stdio.h>
+#include <string.h>
 
 // Buffer of ANSI / ASCII characters. Used for source code and whatever intermediate file formats are supported down the road.
 // The buffer should preferably be accessed using an appropriate Reader structure.
@@ -99,7 +100,7 @@ struct CharBufferReader_ANSI OpenNestedBufferReader_ANSI(struct CharBufferReader
 }
 
 // Zeroes-out the Nested Reader after advancing the Parent to its own offset (if Undo == 0) or leaving it untouched (if Undo == 1).
-struct CharBufferReader_ANSI CloseNestedBufferReader(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Undo)
+struct CharBufferReader_ANSI CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Undo)
 {
 	ASSERT(NestedReader != NULL);
 	ASSERT(Parent != NULL);
@@ -116,3 +117,84 @@ struct CharBufferReader_ANSI CloseNestedBufferReader(struct CharBufferReader_ANS
 	memset(NestedReader, 0, sizeof(*NestedReader));
 }
 
+// Advances the reader by a single character and returns it.
+char CharBufferReader_ReadNext(struct CharBufferReader_ANSI* Reader)
+{
+	ASSERT(Reader != NULL && Reader->_Buffer != NULL);
+
+	if (Reader->_CurrentOffset >= Reader->_Buffer->Size) return EOF;
+
+	return Reader->_Buffer->_Mem[Reader->_CurrentOffset++];
+}
+
+// Gets the next character from the reader without advancing it.
+char CharBufferReader_PeekNext(struct CharBufferReader_ANSI* Reader)
+{
+	ASSERT(Reader != NULL && Reader->_Buffer != NULL);
+
+	if (Reader->_CurrentOffset >= Reader->_Buffer->Size) return EOF;
+
+	return Reader->_Buffer->_Mem[Reader->_CurrentOffset];
+}
+
+// Advances the reader, reading into the provided buffer until encountering EOF or one of the characters in the StopChars string.
+// Does NOT read the encountered StopChar into the buffer, but returns it.
+// If Buffer is too small, stops reading at that point and returns 0.
+char CharBufferReader_ReadUntil(struct CharBufferReader_ANSI* Reader, char* Buffer, i32 BufferSize, const char* StopChars)
+{
+	ASSERT(Reader != NULL && Reader->_Buffer != NULL);
+	ASSERT(Buffer != NULL && BufferSize > 0);
+	ASSERT(StopChars != NULL);
+
+	i32 StopCharsCount = strlen(StopChars);
+	ASSERT_MSG(StopCharsCount > 0, "StopChars string must contain at least one non-zero char !");
+	
+	i32 BufferIndex = 0;
+	while (BufferIndex < BufferSize)
+	{
+		char Next = CharBufferReader_ReadNext(Reader);
+		
+		for (i32 StopCharIndex = 0; StopCharIndex < StopCharsCount; StopCharIndex++)
+		{
+			if (Next == StopChars[StopCharIndex])
+			{
+				return Next;
+			}
+		}
+
+		// Next is not a stop character. Put it in the buffer.
+		Buffer[BufferIndex++] = Next;
+	}
+
+	// Buffer size exceeded.
+	return 0;
+}
+
+// Advances the reader, provided the next characters form the exact provided string.
+// If they don't, the reader does not advance at all.
+// Returns whether the the reader was advanced.
+i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, const char* ExpectedString)
+{
+	ASSERT(Reader != NULL && Reader->_Buffer != NULL);
+	ASSERT(ExpectedString != NULL);
+
+	struct CharBufferReader_ANSI OpReader = OpenNestedBufferReader_ANSI(Reader);
+
+	i32 ExpectedStringLen = strlen(ExpectedString);
+	ASSERT_MSG(ExpectedStringLen > 0, "Expected String must contain at least one non-zero character !");
+
+	i32 CharIndex = 0;
+	for (; CharIndex < ExpectedStringLen; CharIndex++)
+	{
+		char Next = CharBufferReader_ReadNext(&OpReader);
+		if (Next != ExpectedString[CharIndex])
+		{
+			break; // Break out early, triggering a failure scenario for closing the nested reader and return value.
+		}
+	}
+
+	// Close nested reader, undoing the read if we did not find the expected string.
+	CloseNestedBufferReader_ANSI(&OpReader, Reader, CharIndex < ExpectedStringLen);
+
+	return CharIndex == ExpectedStringLen;
+}
