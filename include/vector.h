@@ -1,5 +1,8 @@
 // Simple generic vector library with macros for eased typed initialization & access.
 
+#ifndef VECTOR_INCLUDED
+#define VECTOR_INCLUDED
+
 #include "core.h"
 
 struct Vector
@@ -22,6 +25,7 @@ void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 
 	// Allocate new memory block.
 	ui8* NewMem = (ui8*)malloc(Capacity * Vec->_ItemSize);
+	ASSERT(NewMem != NULL);
 
 	// Copy previously allocated & used memory into new memory and free it, if any.
 	if (Vec->_Mem != NULL && Vec->Size > 0)
@@ -124,3 +128,4 @@ void Vector_Pop(struct Vector* Vec)
 		Vector_Pop(&Vec);							\
 	}
 	
+#endif // VECTOR_INCLUDED

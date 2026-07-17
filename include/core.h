@@ -1,5 +1,8 @@
 // Core typedefs, function definitions and macros used everywhere in the project.
 
+#ifndef CORE_INCLUDED
+#define CORE_INCLUDED
+
 // Standard I/O lib and string functions are used everywhere in the project.
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +25,11 @@ typedef unsigned int ui32;
 typedef unsigned short ui16;
 typedef unsigned char ui8;
 
+typedef long long i64;
 typedef int i32;
+typedef short i16;
+typedef char i8;
 
 // Functions
+
+#endif // CORE_INCLUDED

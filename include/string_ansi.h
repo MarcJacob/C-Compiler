@@ -1,5 +1,8 @@
 // Simple library for handling buffers and strings of ANSI / ASCII single byte characters.
 
+#ifndef STRING_ANSI_INCLUDED
+#define STRING_ANSI_INCLUDED
+
 #include "core.h"
 
 // Buffer of ANSI / ASCII characters. Used for source code and whatever intermediate file formats are supported down the road.
@@ -196,3 +199,7 @@ i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, cons
 
 	return CharIndex == ExpectedStringLen;
 }
+
+// TODO: Implement String type (working very much like a vector of char).
+
+#endif // STRING_ANSI_INCLUDED
