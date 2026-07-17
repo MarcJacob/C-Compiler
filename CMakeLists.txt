@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_executable(MyC_Compiler
-    src/main.c  "include/string_ansi.h" "include/core.h")
+    src/main.c)
 
 target_include_directories(MyC_Compiler PRIVATE
     ${CMAKE_SOURCE_DIR}/include

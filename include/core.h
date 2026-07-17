@@ -1,5 +1,10 @@
 // Core typedefs, function definitions and macros used everywhere in the project.
 
+// Standard I/O lib and string functions are used everywhere in the project.
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 // Macros
 
 // Simple assertion system with the possibility of passing a custom message.
@@ -14,6 +19,9 @@
 
 typedef unsigned long long ui64;
 typedef unsigned int ui32;
+typedef unsigned short ui16;
+typedef unsigned char ui8;
+
 typedef int i32;
 
 // Functions

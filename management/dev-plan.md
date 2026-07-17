@@ -8,6 +8,7 @@
 ## Step 2 — Tokenizer (Basic) + File Reader
 
 - File reader: loads a source file from disk into memory as a character buffer + simple ANSI string library.
+- Vector: simple vector library to support growable arrays to contain tokens and later the syntax tree.
 - Tokenizer: takes any character buffer as input, outputs a token buffer.
 
 ## Step 3 — Tokenizer (Complete)

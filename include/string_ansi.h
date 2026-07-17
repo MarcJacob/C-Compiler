@@ -1,8 +1,6 @@
 // Simple library for handling buffers and strings of ANSI / ASCII single byte characters.
 
-#include <malloc.h>
-#include <stdio.h>
-#include <string.h>
+#include "core.h"
 
 // Buffer of ANSI / ASCII characters. Used for source code and whatever intermediate file formats are supported down the road.
 // The buffer should preferably be accessed using an appropriate Reader structure.
