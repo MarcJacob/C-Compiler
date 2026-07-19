@@ -18,10 +18,20 @@ struct Vector
 void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 {
 	ASSERT(Vec != NULL);
-	ASSERT(Capacity > 0);
 	ASSERT(Vec->_ItemSize > 0);
 
 	if (Vec->_Capacity == Capacity) return;
+
+	if (Capacity == 0)
+	{
+		if (Vec->_Mem != NULL)
+		{
+			free(Vec->_Mem);
+			Vec->_Mem = NULL;
+		}
+		Vec->_Capacity = 0;
+		return;
+	}
 
 	// Allocate new memory block.
 	ui8* NewMem = (ui8*)malloc(Capacity * Vec->_ItemSize);
@@ -44,7 +54,7 @@ void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 // Creates a new vector with the provided start capacity and item size. Both parameters must be greater than 0 !
 struct Vector Vector_New(ui64 StartCapacity, ui16 ItemSize)
 {
-	ASSERT(StartCapacity > 0 && ItemSize > 0);
+	ASSERT(ItemSize > 0);
 
 	struct Vector NewVec = { 0 };
 	NewVec._ItemSize = ItemSize;
@@ -58,10 +68,13 @@ struct Vector Vector_New(ui64 StartCapacity, ui16 ItemSize)
 void Vector_Destroy(struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
-	ASSERT(Vec->_Mem != NULL && Vec->_Capacity > 0);
 
-	free(Vec->_Mem);
-	Vec->_Mem = NULL;
+	if (Vec->_Mem != NULL)
+	{
+		free(Vec->_Mem);
+		Vec->_Mem = NULL;
+	}
+
 	Vec->_Capacity = 0;
 	Vec->Size = 0;
 }
@@ -88,13 +101,12 @@ void* Vector_GetLastPtr(struct Vector* Vec)
 void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
 {
 	ASSERT(Vec != NULL);
-	ASSERT(Vec->_Mem != NULL);
 	ASSERT(Vec->_ItemSize > 0);
 
 	if (Vec->Size >= Vec->_Capacity)
 	{
 		// Re-allocate vector, doubling its capacity.
-		Vector_SetCapacity(Vec, Vec->_Capacity * 2);
+		Vector_SetCapacity(Vec, max(1, Vec->_Capacity * 2));
 	}
 
 	// Add element by copying the new item ptr, assuming its actual size is correct.

@@ -9,7 +9,20 @@ int main(int argc, char** argv)
 {
 	printf("Hello, world !\n");
 
-	struct CharBuffer_ANSI TestBuffer = LoadFileToBuffer_ANSI("../tests/Test_HelloWorld.c");
+	struct CharBuffer_ANSI SourceCodeBuffer = LoadFileToBuffer_ANSI("../tests/Test_HelloWorld.c");
 
-	return 0;
+	struct CompilerProcess Compiler = { 0 };
+	Compiler.InputFiles = Vector_Create(struct CharBuffer_ANSI*, 0);
+	Vector_Push(Compiler.InputFiles, struct CharBuffer_ANSI*, &SourceCodeBuffer);
+
+	Compiler_Run(&Compiler);
+
+	// Catch and log error if any.
+	if (Compiler.ErrorCode_Global != COMPILER_SUCCESS)
+	{
+		printf("Compilation failed.\n\tError: %s\n", Compiler.ErrorMsg);
+		return Compiler.ErrorCode_Global;
+	}
+
+	return COMPILER_SUCCESS;
 }

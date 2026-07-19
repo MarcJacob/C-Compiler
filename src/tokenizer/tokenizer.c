@@ -1,19 +1,22 @@
 #include "tokenizer.h"
+#include <stdarg.h>
 // Main implementation file for the Tokenizer stage.
 
-void Tokenizer(struct CompilerProcess* Compiler, struct CharBuffer_ANSI* InputCharacters, struct Vector* OutTokenVec)
+void Tokenizer_Run(struct TokenizerProcess* TokenizerProc)
 {
 	// Initialize process.
-	struct TokenizerProcess Tokenizer = { 0 };
-	Tokenizer.Tokens = OutTokenVec;
 
-	Tokenizer_Error(&Tokenizer, 0, "Tokenizer not implemented.");
+	Tokenizer_Error(TokenizerProc, 0, "Tokenizer not implemented.");
 
 	// ... TODO: Tokenizer !!
 }
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...)
 {
-	// TODO: Emit Error token.
 	Tokenizer->HasError = 1;
+
+	va_list args;
+	va_start(args, MsgFormat);
+	vsprintf_s(Tokenizer->Error.Message, sizeof(Tokenizer->Error.Message), MsgFormat, args);
+	va_end(args);
 }

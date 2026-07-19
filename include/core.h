@@ -12,8 +12,8 @@
 
 // Simple assertion system with the possibility of passing a custom message.
 #if _DEBUG
-#define ASSERT_MSG(x, FailedMsgFormat, ...) if (!(x)) { printf("ASSERTION FAILED: (" #x "). " FailedMsgFormat, __VA_ARGS__); abort(); return; }
-#define ASSERT(x) if (!(x)) { printf("ASSERTION FAILED: (" #x ")."); abort(); return; }
+#define ASSERT_MSG(x, FailedMsgFormat, ...) if (!(x)) { printf("ASSERTION FAILED: (" #x "). " FailedMsgFormat, __VA_ARGS__); abort(); }
+#define ASSERT(x) if (!(x)) { printf("ASSERTION FAILED: (" #x ")."); abort(); }
 #else
 #define ASSERT(x) // Empty macro.
 #endif // _DEBUG

@@ -101,14 +101,14 @@ struct CharBufferReader_ANSI OpenNestedBufferReader_ANSI(struct CharBufferReader
 }
 
 // Zeroes-out the Nested Reader after advancing the Parent to its own offset (if Undo == 0) or leaving it untouched (if Undo == 1).
-struct CharBufferReader_ANSI CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Undo)
+void CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Undo)
 {
 	ASSERT(NestedReader != NULL);
 	ASSERT(Parent != NULL);
 
 	// For the nested reader to be a valid "child" of the parent, it must have a STARTING offset GREATER OR EQUAL to its parent's CURRENT offset.
 	// It must of course also point to the same buffer.
-	ASSERT(NestedReader->_Buffer == Parent->_Buffer && NestedReader->_StartOffset >= Parent->_CurrentOffset, "Nested buffer reader is not a child of Parent.");
+	ASSERT_MSG(NestedReader->_Buffer == Parent->_Buffer && NestedReader->_StartOffset >= Parent->_CurrentOffset, "Nested buffer reader is not a child of Parent.");
 
 	if (!Undo)
 	{

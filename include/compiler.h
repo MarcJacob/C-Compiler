@@ -6,14 +6,6 @@
 #include "core.h"
 #include "vector.h"
 
-// Core symbols
-
-struct FileLocation
-{
-	const char* Filename;
-	ui16 Line, Col;
-};
-
 // Compiler
 
 // All global error codes the compiler can report.
@@ -21,6 +13,7 @@ enum COMPILER_ERROR_CODE
 {
 	COMPILER_SUCCESS, // Compilation successful.
 	COMPILER_FATAL_ERROR, // Fatal, compiler-wide error due to a fault in implementation.
+	COMPILER_GENERAL_ERROR, // General input/user-related error outside any particular stage.
 	COMPILER_TOKENIZER_STAGE_ERROR, // Error during the Tokenizer stage. Read Stage error code as a TOKENIZER_ERROR_CODE enum value.
 	COMPILER_PARSER_STAGE_ERROR, // Error during the Parser stage. Read Stage error code as a PARSER_ERROR_CODE enum value.
 	CCOMPILER_SYMBOL_SOLVER_STAGE_ERROR, // Error during the Symbol Solver stage. Read Stage error code as a SYMBOL_SOLVER_ERROR_CODE enum value.
@@ -31,18 +24,18 @@ typedef char ErrorMessage[256]; // TODO: Replace with proper ANSI string impleme
 // Main compiler process orchestration structure. Used to drive each stage one after another, starting from specific source files and ending with a single executable output file.
 struct CompilerProcess
 {
-	struct Vector SourceFiles; // Vector type const char*
-	struct Vector OutputFiles; // Vector type const char*
+	struct Vector InputFiles; // Vector type CharBuffer_ANSI* 
+	struct Vector OutputFiles; // Vector type CharBuffer_ANSI* 
 
-	enum COMPILER_ERROR_CODE ErrorCode_Global;
-	ui8 ErrorCode_Stage;
+	enum COMPILER_ERROR_CODE ErrorCode_Global; // Main error code of compiler has a whole.
+	ui8 ErrorCode_Stage; // Optional extra error code filled in by the specific stage where the error happened.
 	
 	ErrorMessage ErrorMsg; 
 };
 
 // Begins compilation process from the contents of the Compiler Process structure.
 // At the minimum, a single Source File must be specified.
-void RunCompiler(struct CompilerProcess* Compiler);
+void Compiler_Run(struct CompilerProcess* Compiler);
 
 // Tokenizer stage
 
@@ -79,8 +72,5 @@ struct Token
 
 	} Val; // Main Value union, giving type-specific information about the token.
 };
-
-// Fills in the passed in Vector of Tokens from the ANSI character buffer. If an error is encountered, the Compiler will hold the error codes and message, and the Token vector will contain an Error token with its buffer location filled in.
-void Tokenizer(struct CompilerProcess* Compiler, struct CharBuffer_ANSI* InputCharacters, struct Vector* OutTokenVec);
 
 #endif // COMPILER_INCLUDED
