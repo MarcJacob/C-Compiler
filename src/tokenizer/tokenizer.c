@@ -4,11 +4,28 @@
 
 void Tokenizer_Run(struct TokenizerProcess* TokenizerProc)
 {
-	// Initialize process.
+	ASSERT(TokenizerProc != NULL);
+	ASSERT(TokenizerProc->SourceBuffer != NULL);
 
-	Tokenizer_Error(TokenizerProc, 0, "Tokenizer not implemented.");
+	// Create root reader, then start the top-level iteration process.
+	// At the root level we're only looking for symbol construction, meaning anything that starts with a data type / modifier.
 
-	// ... TODO: Tokenizer !!
+	struct CharBufferReader_ANSI SourceReader = CreateBufferReader_ANSI(TokenizerProc->SourceBuffer);
+
+	char NextSourceChar = CharBufferReader_ReadNext(&SourceReader);
+	while (NextSourceChar != EOF)
+	{
+		// TODO: Process character...
+		if (NextSourceChar == '\n')
+		{
+			printf("TOKENIZER - Reading character '\\n'.\n");
+		}
+		else
+		{
+			printf("TOKENIZER - Reading character '%c'.\n", NextSourceChar);
+		}
+		NextSourceChar = CharBufferReader_ReadNext(&SourceReader);
+	}
 }
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...)
