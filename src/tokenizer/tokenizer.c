@@ -5,6 +5,8 @@
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
+ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
+ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...);
@@ -12,6 +14,7 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 {
 	ASSERT(Tokenizer != NULL);
 	ASSERT(Tokenizer->SourceBuffer != NULL);
+	ASSERT(Tokenizer->Tokens != NULL);
 
 	// Create root reader, then start the top-level iteration process.
 
@@ -61,12 +64,53 @@ void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const c
 	va_end(args);
 }
 
+struct KeywordToStringPair
+{
+	enum TOKEN_KEYWORD Keyword;
+	const char* String;
+};
+
+// Case-insensitive matching table for keyword token values and their source string equivalent.
+struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
+{
+	{ KEYWORD_VOID, "void" },
+	{ KEYWORD_CHAR, "char" },
+	{ KEYWORD_SHORT, "short" },
+	{ KEYWORD_INT, "int" },
+	{ KEYWORD_FLOAT, "float" },
+	{ KEYWORD_LONG, "long" },
+	{ KEYWORD_DOUBLE, "double" },
+};
+
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
 
-	// Look for any keyword in the keyword table.
+	static const int TABLE_SIZE = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
 
+	// Look for any keyword in the keyword table.
+	for (int KeywordStringPairIndex = 0; KeywordStringPairIndex < TABLE_SIZE; KeywordStringPairIndex++)
+	{
+		const struct KeywordToStringPair* Pair = KEYWORD_TO_STRING_TABLE + KeywordStringPairIndex;
+
+		int KeywordLoc = SourceReader._CurrentOffset;
+		if (CharBufferReader_ReadNextExpected(&SourceReader, Pair->String))
+		{
+			// Found keyword. Output token to Tokenizer and return.
+			struct Token NewToken = { 0 };
+			NewToken.Type = TOKEN_KEYWORD;
+			NewToken.BufferLocation = KeywordLoc;
+			NewToken.Val.Keyword = Pair->Keyword;
+
+			Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+			CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+			return 1;
+		}
+	}
+
+	// No matches in the keywords table - parsing unsuccessful.
+	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
 	return 0;
 }
 
@@ -74,9 +118,43 @@ ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
 
-	// Look for any valid sequence of Alphanumerics until reaching a non-alphanumeric, a whitespace or a newline.
+	// First ensure the first character of the identifier isn't a number. Then read in the next word as our identifier.
+	char FirstChar = CharBufferReader_PeekNext(&SourceReader);
+	if (FirstChar >= '0' && FirstChar <= '9')
+	{
+		// First character of identifier would be a number which is not allowed. Fail now.
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
+	}
 
-	return 0;
+	char IdentifierBuffer[IDENTIFIER_MAX_LENGTH]; // Setting a limit to 128 characters for any identifier which should be enough.
+	memset(IdentifierBuffer, 0, sizeof(IdentifierBuffer));
+
+	ui64 BufferLocation = SourceReader._CurrentOffset;
+	i32 WordLength = CharBufferReader_ReadNextWord(&SourceReader, IdentifierBuffer, sizeof(IdentifierBuffer) - 1); // Leave room for the zero-terminator.
+	if (WordLength > 0)
+	{
+		// Create new Identifier token.
+
+		struct Token NewToken = { 0 };
+		NewToken.Type = TOKEN_IDENTIFIER;
+		NewToken.BufferLocation = BufferLocation;
+		NewToken.Val.Identifier = (char*)malloc(WordLength + 1);
+		
+		memcpy(NewToken.Val.Identifier, IdentifierBuffer, WordLength);
+		NewToken.Val.Identifier[WordLength] = '\0';
+
+		Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+		return 1;
+	}
+	else
+	{
+		// Next characters didn't form a word.
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
+	}
 }
 
 ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
@@ -85,6 +163,16 @@ ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI
 
 	// Look for any symbol available in the symbol table.
 	
+	return 0;
+}
+
+ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
+{
+	return 0;
+}
+
+ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
+{
 	return 0;
 }
 

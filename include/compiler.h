@@ -42,14 +42,95 @@ void Compiler_Run(struct CompilerProcess* Compiler);
 // Main enumeration of supported token types.
 enum TOKEN_TYPE
 {
-	TOKEN_ERROR, // Special token type used to locate error(s) that happened during the tokenizer stage.
-	TOKEN_IDENTIFIER,
-	TOKEN_SYMBOL,
-	TOKEN_OPERATOR,
-	TOKEN_COMMENT,
-	TOKEN_LITERAL_STRING,
-	TOKEN_LITERAL_NUMBER,
+	TOKEN_KEYWORD, // "Keywords" include language primitive types, type modifiers, special operators and flow control operators.
+	TOKEN_IDENTIFIER, // "Identifiers" include any non-primitive name found in the codebase, identifying a user-defined type, variable or function.
+	TOKEN_SYMBOL, // "Symbols" include all one-to-two-character-long separators and operators.
+	TOKEN_LITERAL_CHAR, // "Literal chars" include any single character (or character pair for escaped characters) between the ' delimitors.
+	TOKEN_LITERAL_STRING, // "Literal strings" include any string of characters between the " delimitors.
+	TOKEN_LITERAL_NUMBER_INT, // "Literal numbers" include any number not found inside a literal string, identifier or keyword.
+	TOKEN_LITERAL_NUMBER_FLOAT, // "Literal numbers" include any number not found inside a literal string, identifier or keyword.
+	TOKEN_LITERAL_NUMBER_DOUBLE, // "Literal numbers" include any number not found inside a literal string, identifier or keyword.
+	TOKEN_COMMENT, // Currently unused.
 };
+
+// All possible values for a Symbol Token.
+enum TOKEN_SYMBOL
+{
+	// Statements & expression building
+	SYMBOL_SEMICOLON,			// ;
+	SYMBOL_COMMA,				// ,
+	SYMBOL_COLON,				// :
+	SYMBOL_PARENTHESIS_OPEN,	// (
+	SYMBOL_PARENTHESIS_CLOSE,	// )
+	SYMBOL_BRACKET_OPEN,		// [
+	SYMBOL_BRACKET_CLOSE,		// ]
+	SYMBOL_BRACE_OPEN,			// {
+	SYMBOL_BRACE_CLOSE,			// }
+
+	// Operators
+	SYMBOL_OP_ARROW,			// ->
+	SYMBOL_OP_ADD,				// +
+	SYMBOL_OP_INCREMENT,		// ++
+	SYMBOL_OP_SUB,				// -
+	SYMBOL_OP_DECREMENT,		// --
+	SYMBOL_STAR,				// * (Used for both MULT and DEREF. Thanks C Standard !)
+	SYMBOL_OP_DEREF = SYMBOL_STAR,				
+	SYMBOL_OP_MULT = SYMBOL_STAR, 
+	SYMBOL_OP_DIV,				// /
+
+	SYMBOL_OP_BITWISE_AND,		// &
+	SYMBOL_OP_AND,				// &&
+	SYNBOL_OP_BITWISE_OR,		// |
+	SYMBOL_OP_OR,				// ||
+	SYMBOL_OP_GREATER,			// >
+	SYMBOL_OP_RIGHT_SHIFT,		// >>
+	SYMBOL_OP_GREATER_EQUAL,	// >=
+	SYMBOL_OP_LOWER,			// <
+	SYMBOL_OP_LEFT_SHIFT,		// <<
+	SYMBOL_OP_LOWER_EQUAL,		// <=
+	SYMBOL_OP_EQUAL,			// ==
+	SYMBOL_OP_UNEQUAL,			// !=
+
+	SYMBOL_OP_BITWISE_REVERSE,	// ~
+};
+
+// All possible values for a Keyword token.
+enum TOKEN_KEYWORD
+{
+	// Primitive types
+	KEYWORD_VOID,
+	KEYWORD_CHAR,
+	KEYWORD_SHORT,
+	KEYWORD_INT,
+	KEYWORD_FLOAT,
+	KEYWORD_LONG,
+	KEYWORD_DOUBLE,
+
+	// Type modifiers
+	KEYWORD_STATIC,
+	KEYWORD_UNSIGNED,
+	KEYWORD_STRUCT,
+	KEYWORD_ENUM,
+	KEYWORD_UNION,
+	KEYWORD_VOLATILE,
+
+	// Flow control & Block modifiers
+	KEYWORD_IF,
+	KEYWORD_ELSE,
+	KEYWORD_FOR,
+	KEYWORD_DO,
+	KEYWORD_WHILE,
+	KEYWORD_SWITCH,
+	KEYWORD_CASE,
+	KEYWORD_BREAK,
+	KEYWORD_CONTINUE,
+	KEYWORD_RETURN,
+
+	// Primitive operators
+	KEYWORD_SIZEOF,
+};
+
+#define IDENTIFIER_MAX_LENGTH (128)
 
 struct Token
 {
@@ -58,17 +139,21 @@ struct Token
 
 	union
 	{
-		ErrorMessage Error;
+		// TODO: ANSI string implementation.
+		char* Identifier;
+
+		enum TOKEN_SYMBOL Symbol;
+		enum TOKEN_KEYWORD Keyword;
 
 		// TODO: ANSI string implementation.
-		ui8 Identifier;
-		char Symbol;
-		char Operator;
-		// TODO: ANSI string implementation.
-		ui8 Comment;
-		// TODO: ANSI string implementation.
-		ui8 LiteralString;
-		i64 LiteralNumber;
+		char* LiteralString;
+
+		union
+		{
+			i64 Integer;
+			double Double;
+			float Float;
+		} LiteralNumber;
 
 	} Val; // Main Value union, giving type-specific information about the token.
 };

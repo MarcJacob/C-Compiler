@@ -199,6 +199,49 @@ i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, cons
 	return CharIndex == ExpectedStringLen;
 }
 
+// Reads the next characters until a non-alphanumeric or underscore is encountered, or the end of the Read Buffer is reached (in which case it will fail).
+// Allows words that start with a number through, so if that is not desirable the user should check the first character themselves first.
+// Returns the length of the word that was read.
+// Note: Does NOT assume the read buffer must end with a 0-terminator !
+i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, char* ReadBuffer, ui64 ReadBufferSize)
+{
+	ASSERT(Reader != NULL);
+	ASSERT(ReadBuffer != NULL);
+	ASSERT(ReadBufferSize > 0);
+
+	struct CharBufferReader_ANSI OpReader = OpenNestedBufferReader_ANSI(Reader);
+
+	ui64 CharIndex = 0;
+	ui8 CapacityExceeded = 0;
+	while (!CapacityExceeded)
+	{
+		char NextChar = CharBufferReader_PeekNext(&OpReader);
+		if ((NextChar >= 'a' && NextChar <= 'z')
+			|| (NextChar >= 'A' && NextChar <= 'Z')
+			|| (NextChar >= '0' && NextChar <= '9')
+			|| (NextChar == '_'))
+		{
+			if (CharIndex == ReadBufferSize)
+			{
+				CapacityExceeded = 1; // Flagging capacity reached this way allows identifiers of *exactly* maximum size to work.
+			}
+			else
+			{
+				ReadBuffer[CharIndex++] = NextChar;
+				CharBufferReader_ReadNext(&OpReader);
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	// Succeed if capacity wasn't exceeded and if the word is at least one character long.
+	CloseNestedBufferReader_ANSI(&OpReader, Reader, !CapacityExceeded && CharIndex > 0);
+	return (!CapacityExceeded && CharIndex > 0) * CharIndex;
+}
+
 // TODO: Implement String type (working very much like a vector of char).
 
 #endif // STRING_ANSI_INCLUDED
