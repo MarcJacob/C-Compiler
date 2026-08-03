@@ -9,7 +9,7 @@
 
 - File reader: loads a source file from disk into memory as a character buffer + simple ANSI string library. DONE
 - Vector: simple vector library to support growable arrays to contain tokens and later the syntax tree. DONE
-- Tokenizer: takes any character buffer as input, outputs a token buffer.
+- Tokenizer: takes any character buffer as input, outputs a token buffer. [WIP]
 
 ## Step 3 — Error Handling Pipeline
 

@@ -100,8 +100,8 @@ struct CharBufferReader_ANSI OpenNestedBufferReader_ANSI(struct CharBufferReader
 	return NewReader;
 }
 
-// Zeroes-out the Nested Reader after advancing the Parent to its own offset (if Undo == 0) or leaving it untouched (if Undo == 1).
-void CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Undo)
+// Zeroes-out the Nested Reader after advancing the Parent to its own offset (if Apply == 1) or leaving it untouched (if Apply == 0).
+void CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Apply)
 {
 	ASSERT(NestedReader != NULL);
 	ASSERT(Parent != NULL);
@@ -110,7 +110,7 @@ void CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, st
 	// It must of course also point to the same buffer.
 	ASSERT_MSG(NestedReader->_Buffer == Parent->_Buffer && NestedReader->_StartOffset >= Parent->_CurrentOffset, "Nested buffer reader is not a child of Parent.");
 
-	if (!Undo)
+	if (Apply)
 	{
 		Parent->_CurrentOffset = NestedReader->_CurrentOffset;
 	}
@@ -195,8 +195,7 @@ i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, cons
 	}
 
 	// Close nested reader, undoing the read if we did not find the expected string.
-	CloseNestedBufferReader_ANSI(&OpReader, Reader, CharIndex < ExpectedStringLen);
-
+	CloseNestedBufferReader_ANSI(&OpReader, Reader, CharIndex == ExpectedStringLen);
 	return CharIndex == ExpectedStringLen;
 }
 
