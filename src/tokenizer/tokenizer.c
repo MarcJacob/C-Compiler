@@ -70,7 +70,7 @@ struct KeywordToStringPair
 	const char* String;
 };
 
-// Case-insensitive matching table for keyword token values and their source string equivalent.
+// Case-sensitive matching table for keyword token values and their source string equivalent.
 struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 {
 	{ KEYWORD_VOID, "void" },
@@ -88,13 +88,17 @@ ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 
 	static const int TABLE_SIZE = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
 
-	// Look for any keyword in the keyword table.
+	// Read next word and see if it matches a keyword exactly.
+	int KeywordLoc = SourceReader._CurrentOffset;
+	char KeywordBuffer[64];
+	memset(KeywordBuffer, 0, sizeof(KeywordBuffer));
+	CharBufferReader_ReadNextWord(&SourceReader, KeywordBuffer, sizeof(KeywordBuffer) - 1);
+
 	for (int KeywordStringPairIndex = 0; KeywordStringPairIndex < TABLE_SIZE; KeywordStringPairIndex++)
 	{
 		const struct KeywordToStringPair* Pair = KEYWORD_TO_STRING_TABLE + KeywordStringPairIndex;
 
-		int KeywordLoc = SourceReader._CurrentOffset;
-		if (CharBufferReader_ReadNextExpected(&SourceReader, Pair->String))
+		if (strcmp(KeywordBuffer, Pair->String) == 0)
 		{
 			// Found keyword. Output token to Tokenizer and return.
 			struct Token NewToken = { 0 };
