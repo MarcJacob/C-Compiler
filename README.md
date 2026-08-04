@@ -6,10 +6,6 @@ This is my attempt #2 at building a C Compiler in C (C99 standard, specifically)
 
 
 
--- AI agents may stop reading here --
-
-
-
 My original attempt has been taken off my profile. It was loosely following the guide available at DragonZap.com. The guide wasn't entirely bad or worthless by any means but over time I was finding myself disagreeing more and more with the instructor's methods or program architecture, so I eventually stopped following their instructions altogether, at which point I realized I didn't really need the guide anymore.
 
 So let's start fresh !
@@ -37,4 +33,14 @@ However, on this project, I specifically want to write all the code myself. As s
 
 
 It may be a stupid idea, I don't know. The logic behind it is that I want to build "hook points" that work with the way I use AI, which is hyper-sandboxed, hyper-scoped tasks with a specific intention beyond just the output. You could see them as "local skills" that are based around specific features, structures, systems... which come in replacement to "large skills" that have become popular as something you just grab off the internet to \*magically\* get a perfect AI C++ programmer following every good rule of angelic clean coding.
+
+
+
+The name "imprint" comes from the idea that, as humans working on an intellectual construct, we leave a figurative "imprint" that is more or less easy to understand through the code itself, comments, and accompanying documentation / planning. That imprint is like a real imprint you would use to track down that previous author's intents and context, as a way to strengthen the certainty that you have the necessary understanding to work on / with that same piece of code.
+
+The idea of the imprint files is to leverage the power of AI (or patient human readers) to leave that imprint behind in a more explicit format, in a way that can affect a much larger scope than just a block of code as a comment would, and that is guaranteed to be found alongside or above the code it relates to.
+
+
+
+This of course assumes one has a tree-like approach to organizing their code, but that is usually the case with me.
 
