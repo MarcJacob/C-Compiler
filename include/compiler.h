@@ -163,6 +163,8 @@ struct Token
 		// TODO: ANSI string implementation.
 		char* LiteralString;
 
+		char LiteralCharacter;
+
 		union
 		{
 			i64 Integer;

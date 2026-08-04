@@ -7,6 +7,7 @@ ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_
 ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
+ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...);
@@ -36,6 +37,9 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 			||	ParseKeyword(Tokenizer, &SourceReader)
 			||	ParseIdentifier(Tokenizer, &SourceReader)
 			||	ParseSymbol(Tokenizer, &SourceReader)
+			||	ParseLiteralString(Tokenizer, &SourceReader)
+			||	ParseLiteralChar(Tokenizer, &SourceReader)
+			||	ParseLiteralNumber(Tokenizer, &SourceReader)
 			)
 		{
 			// Successful parse.
@@ -147,6 +151,7 @@ ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_
 	if (FirstChar >= '0' && FirstChar <= '9')
 	{
 		// First character of identifier would be a number which is not allowed. Fail now.
+PARSE_FAIL:
 		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
 		return 0;
 	}
@@ -176,8 +181,7 @@ ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_
 	else
 	{
 		// Next characters didn't form a word.
-		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
-		return 0;
+		goto PARSE_FAIL;
 	}
 }
 
@@ -279,7 +283,111 @@ ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferRead
 
 ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
-	return 0;
+	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
+
+	// Look for a " character, then parse all characters into the string until the closing " is encountered.
+	if (!CharBufferReader_ReadNextExpected(&SourceReader, "\""))
+	{
+PARSE_FAIL:
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
+	}
+
+	ui32 StringLoc = SourceReader._CurrentOffset;
+
+	// Read contents until the closing " delimiter, or an invalid character / EOF is encountered.
+	char StringBuffer[1024];
+	memset(StringBuffer, 0, sizeof(StringBuffer));
+	char StopChar = CharBufferReader_ReadUntil(&SourceReader, StringBuffer, sizeof(StringBuffer) - 1, "\"\n");
+
+	if (StopChar != '"')
+	{
+		// Either ran out of buffer space or hit a newline before the string was closed.
+		Tokenizer_Error(Tokenizer, StringLoc, "Unterminated literal string.");
+		goto PARSE_FAIL;
+	}
+
+	// Successfully parsed a literal string. Output token to Tokenizer and return.
+	i32 StringLength = strlen(StringBuffer);
+
+	struct Token NewToken = { 0 };
+	NewToken.Type = TOKEN_LITERAL_STRING;
+	NewToken.BufferLocation = StringLoc;
+	NewToken.Val.LiteralString = (char*)malloc(StringLength + 1);
+
+	memcpy(NewToken.Val.LiteralString, StringBuffer, StringLength);
+	NewToken.Val.LiteralString[StringLength] = '\0';
+
+	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+	return 1;
+}
+
+ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
+{
+	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
+
+	// Look for a ' character, then parse a single character (after a possible \ escape) and expect the next one to be another '.
+	if (CharBufferReader_ReadNext(&SourceReader) != '\'')
+	{
+	PARSE_FAIL:
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
+	}
+
+	ui64 CharLoc = SourceReader._CurrentOffset;
+	char NextChar = CharBufferReader_ReadNext(&SourceReader);
+	if (NextChar == '\\')
+	{
+		// Escaped character. Read next one to determine which it is.
+		NextChar = CharBufferReader_ReadNext(&SourceReader);
+
+		switch (NextChar)
+		{
+		case '\'':
+			NextChar = '\'';
+			break;
+		case 'n':
+			NextChar = '\n';
+			break;
+		case 't':
+			NextChar = '\t';
+			break;
+		case '\\':
+			NextChar = '\\';
+			break;
+		default:
+			// Unrecognized escaped character. Log an error and fail out.
+			Tokenizer_Error(Tokenizer, CharLoc, "Unrecognized escaped character '%c'.", NextChar);
+			goto PARSE_FAIL;
+		}
+	}
+	else if (NextChar == '\'')
+	{
+		// Unexpected closure.
+		Tokenizer_Error(Tokenizer, CharLoc, "Character literal must be non-empty.");
+		goto PARSE_FAIL;
+	}
+
+	// Character is valid and has been escaped if necessary. Now we expect the closing character.
+	if (CharBufferReader_ReadNext(&SourceReader) != '\'')
+	{
+		// Unterminated character literal.
+		Tokenizer_Error(Tokenizer, CharLoc, "Unterminated character literal.");
+		goto PARSE_FAIL;
+	}
+
+	// Successfully parsed character token. Create Literal Char token and add to the Tokenizer.
+	struct Token NewToken = { 0 };
+	NewToken.BufferLocation = CharLoc;
+	NewToken.Type = TOKEN_LITERAL_CHAR;
+	NewToken.Val.LiteralCharacter = NextChar;
+
+	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+	return 1;
 }
 
 ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
