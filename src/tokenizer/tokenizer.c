@@ -220,7 +220,7 @@ static struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
 	{ SYMBOL_OP_BITWISE_AND, "&" },
 	{ SYMBOL_OP_OR, "||" },
 	{ SYMBOL_OP_BITWISE_OR_ASSIGN, "|=" },
-	{ SYNBOL_OP_BITWISE_OR, "|" },
+	{ SYMBOL_OP_BITWISE_OR, "|" },
 	{ SYMBOL_OP_BITWISE_XOR_ASSIGN, "^=" },
 	{ SYMBOL_OP_BITWISE_XOR, "^" },
 
