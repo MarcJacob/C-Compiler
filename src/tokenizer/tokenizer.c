@@ -23,8 +23,8 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 	char NextSourceChar = CharBufferReader_PeekNext(&SourceReader);
 	while (NextSourceChar != EOF)
 	{
-		// Discard newlines and whitespaces which are meaningless at this point.
-		while (NextSourceChar == ' ' || NextSourceChar == '\n')
+		// Discard newlines, whitespaces and any other character which are meaningless at this point.
+		while (NextSourceChar == ' ' || NextSourceChar == '\n' || NextSourceChar == '\t')
 		{
 			CharBufferReader_ReadNext(&SourceReader);
 			NextSourceChar = CharBufferReader_PeekNext(&SourceReader);
@@ -181,12 +181,94 @@ ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_
 	}
 }
 
+struct SymbolToStringPair
+{
+	enum TOKEN_SYMBOL Symbol;
+	const char* String;
+};
+
+// Longer symbols are listed before any shorter symbol they share a prefix with (eg. "--" before "-"),
+// since ParseSymbol takes the first match found in this table.
+static struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
+{
+	{ SYMBOL_SEMICOLON, ";" },
+	{ SYMBOL_COMMA, "," },
+	{ SYMBOL_COLON, ":" },
+	{ SYMBOL_PARENTHESIS_OPEN, "(" },
+	{ SYMBOL_PARENTHESIS_CLOSE, ")" },
+	{ SYMBOL_BRACKET_OPEN, "[" },
+	{ SYMBOL_BRACKET_CLOSE, "]" },
+	{ SYMBOL_BRACE_OPEN, "{" },
+	{ SYMBOL_BRACE_CLOSE, "}" },
+
+	{ SYMBOL_OP_ARROW, "->" },
+	{ SYMBOL_OP_INCREMENT, "++" },
+	{ SYMBOL_OP_ADD_ASSIGN, "+=" },
+	{ SYMBOL_OP_ADD, "+" },
+	{ SYMBOL_OP_DECREMENT, "--" },
+	{ SYMBOL_OP_SUB_ASSIGN, "-=" },
+	{ SYMBOL_OP_SUB, "-" },
+	{ SYMBOL_OP_MULT_ASSIGN, "*=" },
+	{ SYMBOL_STAR, "*" },
+	{ SYMBOL_OP_DIV_ASSIGN, "/=" },
+	{ SYMBOL_OP_DIV, "/" },
+	{ SYMBOL_OP_MODULO_ASSIGN, "%=" },
+	{ SYMBOL_OP_MODULO, "%" },
+
+	{ SYMBOL_OP_AND, "&&" },
+	{ SYMBOL_OP_BITWISE_AND_ASSIGN, "&=" },
+	{ SYMBOL_OP_BITWISE_AND, "&" },
+	{ SYMBOL_OP_OR, "||" },
+	{ SYMBOL_OP_BITWISE_OR_ASSIGN, "|=" },
+	{ SYNBOL_OP_BITWISE_OR, "|" },
+	{ SYMBOL_OP_BITWISE_XOR_ASSIGN, "^=" },
+	{ SYMBOL_OP_BITWISE_XOR, "^" },
+
+	{ SYMBOL_OP_RIGHT_SHIFT_ASSIGN, ">>=" },
+	{ SYMBOL_OP_RIGHT_SHIFT, ">>" },
+	{ SYMBOL_OP_GREATER_EQUAL, ">=" },
+	{ SYMBOL_OP_GREATER, ">" },
+	{ SYMBOL_OP_LEFT_SHIFT_ASSIGN, "<<=" },
+	{ SYMBOL_OP_LEFT_SHIFT, "<<" },
+	{ SYMBOL_OP_LOWER_EQUAL, "<=" },
+	{ SYMBOL_OP_LOWER, "<" },
+	{ SYMBOL_OP_EQUAL, "==" },
+	{ SYMBOL_OP_ASSIGN, "=" },
+	{ SYMBOL_OP_UNEQUAL, "!=" },
+	{ SYMBOL_OP_NOT, "!" },
+
+	{ SYMBOL_OP_BITWISE_REVERSE, "~" },
+};
+
 ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
 
-	// Look for any symbol available in the symbol table.
-	
+	static const int TABLE_SIZE = sizeof(SYMBOL_TO_STRING_TABLE) / sizeof(struct SymbolToStringPair);
+
+	int SymbolLoc = SourceReader._CurrentOffset;
+
+	for (int SymbolToStringPairIndex = 0; SymbolToStringPairIndex < TABLE_SIZE; SymbolToStringPairIndex++)
+	{
+		const struct SymbolToStringPair* Pair = SYMBOL_TO_STRING_TABLE + SymbolToStringPairIndex;
+
+		if (CharBufferReader_ReadNextExpected(&SourceReader, Pair->String))
+		{
+			// Found symbol. Output token to Tokenizer and return.
+			struct Token NewToken = { 0 };
+			NewToken.Type = TOKEN_SYMBOL;
+			NewToken.BufferLocation = SymbolLoc;
+			NewToken.Val.Symbol = Pair->Symbol;
+
+			Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+			CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+			return 1;
+		}
+	}
+
+	// No matches in the keywords table - parsing unsuccessful.
+	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
 	return 0;
 }
 
