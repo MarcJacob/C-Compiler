@@ -9,6 +9,7 @@ ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferRead
 ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
+ui8 ResolveEscapeCharacter(char EscapedChar, char* OutChar);
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...);
 void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
@@ -281,6 +282,28 @@ ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferRead
 	return 0;
 }
 
+// Escape sequence resolver used by Literal String and Character parsing. Returns whether the escaped character was recognized, and populates OutChar
+// with the escaped character.
+ui8 ResolveEscapeCharacter(char EscapedChar, char* OutChar)
+{
+	switch (EscapedChar)
+	{
+	case '\'':
+	case '"':
+	case '\\':
+		*OutChar = EscapedChar;
+		return 1;
+	case 'n':
+		*OutChar = '\n';
+		return 1;
+	case 't':
+		*OutChar = '\t';
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
@@ -295,21 +318,48 @@ PARSE_FAIL:
 
 	ui32 StringLoc = SourceReader._CurrentOffset;
 
-	// Read contents until the closing " delimiter, or an invalid character / EOF is encountered.
+	// Read contents until the closing " delimiter, handling \ escapes the same way ParseLiteralChar does,
+	// or fail on an unescaped newline, EOF, or buffer overflow.
 	char StringBuffer[1024];
 	memset(StringBuffer, 0, sizeof(StringBuffer));
-	char StopChar = CharBufferReader_ReadUntil(&SourceReader, StringBuffer, sizeof(StringBuffer) - 1, "\"\n");
+	i32 StringLength = 0;
 
-	if (StopChar != '"')
+	for (;;)
 	{
-		// Either ran out of buffer space or hit a newline before the string was closed.
-		Tokenizer_Error(Tokenizer, StringLoc, "Unterminated literal string.");
-		goto PARSE_FAIL;
+		if (StringLength >= sizeof(StringBuffer) - 1)
+		{
+			Tokenizer_Error(Tokenizer, StringLoc, "Literal string exceeds maximum length.");
+			goto PARSE_FAIL;
+		}
+
+		char NextChar = CharBufferReader_ReadNext(&SourceReader);
+
+		if (NextChar == '"')
+		{
+			break;
+		}
+		else if (NextChar == '\n' || NextChar == EOF)
+		{
+			Tokenizer_Error(Tokenizer, StringLoc, "Unterminated literal string.");
+			goto PARSE_FAIL;
+		}
+		else if (NextChar == '\\')
+		{
+			// Escaped character. Read next one to determine which it is.
+			NextChar = CharBufferReader_ReadNext(&SourceReader);
+
+			if (!ResolveEscapeCharacter(NextChar, &NextChar))
+			{
+				// Unrecognized escaped character. Log an error and fail out.
+				Tokenizer_Error(Tokenizer, StringLoc, "Unrecognized escaped character '%c'.", NextChar);
+				goto PARSE_FAIL;
+			}
+		}
+
+		StringBuffer[StringLength++] = NextChar;
 	}
 
 	// Successfully parsed a literal string. Output token to Tokenizer and return.
-	i32 StringLength = strlen(StringBuffer);
-
 	struct Token NewToken = { 0 };
 	NewToken.Type = TOKEN_LITERAL_STRING;
 	NewToken.BufferLocation = StringLoc;
@@ -343,21 +393,8 @@ ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader
 		// Escaped character. Read next one to determine which it is.
 		NextChar = CharBufferReader_ReadNext(&SourceReader);
 
-		switch (NextChar)
+		if (!ResolveEscapeCharacter(NextChar, &NextChar))
 		{
-		case '\'':
-			NextChar = '\'';
-			break;
-		case 'n':
-			NextChar = '\n';
-			break;
-		case 't':
-			NextChar = '\t';
-			break;
-		case '\\':
-			NextChar = '\\';
-			break;
-		default:
 			// Unrecognized escaped character. Log an error and fail out.
 			Tokenizer_Error(Tokenizer, CharLoc, "Unrecognized escaped character '%c'.", NextChar);
 			goto PARSE_FAIL;
