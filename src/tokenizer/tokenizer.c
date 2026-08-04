@@ -32,10 +32,10 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 		}
 
 		// Parsing order. If any function succeeds, it is a signal that at least one token has been added and / or that some characters were parsed.
-		if (	ParseKeyword(Tokenizer, &SourceReader)
+		if (	ParseComment(Tokenizer, &SourceReader)
+			||	ParseKeyword(Tokenizer, &SourceReader)
 			||	ParseIdentifier(Tokenizer, &SourceReader)
 			||	ParseSymbol(Tokenizer, &SourceReader)
-			||	ParseComment(Tokenizer, &SourceReader)
 			)
 		{
 			// Successful parse.
@@ -80,6 +80,26 @@ struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 	{ KEYWORD_FLOAT, "float" },
 	{ KEYWORD_LONG, "long" },
 	{ KEYWORD_DOUBLE, "double" },
+
+	{ KEYWORD_STATIC, "static" },
+	{ KEYWORD_UNSIGNED, "unsigned" },
+	{ KEYWORD_STRUCT, "struct" },
+	{ KEYWORD_ENUM, "enum" },
+	{ KEYWORD_UNION, "union" },
+	{ KEYWORD_VOLATILE, "volatile" },
+
+	{ KEYWORD_IF, "if" },
+	{ KEYWORD_ELSE, "else" },
+	{ KEYWORD_FOR, "for" },
+	{ KEYWORD_DO, "do" },
+	{ KEYWORD_WHILE, "while" },
+	{ KEYWORD_SWITCH, "switch" },
+	{ KEYWORD_CASE, "case" },
+	{ KEYWORD_BREAK, "break" },
+	{ KEYWORD_CONTINUE, "continue" },
+	{ KEYWORD_RETURN, "return" },
+
+	{ KEYWORD_SIZEOF, "sizeof" },
 };
 
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
