@@ -35,12 +35,12 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 
 		// Parsing order. If any function succeeds, it is a signal that at least one token has been added and / or that some characters were parsed.
 		if (	ParseComment(Tokenizer, &SourceReader)
-			||	ParseKeyword(Tokenizer, &SourceReader)
-			||	ParseIdentifier(Tokenizer, &SourceReader)
-			||	ParseSymbol(Tokenizer, &SourceReader)
 			||	ParseLiteralString(Tokenizer, &SourceReader)
 			||	ParseLiteralChar(Tokenizer, &SourceReader)
 			||	ParseLiteralNumber(Tokenizer, &SourceReader)
+			||	ParseKeyword(Tokenizer, &SourceReader)
+			||	ParseIdentifier(Tokenizer, &SourceReader)
+			||	ParseSymbol(Tokenizer, &SourceReader)
 			)
 		{
 			// Successful parse.
@@ -279,7 +279,77 @@ ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI
 
 ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
-	return 0;
+	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
+
+	// For now this can only parse whole decimal numbers.
+	// Look for a starting figure and keep reading more figures until reaching a non-number character.
+
+	// Check first character.
+	char NextChar = CharBufferReader_PeekNext(&SourceReader);
+	ui8 IsNegative = 0;
+	if (NextChar < '0' || NextChar > '9')
+	{
+		// Handle negative here. 
+		if (NextChar == '-')
+		{
+			IsNegative = 1;
+			NextChar = CharBufferReader_ReadNext(&SourceReader);
+		}
+		else
+		{
+			// Not a number.
+PARSE_FAIL:
+			CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+			return 0;
+		}
+	}
+
+	char NumStrBuffer[256];
+	memset(NumStrBuffer, 0, sizeof(NumStrBuffer));
+
+	ui32 TokenLoc = SourceReader._CurrentOffset;
+
+	int FigureCount = 0;
+
+	if (IsNegative)
+	{
+		NumStrBuffer[FigureCount++] = '-';
+	}
+
+	for (;;FigureCount++)
+	{
+		if (FigureCount >= sizeof(NumStrBuffer) - 1)
+		{
+			// Too many figures.
+			Tokenizer_Error(Tokenizer, TokenLoc, "Failed to parse number '%s' due to too many figures.", NumStrBuffer);
+			goto PARSE_FAIL;
+		}
+
+		NextChar = CharBufferReader_ReadNext(&SourceReader);
+		if (NextChar < '0' || NextChar > '9') break;
+
+		NumStrBuffer[FigureCount] = NextChar;
+	}
+
+	// TODO: Support any number type.
+	i64 ParsedNumber = _strtoi64(NumStrBuffer, NULL, NULL);
+	if (ParsedNumber == _I64_MAX || ParsedNumber == _I64_MIN)
+	{
+		// Parsed number overflowed.
+		Tokenizer_Error(Tokenizer, TokenLoc, "Failed to parse number '%s' due to overflow.", NumStrBuffer);
+		goto PARSE_FAIL;
+	}
+
+	// Successfully parsed a decimal whole number. Create new token and push to Tokenizer.
+	struct Token NewToken = { 0 };
+	NewToken.Type = TOKEN_LITERAL_NUMBER_INT;
+	NewToken.BufferLocation = TokenLoc;
+	NewToken.Val.LiteralNumber.Integer = ParsedNumber;
+
+	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
+
+	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+	return 1;
 }
 
 // Escape sequence resolver used by Literal String and Character parsing. Returns whether the escaped character was recognized, and populates OutChar
