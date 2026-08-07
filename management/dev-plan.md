@@ -26,7 +26,7 @@
   - Identifiers [DONE]
   - Literal strings [DONE]
   - Literal chars [DONE]
-  - Literal numbers (int / float / double) [WIP] — whole decimal ints (incl. negatives) done; float / double / suffixes / hex / octal still open
+  - Literal numbers (int / float / double) [WIP] — Binary, Decimal, Hex done. Float, Double, Octal remaining.
 - Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [WIP] — wired for unterminated strings and number-literal overflow / too-many-figures; not yet for other number literal cases
 
 ## Step 5 — Parser

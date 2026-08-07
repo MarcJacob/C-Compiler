@@ -277,32 +277,29 @@ ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI
 	return 0;
 }
 
+// Parses a literal number of any supported type / base.
+// NOTE: Negative numbers are strictly speaking not supported at the tokenizer level. Instead, the preceding negation sign is read as a symbol / operator,
+// and should turn the overall expression formed from it and the following number into a negative number at parsing time.
 ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
 
-	// For now this can only parse whole decimal numbers.
-	// Look for a starting figure and keep reading more figures until reaching a non-number character.
-
-	// Check first character.
 	char NextChar = CharBufferReader_PeekNext(&SourceReader);
-	ui8 IsNegative = 0;
+
+	// Check first character and early leave if this isn't a number at all. 
 	if (NextChar < '0' || NextChar > '9')
 	{
-		// Handle negative here. 
-		if (NextChar == '-')
-		{
-			IsNegative = 1;
-			NextChar = CharBufferReader_ReadNext(&SourceReader);
-		}
-		else
-		{
-			// Not a number.
+		// Not a number.
 PARSE_FAIL:
-			CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
-			return 0;
-		}
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
 	}
+
+	// Determine base.
+	ui8 IsHex = CharBufferReader_ReadNextExpected(&SourceReader, "0x");
+	ui8 IsBinary = !IsHex && CharBufferReader_ReadNextExpected(&SourceReader, "0b");
+
+	ui8 IsDecimal = !IsHex && !IsBinary;
 
 	char NumStrBuffer[256];
 	memset(NumStrBuffer, 0, sizeof(NumStrBuffer));
@@ -310,12 +307,6 @@ PARSE_FAIL:
 	ui32 TokenLoc = SourceReader._CurrentOffset;
 
 	int FigureCount = 0;
-
-	if (IsNegative)
-	{
-		NumStrBuffer[FigureCount++] = '-';
-	}
-
 	for (;;FigureCount++)
 	{
 		if (FigureCount >= sizeof(NumStrBuffer) - 1)
@@ -326,13 +317,17 @@ PARSE_FAIL:
 		}
 
 		NextChar = CharBufferReader_ReadNext(&SourceReader);
-		if (NextChar < '0' || NextChar > '9') break;
+		ui8 ValidChar =		(IsBinary && (NextChar == '0' || NextChar == '1'))
+					|| (	(IsDecimal || IsHex) && NextChar >= '0' && NextChar <= '9')
+					|| (	IsHex && NextChar >= 'A' && NextChar <= 'F');
+
+		if (!ValidChar) break;
 
 		NumStrBuffer[FigureCount] = NextChar;
 	}
 
 	// TODO: Support any number type.
-	i64 ParsedNumber = _strtoi64(NumStrBuffer, NULL, NULL);
+	i64 ParsedNumber = _strtoi64(NumStrBuffer, NULL, IsBinary * 2 + IsHex * 16);
 	if (ParsedNumber == _I64_MAX || ParsedNumber == _I64_MIN)
 	{
 		// Parsed number overflowed.
