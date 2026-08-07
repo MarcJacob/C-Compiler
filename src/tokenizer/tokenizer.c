@@ -9,7 +9,6 @@ ui8 ParseLiteralNumber(struct TokenizerProcess* Tokenizer, struct CharBufferRead
 ui8 ParseLiteralString(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
-ui8 ResolveEscapeCharacter(char EscapedChar, char* OutChar);
 
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...);
 void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
