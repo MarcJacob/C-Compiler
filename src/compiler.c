@@ -34,7 +34,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 		// Check for errors and return if anything wrong happened.
 		if (Tokenizer.HasError)
 		{
-			// TODO: String-based implementation + Add header to error message to indicate stage.
+			// TODO: String-based implementation + Add header to error message to indicate stage & location.
 			Compiler->ErrorCode_Global = COMPILER_TOKENIZER_STAGE_ERROR;
 			Compiler->ErrorCode_Stage = Tokenizer.Error.Code;
 			memcpy(Compiler->ErrorMsg, Tokenizer.Error.Message, sizeof(Tokenizer.Error.Message));

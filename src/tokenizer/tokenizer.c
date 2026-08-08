@@ -49,7 +49,10 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 		{
 			// Failed parse.
 			// If no error was output, add a generic one here.
-			Tokenizer_Error(Tokenizer, SourceReader._CurrentOffset, "Tokenizer failed to parse source character '%c'.", NextSourceChar);
+			if (!Tokenizer->HasError)
+			{
+				Tokenizer_Error(Tokenizer, SourceReader._CurrentOffset, "Tokenizer failed to parse source character '%c'.", NextSourceChar);
+			}
 			break;
 		}
 	}
@@ -66,6 +69,8 @@ void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const c
 	va_start(args, MsgFormat);
 	vsprintf_s(Tokenizer->Error.Message, sizeof(Tokenizer->Error.Message), MsgFormat, args);
 	va_end(args);
+
+	Tokenizer->Error.Location = BufferLoc;
 }
 
 struct KeywordToStringPair
@@ -297,8 +302,19 @@ PARSE_FAIL:
 	// Determine base.
 	ui8 IsHex = CharBufferReader_ReadNextExpected(&SourceReader, "0x");
 	ui8 IsBinary = !IsHex && CharBufferReader_ReadNextExpected(&SourceReader, "0b");
+	ui8 IsOctal = !IsHex && !IsBinary && CharBufferReader_PeekNext(&SourceReader) == '0';
+	if (IsOctal)
+	{
+		// Need an extra check that requires looking ahead by 1 character but stepping back if it turns out this is just a single 0.
+		CharBufferReader_ReadNext(&SourceReader);
+		IsOctal = CharBufferReader_PeekNext(&SourceReader) >= '0' && CharBufferReader_PeekNext(&SourceReader) <= '9';
+		if (!IsOctal)
+		{
+			SourceReader._CurrentOffset--; // Step back one character.
+		}
+	}
 
-	ui8 IsDecimal = !IsHex && !IsBinary;
+	ui8 IsDecimal = !IsHex && !IsBinary && !IsOctal;
 
 	char NumStrBuffer[256];
 	memset(NumStrBuffer, 0, sizeof(NumStrBuffer));
@@ -318,15 +334,29 @@ PARSE_FAIL:
 		NextChar = CharBufferReader_ReadNext(&SourceReader);
 		ui8 ValidChar =		(IsBinary && (NextChar == '0' || NextChar == '1'))
 					|| (	(IsDecimal || IsHex) && NextChar >= '0' && NextChar <= '9')
-					|| (	IsHex && NextChar >= 'A' && NextChar <= 'F');
+					|| (	IsHex && NextChar >= 'A' && NextChar <= 'F')
+					|| (	IsOctal && NextChar >= '0' && NextChar <= '7');
 
-		if (!ValidChar) break;
+
+		if (!ValidChar)
+		{
+			// Read a non-valid char for the number type / base we're currently parsing.
+			// In most cases we just stop reading and continue, but in some specific cases we need to error out instead.
+
+			if (IsOctal && (NextChar == '8' || NextChar == '9')) // Error case - Figure 8 or 9 found while parsing an Octal number.
+			{
+				Tokenizer_Error(Tokenizer, TokenLoc, "Invalid format for Octal number.");
+				goto PARSE_FAIL;
+			}
+			
+			break; // If none of the above error cases matched, break out of the loop !
+		}
 
 		NumStrBuffer[FigureCount] = NextChar;
 	}
 
 	// TODO: Support any number type.
-	i64 ParsedNumber = _strtoi64(NumStrBuffer, NULL, IsBinary * 2 + IsHex * 16);
+	i64 ParsedNumber = _strtoi64(NumStrBuffer, NULL, IsBinary * 2 + IsHex * 16 + IsOctal * 8);
 	if (ParsedNumber == _I64_MAX || ParsedNumber == _I64_MIN)
 	{
 		// Parsed number overflowed.
@@ -442,7 +472,7 @@ ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
 
-	// Look for a ' character, then parse a single character (after a possible \ escape) and expect the next one to be another '.
+	// Look for a ' character, then parse a single character  Octal numbers cannot have the figure 8 or 9 in them !(after a possible \ escape) and expect the next one to be another '.
 	if (CharBufferReader_ReadNext(&SourceReader) != '\'')
 	{
 	PARSE_FAIL:
