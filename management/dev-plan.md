@@ -26,8 +26,8 @@
   - Identifiers [DONE]
   - Literal strings [DONE]
   - Literal chars [DONE]
-  - Literal numbers (int / float / double) [WIP] — Binary, Decimal, Hex done. Float, Double, Octal remaining.
-- Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [WIP] — wired for unterminated strings and number-literal overflow / too-many-figures; not yet for other number literal cases
+  - Literal numbers (int) [DONE]
+- Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [WIP]
 
 ## Step 5 — Parser
 
@@ -41,6 +41,12 @@
   - Memory size
   - Offsets
   - Validity of usage (scope, type compatibility, etc.)
+
+---
+
+## Backlog
+
+- Tokenizer: Literal numbers — float and double parsing.
 
 ---
 
