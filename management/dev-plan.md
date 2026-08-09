@@ -17,7 +17,7 @@
 - Collects/formats reported errors and surfaces them as a console message. DONE
 - Non-assert: distinct from `ASSERT` (which guards internal invariants) — this handles expected failure cases (bad input, invalid source).
 
-## Step 4 — Tokenizer (Complete) [WIP]
+## Step 4 — Tokenizer (Complete) [DONE]
 
 - Extend the tokenizer to cover the full C token set:
   - All core C operators [DONE]
@@ -27,7 +27,7 @@
   - Literal strings [DONE]
   - Literal chars [DONE]
   - Literal numbers (int) [DONE]
-- Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [WIP]
+- Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [DONE]
 
 ## Step 5 — Parser
 
@@ -47,6 +47,8 @@
 ## Backlog
 
 - Tokenizer: Literal numbers — float and double parsing.
+- Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
+- Compiler: Handle multiple input files.
 
 ---
 
