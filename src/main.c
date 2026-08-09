@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 	// Catch and log error if any.
 	if (Compiler.ErrorCode_Global != COMPILER_SUCCESS)
 	{
-		printf("Compilation failed.\n\tError: %s\n", Compiler.ErrorMsg);
+		printf("Compilation failed.\n%s\n", Compiler.ErrorMsg.Str);
 		return Compiler.ErrorCode_Global;
 	}
 

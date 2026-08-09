@@ -5,6 +5,7 @@
 
 #include "core.h"
 #include "vector.h"
+#include "string_ansi.h"
 
 // Compiler
 
@@ -19,8 +20,6 @@ enum COMPILER_ERROR_CODE
 	CCOMPILER_SYMBOL_SOLVER_STAGE_ERROR, // Error during the Symbol Solver stage. Read Stage error code as a SYMBOL_SOLVER_ERROR_CODE enum value.
 };
 
-typedef char ErrorMessage[256]; // TODO: Replace with proper ANSI string implementation.
-
 // Main compiler process orchestration structure. Used to drive each stage one after another, starting from specific source files and ending with a single executable output file.
 struct CompilerProcess
 {
@@ -30,7 +29,7 @@ struct CompilerProcess
 	enum COMPILER_ERROR_CODE ErrorCode_Global; // Main error code of compiler has a whole.
 	ui8 ErrorCode_Stage; // Optional extra error code filled in by the specific stage where the error happened.
 	
-	ErrorMessage ErrorMsg; 
+	struct String_ANSI ErrorMsg; 
 };
 
 // Begins compilation process from the contents of the Compiler Process structure.

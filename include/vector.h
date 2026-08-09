@@ -10,7 +10,7 @@ struct Vector
 	ui64 Size;
 
 	ui64 _Capacity;
-	ui8* Str;
+	ui8* _Mem;
 	ui16 _ItemSize;
 };
 
@@ -24,10 +24,10 @@ void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 
 	if (Capacity == 0)
 	{
-		if (Vec->Str != NULL)
+		if (Vec->_Mem != NULL)
 		{
-			free(Vec->Str);
-			Vec->Str = NULL;
+			free(Vec->_Mem);
+			Vec->_Mem = NULL;
 		}
 		Vec->_Capacity = 0;
 		return;
@@ -38,16 +38,16 @@ void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 	ASSERT(NewMem != NULL);
 
 	// Copy previously allocated & used memory into new memory and free it, if any.
-	if (Vec->Str != NULL && Vec->Size > 0)
+	if (Vec->_Mem != NULL && Vec->Size > 0)
 	{
-		memcpy(NewMem, Vec->Str, (Vec->Size > Capacity ? Capacity : Vec->Size) * Vec->_ItemSize);
+		memcpy(NewMem, Vec->_Mem, (Vec->Size > Capacity ? Capacity : Vec->Size) * Vec->_ItemSize);
 
-		free(Vec->Str);
-		Vec->Str = NULL;
+		free(Vec->_Mem);
+		Vec->_Mem = NULL;
 		Vec->_Capacity = 0;
 	}
 
-	Vec->Str = NewMem;
+	Vec->_Mem = NewMem;
 	Vec->_Capacity = Capacity;
 }
 
@@ -69,10 +69,10 @@ void Vector_Destroy(struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
 
-	if (Vec->Str != NULL)
+	if (Vec->_Mem != NULL)
 	{
-		free(Vec->Str);
-		Vec->Str = NULL;
+		free(Vec->_Mem);
+		Vec->_Mem = NULL;
 	}
 
 	Vec->_Capacity = 0;
@@ -85,7 +85,7 @@ void* Vector_GetPtr(struct Vector* Vec, ui64 Index)
 	ASSERT(Vec != NULL);
 	ASSERT(Vec->Size > Index);
 
-	return Vec->Str + Vec->_ItemSize * Index;
+	return Vec->_Mem + Vec->_ItemSize * Index;
 }
 
 // Returns pointer to last element in the vector. The vector must be non-empty !
@@ -94,7 +94,7 @@ void* Vector_GetLastPtr(struct Vector* Vec)
 	ASSERT(Vec != NULL);
 	ASSERT(Vec->Size > 0);
 
-	return Vec->Str + Vec->_ItemSize * (Vec->Size - 1);
+	return Vec->_Mem + Vec->_ItemSize * (Vec->Size - 1);
 }
 
 // Adds a new element to the tip of the vector. Re-allocates vector if necessary.
@@ -110,7 +110,7 @@ void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
 	}
 
 	// Add element by copying the new item ptr, assuming its actual size is correct.
-	memcpy(Vec->Str + Vec->Size * Vec->_ItemSize, NewItemPtr, Vec->_ItemSize);
+	memcpy(Vec->_Mem + Vec->Size * Vec->_ItemSize, NewItemPtr, Vec->_ItemSize);
 	Vec->Size++;
 }
 
@@ -118,7 +118,7 @@ void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
 void Vector_Pop(struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
-	ASSERT(Vec->Str != NULL);
+	ASSERT(Vec->_Mem != NULL);
 	ASSERT(Vec->Size > 0);
 
 	// Just decrement size and pretend the popped item doesn't exist anymore.

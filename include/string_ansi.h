@@ -45,6 +45,10 @@ struct String_ANSI
 };
 
 struct String_ANSI String_Create_ANSI(const char* InitChars);
+struct String_ANSI String_CreateFormatV_ANSI(const char* StrFormat, va_list args);
+struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...);
+void String_Free_ANSI(struct String_ANSI* Str);
+
 void String_PushChar_ANSI(struct String_ANSI* Str, char Char);
 void String_Push_ANSI(struct String_ANSI* Str, const char* Chars);
 void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink);
@@ -272,6 +276,19 @@ void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
 {
 	ASSERT(Str != NULL);
 
+	// Handle special case of NewSize == 0, which is effectively just a request to free the string.
+	if (NewSize == 0)
+	{
+		ASSERT(CanShrink);
+
+		free(Str->Str);
+		Str->Length = 0;
+		Str->_Capacity = 0;
+		Str->Str = NULL;
+
+		return;
+	}
+
 	// Allocate by groups of 8 bytes at the lowest granularity.
 	ui16 NewCapacity = (NewSize + 7) / 8 * 8;
 
@@ -332,22 +349,35 @@ struct String_ANSI String_Create_ANSI(const char* InitChars)
 }
 
 // Allocates a new ANSI String of exactly correct size and content from the given start format string and parameters.
-struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...)
+struct String_ANSI String_CreateFormatV_ANSI(const char* StrFormat, va_list args)
 {
 	ASSERT(StrFormat != NULL);
 
 	struct String_ANSI NewString = { 0 };
 
-	va_list args;
-	va_start(args, StrFormat);
-
 	String_Resize_ANSI(&NewString, vsnprintf(NULL, 0, StrFormat, args) + 1, 0); // First pass - determine required string size including null terminator.
 	vsnprintf(NewString.Str, NewString._Capacity, StrFormat, args); // Second pass - perform actual formatting and copying.
 	NewString.Length = NewString._Capacity - 1;
 
+	return NewString;
+}
+
+// Allocates a new ANSI String of exactly correct size and content from the given start format string and parameters.
+struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...)
+{
+	ASSERT(StrFormat != NULL);
+
+	va_list args;
+	va_start(args, StrFormat);
+	struct String_ANSI NewString = String_CreateFormatV_ANSI(StrFormat, args);
 	va_end(args);
 
 	return NewString;
 }
 
+void String_Free_ANSI(struct String_ANSI* Str)
+{
+	ASSERT(Str == NULL);
+	String_Resize_ANSI(Str, 0, 1);
+}
 #endif // STRING_ANSI_INCLUDED

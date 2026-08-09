@@ -17,7 +17,7 @@ struct TokenizerProcess
 	struct
 	{
 		ui32 Location; // Index of character where error happened, if applicable.
-		ErrorMessage Message;
+		struct String_ANSI Message;
 	} Error;
 };
 

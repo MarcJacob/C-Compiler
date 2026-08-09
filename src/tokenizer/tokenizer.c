@@ -64,13 +64,12 @@ TOKENIZER_END:
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...)
 {
 	Tokenizer->HasError = 1;
+	Tokenizer->Error.Location = BufferLoc;
 
 	va_list args;
-	va_start(args, MsgFormat);
-	vsprintf_s(Tokenizer->Error.Message, sizeof(Tokenizer->Error.Message), MsgFormat, args);
+	va_start(args, &MsgFormat);
+	Tokenizer->Error.Message = String_CreateFormatV_ANSI(MsgFormat, args);
 	va_end(args);
-
-	Tokenizer->Error.Location = BufferLoc;
 }
 
 struct KeywordToStringPair
