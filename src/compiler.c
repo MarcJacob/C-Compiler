@@ -11,7 +11,7 @@ static const char NoInputFilesErrorMsg[] = "No input files specified.";
 void Compiler_Run(struct CompilerProcess* Compiler)
 {
 	ASSERT(Compiler != NULL);
-	ASSERT(Compiler->InputFiles._Mem != NULL);
+	ASSERT(Compiler->InputFiles.Str != NULL);
 
 	if (Compiler->InputFiles.Size == 0)
 	{
@@ -31,12 +31,11 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 		Tokenizer.Tokens = &Tokens;
 		Tokenizer_Run(&Tokenizer);
 
-		// Check for errors and return if anything wrong happened.
+		// Handle Tokenizer Error if any.
 		if (Tokenizer.HasError)
 		{
 			// TODO: String-based implementation + Add header to error message to indicate stage & location.
 			Compiler->ErrorCode_Global = COMPILER_TOKENIZER_STAGE_ERROR;
-			Compiler->ErrorCode_Stage = Tokenizer.Error.Code;
 			memcpy(Compiler->ErrorMsg, Tokenizer.Error.Message, sizeof(Tokenizer.Error.Message));
 			return;
 		}
@@ -53,7 +52,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 					printf("<COMMENT>\n");
 					break;
 				case TOKEN_IDENTIFIER:
-					printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier);
+					printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier.Str);
 					break;
 				case TOKEN_KEYWORD:
 				{
@@ -82,7 +81,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 					break;
 				}
 				case TOKEN_LITERAL_STRING:
-					printf("<LITERAL_STRING: \"%s\">\n", Tok->Val.LiteralString);
+					printf("<LITERAL_STRING: \"%s\">\n", Tok->Val.LiteralString.Str);
 					break;
 				case TOKEN_LITERAL_CHAR:
 					printf("<LITERAL_CHAR: '%c'>\n", Tok->Val.LiteralCharacter);

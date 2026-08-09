@@ -16,7 +16,6 @@ struct TokenizerProcess
 	ui8 HasError; // Whether the tokenizer is currently in an error state.
 	struct
 	{
-		ui8 Code; // TODO: Consider possible error codes. Unused as of now.
 		ui32 Location; // Index of character where error happened, if applicable.
 		ErrorMessage Message;
 	} Error;

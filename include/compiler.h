@@ -154,15 +154,11 @@ struct Token
 
 	union
 	{
-		// TODO: ANSI string implementation.
-		char* Identifier;
-
 		enum TOKEN_SYMBOL Symbol;
 		enum TOKEN_KEYWORD Keyword;
 
-		// TODO: ANSI string implementation.
-		char* LiteralString;
-
+		struct String_ANSI Identifier;
+		struct String_ANSI LiteralString;
 		char LiteralCharacter;
 
 		union

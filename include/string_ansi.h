@@ -4,23 +4,60 @@
 #define STRING_ANSI_INCLUDED
 
 #include "core.h"
+#include <stdarg.h>
 
 // Buffer of ANSI / ASCII characters. Used for source code and whatever intermediate file formats are supported down the road.
 // The buffer should preferably be accessed using an appropriate Reader structure.
 struct CharBuffer_ANSI
 {
-	char* _Mem;
+	char* Str;
 	ui32 Size;
 };
 
+struct CharBuffer_ANSI LoadFileToBuffer_ANSI(const char* Filename);
+void FreeBuffer_ANSI(struct CharBuffer_ANSI* Str);
+
+// Reader for ANSI Char buffers.
+// Use the associated functions to initialize and read safely and cleanly.
+struct CharBufferReader_ANSI
+{
+	struct CharBuffer_ANSI* _Buffer;
+
+	ui32 _StartOffset;
+	ui32 _CurrentOffset;
+};
+
+struct CharBufferReader_ANSI CreateBufferReader_ANSI(struct CharBuffer_ANSI* SourceBuffer);
+struct CharBufferReader_ANSI OpenNestedBufferReader_ANSI(struct CharBufferReader_ANSI* Parent);
+void CloseNestedBufferReader_ANSI(struct CharBufferReader_ANSI* NestedReader, struct CharBufferReader_ANSI* Parent, i32 Apply);
+char CharBufferReader_ReadNext(struct CharBufferReader_ANSI* Reader);
+char CharBufferReader_PeekNext(struct CharBufferReader_ANSI* Reader);
+char CharBufferReader_ReadUntil(struct CharBufferReader_ANSI* Reader, struct String_ANSI* OutString, const char* StopChars);
+i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, const char* ExpectedString);
+
+// Simple container for a dynamic-size sequence of null-terminated ANSI characters so it can easily be used with C String functions.
+struct String_ANSI
+{
+	char* Str;
+	ui16 _Capacity;
+
+	ui16 Length;
+};
+
+struct String_ANSI String_Create_ANSI(const char* InitChars);
+void String_PushChar_ANSI(struct String_ANSI* Str, char Char);
+void String_Push_ANSI(struct String_ANSI* Str, const char* Chars);
+void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink);
+
 #define BUFFER_MAX_SIZE_ANSI ((ui32)(~0))
+#define STRING_MAX_LENGTH_ANSI ((ui16)(~0)) - 1
 
 // Reads a file fully into a new ANSI Char buffer.
 // If there was an error, the buffer will have a NULL memory pointer and its Size member will contain the error code.
 struct CharBuffer_ANSI LoadFileToBuffer_ANSI(const char* Filename)
 {
 	struct CharBuffer_ANSI NewBuffer;
-	NewBuffer._Mem = NULL;
+	NewBuffer.Str = NULL;
 	NewBuffer.Size = 0;
 
 	FILE* File;
@@ -40,12 +77,12 @@ struct CharBuffer_ANSI LoadFileToBuffer_ANSI(const char* Filename)
 
 	fseek(File, 0, 0);
 
-	NewBuffer._Mem = (char*)malloc(Filesize);
-	ASSERT(NewBuffer._Mem != NULL);
+	NewBuffer.Str = (char*)malloc(Filesize);
+	ASSERT(NewBuffer.Str != NULL);
 
 	NewBuffer.Size = Filesize;
 
-	ui64 ReadSize = fread_s(NewBuffer._Mem, NewBuffer.Size, 1, Filesize, File);
+	ui64 ReadSize = fread_s(NewBuffer.Str, NewBuffer.Size, 1, Filesize, File);
 	ASSERT(ReadSize > 0);
 
 	// Adjust "public" buffer size to match how many bytes were actually read from the file in text mode.
@@ -53,25 +90,15 @@ struct CharBuffer_ANSI LoadFileToBuffer_ANSI(const char* Filename)
 	return NewBuffer;
 }
 
-void FreeBuffer_ANSI(struct CharBuffer_ANSI* _Mem)
+void FreeBuffer_ANSI(struct CharBuffer_ANSI* Str)
 {
-	ASSERT(_Mem != NULL);
-	ASSERT(_Mem->_Mem != NULL);
+	ASSERT(Str != NULL);
+	ASSERT(Str->Str != NULL);
 
-	free(_Mem->_Mem);
-	_Mem->_Mem = NULL;
-	_Mem->Size = 0;
+	free(Str->Str);
+	Str->Str = NULL;
+	Str->Size = 0;
 }
-
-// Reader for ANSI Char buffers.
-// Use the associated functions to initialize and read safely and cleanly.
-struct CharBufferReader_ANSI
-{
-	struct CharBuffer_ANSI* _Buffer;
-
-	ui32 _StartOffset;
-	ui32 _CurrentOffset;
-};
 
 // Creates new "root reader" for an ANSI buffer, starting at offset 0.
 struct CharBufferReader_ANSI CreateBufferReader_ANSI(struct CharBuffer_ANSI* SourceBuffer)
@@ -125,7 +152,7 @@ char CharBufferReader_ReadNext(struct CharBufferReader_ANSI* Reader)
 
 	if (Reader->_CurrentOffset >= Reader->_Buffer->Size) return EOF;
 
-	return Reader->_Buffer->_Mem[Reader->_CurrentOffset++];
+	return Reader->_Buffer->Str[Reader->_CurrentOffset++];
 }
 
 // Gets the next character from the reader without advancing it.
@@ -135,23 +162,23 @@ char CharBufferReader_PeekNext(struct CharBufferReader_ANSI* Reader)
 
 	if (Reader->_CurrentOffset >= Reader->_Buffer->Size) return EOF;
 
-	return Reader->_Buffer->_Mem[Reader->_CurrentOffset];
+	return Reader->_Buffer->Str[Reader->_CurrentOffset];
 }
 
 // Advances the reader, reading into the provided buffer until encountering EOF or one of the characters in the StopChars string.
-// Does NOT read the encountered StopChar into the buffer, but returns it.
-// If Buffer is too small, stops reading at that point and returns 0.
-char CharBufferReader_ReadUntil(struct CharBufferReader_ANSI* Reader, char* Buffer, i32 BufferSize, const char* StopChars)
+// Returns the specific character reading stopped at (on top of the buffer's cursor being positioned on it).
+// If OutString is non-NULL, will fill in the read characters into it.
+char CharBufferReader_ReadUntil(struct CharBufferReader_ANSI* Reader, struct String_ANSI* OutString, const char* StopChars)
 {
 	ASSERT(Reader != NULL && Reader->_Buffer != NULL);
-	ASSERT(Buffer != NULL && BufferSize > 0);
 	ASSERT(StopChars != NULL);
 
 	i32 StopCharsCount = strlen(StopChars);
 	ASSERT_MSG(StopCharsCount > 0, "StopChars string must contain at least one non-zero char !");
 	
 	i32 BufferIndex = 0;
-	while (BufferIndex < BufferSize)
+	char Next = CharBufferReader_PeekNext(Reader);
+	while (Next != EOF)
 	{
 		char Next = CharBufferReader_ReadNext(Reader);
 		
@@ -163,8 +190,10 @@ char CharBufferReader_ReadUntil(struct CharBufferReader_ANSI* Reader, char* Buff
 			}
 		}
 
-		// Next is not a stop character. Put it in the buffer.
-		Buffer[BufferIndex++] = Next;
+		if (OutString != NULL)
+		{
+			String_Push_ANSI(OutString, &Next);
+		}
 	}
 
 	// Buffer size exceeded.
@@ -199,21 +228,18 @@ i32 CharBufferReader_ReadNextExpected(struct CharBufferReader_ANSI* Reader, cons
 	return CharIndex == ExpectedStringLen;
 }
 
-// Reads the next characters until a non-alphanumeric or underscore is encountered, or the end of the Read Buffer is reached (in which case it will fail).
+// Reads the next characters until a non-alphanumeric or underscore is encountered.
 // Allows words that start with a number through, so if that is not desirable the user should check the first character themselves first.
 // Returns the length of the word that was read.
-// Note: Does NOT assume the read buffer must end with a 0-terminator !
-i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, char* ReadBuffer, ui64 ReadBufferSize)
+// If OutString is non-NULL, will fill in the read characters into it.
+i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, struct String_ANSI* OutString)
 {
 	ASSERT(Reader != NULL);
-	ASSERT(ReadBuffer != NULL);
-	ASSERT(ReadBufferSize > 0);
 
 	struct CharBufferReader_ANSI OpReader = OpenNestedBufferReader_ANSI(Reader);
 
-	ui64 CharIndex = 0;
-	ui8 CapacityExceeded = 0;
-	while (!CapacityExceeded)
+	ui16 WordLen = 0;
+	for (;;)
 	{
 		char NextChar = CharBufferReader_PeekNext(&OpReader);
 		if ((NextChar >= 'a' && NextChar <= 'z')
@@ -221,15 +247,14 @@ i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, char* Re
 			|| (NextChar >= '0' && NextChar <= '9')
 			|| (NextChar == '_'))
 		{
-			if (CharIndex == ReadBufferSize)
+			if (OutString != NULL)
 			{
-				CapacityExceeded = 1; // Flagging capacity reached this way allows identifiers of *exactly* maximum size to work.
+				String_PushChar_ANSI(OutString, NextChar);
 			}
-			else
-			{
-				ReadBuffer[CharIndex++] = NextChar;
-				CharBufferReader_ReadNext(&OpReader);
-			}
+			WordLen++;
+
+			// Consume char.
+			CharBufferReader_ReadNext(&OpReader);
 		}
 		else
 		{
@@ -237,11 +262,92 @@ i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, char* Re
 		}
 	}
 
-	// Succeed if capacity wasn't exceeded and if the word is at least one character long.
-	CloseNestedBufferReader_ANSI(&OpReader, Reader, !CapacityExceeded && CharIndex > 0);
-	return (!CapacityExceeded && CharIndex > 0) * CharIndex;
+	// Succeed if the word is at least one character long.
+	CloseNestedBufferReader_ANSI(&OpReader, Reader, WordLen > 0);
+	return WordLen;
 }
 
-// TODO: Implement String type (working very much like a vector of char).
+// Changes the (minimum) capacity of the string so it has room for a useable string of length NewSize.
+void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
+{
+	ASSERT(Str != NULL);
+
+	// Allocate by groups of 8 bytes at the lowest granularity.
+	ui16 NewCapacity = (NewSize + 7) / 8 * 8;
+
+	if ((Str->_Capacity > NewCapacity && CanShrink) || (Str->_Capacity < NewCapacity))
+	{
+		// Create new buffer, copy old buffer into it if it exists and zero out extra characters.
+		char* NewStringBuffer = malloc(NewCapacity);
+		if (Str->Str != NULL)
+		{
+			memcpy(NewStringBuffer, Str->Str, Str->_Capacity);
+			free(Str->Str);
+			Str->Str = NULL;
+		}	
+		
+		memset(NewStringBuffer + Str->_Capacity, 0, NewCapacity - Str->_Capacity);
+
+		Str->_Capacity = NewCapacity;
+		Str->Str = NewStringBuffer;
+	}
+}
+
+// Adds a single character to the string, resizing it if necessary.
+void String_PushChar_ANSI(struct String_ANSI* Str, char Char)
+{
+	ASSERT(Str != NULL);
+
+	ASSERT(1 + Str->Length < STRING_MAX_LENGTH_ANSI);
+
+	String_Resize_ANSI(Str, Str->Length + 1, 0);
+	Str->Str[Str->Length++] = Char;
+}
+
+// Adds the given characters to the string, resizing it if necessary.
+void String_Push_ANSI(struct String_ANSI* Str, const char* Chars)
+{
+	ASSERT(Str != NULL);
+	ASSERT(Chars != NULL);
+
+	size_t CharsLen = strlen(Chars);
+	ASSERT(CharsLen + Str->Length < STRING_MAX_LENGTH_ANSI);
+
+	String_Resize_ANSI(Str, CharsLen + Str->Length, 0);
+
+	memcpy(Str->Str + Str->Length, Chars, CharsLen);
+	Str->Length += CharsLen;
+}
+
+// Allocates a new ANSI String of exactly correct size and content from the given start characters.
+struct String_ANSI String_Create_ANSI(const char* InitChars)
+{
+	struct String_ANSI NewString = { 0 };
+	if (InitChars != NULL)
+	{
+		String_Push_ANSI(&NewString, InitChars);
+	}
+
+	return NewString;
+}
+
+// Allocates a new ANSI String of exactly correct size and content from the given start format string and parameters.
+struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...)
+{
+	ASSERT(StrFormat != NULL);
+
+	struct String_ANSI NewString = { 0 };
+
+	va_list args;
+	va_start(args, StrFormat);
+
+	String_Resize_ANSI(&NewString, vsnprintf(NULL, 0, StrFormat, args) + 1, 0); // First pass - determine required string size including null terminator.
+	vsnprintf(NewString.Str, NewString._Capacity, StrFormat, args); // Second pass - perform actual formatting and copying.
+	NewString.Length = NewString._Capacity - 1;
+
+	va_end(args);
+
+	return NewString;
+}
 
 #endif // STRING_ANSI_INCLUDED

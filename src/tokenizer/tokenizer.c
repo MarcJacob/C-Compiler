@@ -118,16 +118,21 @@ ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 	static const int TABLE_SIZE = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
 
 	// Read next word and see if it matches a keyword exactly.
-	int KeywordLoc = SourceReader._CurrentOffset;
-	char KeywordBuffer[64];
-	memset(KeywordBuffer, 0, sizeof(KeywordBuffer));
-	CharBufferReader_ReadNextWord(&SourceReader, KeywordBuffer, sizeof(KeywordBuffer) - 1);
+	ui32 KeywordLoc = SourceReader._CurrentOffset;
+	struct String_ANSI KeywordStr = String_Create_ANSI(NULL);
+	if (CharBufferReader_ReadNextWord(&SourceReader, &KeywordStr) == 0)
+	{
+		// Failed to read a word.
+	PARSE_FAIL:
+		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
+		return 0;
+	}
 
 	for (int KeywordStringPairIndex = 0; KeywordStringPairIndex < TABLE_SIZE; KeywordStringPairIndex++)
 	{
 		const struct KeywordToStringPair* Pair = KEYWORD_TO_STRING_TABLE + KeywordStringPairIndex;
 
-		if (strcmp(KeywordBuffer, Pair->String) == 0)
+		if (strcmp(KeywordStr.Str, Pair->String) == 0)
 		{
 			// Found keyword. Output token to Tokenizer and return.
 			struct Token NewToken = { 0 };
@@ -143,8 +148,7 @@ ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 	}
 
 	// No matches in the keywords table - parsing unsuccessful.
-	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
-	return 0;
+	goto PARSE_FAIL;
 }
 
 ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
@@ -161,11 +165,10 @@ PARSE_FAIL:
 		return 0;
 	}
 
-	char IdentifierBuffer[IDENTIFIER_MAX_LENGTH]; // Setting a limit to 128 characters for any identifier which should be enough.
-	memset(IdentifierBuffer, 0, sizeof(IdentifierBuffer));
+	struct String_ANSI IdentifierStr = String_Create_ANSI(NULL);
 
 	ui64 BufferLocation = SourceReader._CurrentOffset;
-	i32 WordLength = CharBufferReader_ReadNextWord(&SourceReader, IdentifierBuffer, sizeof(IdentifierBuffer) - 1); // Leave room for the zero-terminator.
+	i32 WordLength = CharBufferReader_ReadNextWord(&SourceReader, &IdentifierStr); // Leave room for the zero-terminator.
 	if (WordLength > 0)
 	{
 		// Create new Identifier token.
@@ -173,11 +176,8 @@ PARSE_FAIL:
 		struct Token NewToken = { 0 };
 		NewToken.Type = TOKEN_IDENTIFIER;
 		NewToken.BufferLocation = BufferLocation;
-		NewToken.Val.Identifier = (char*)malloc(WordLength + 1);
+		NewToken.Val.Identifier = IdentifierStr;
 		
-		memcpy(NewToken.Val.Identifier, IdentifierBuffer, WordLength);
-		NewToken.Val.Identifier[WordLength] = '\0';
-
 		Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
 		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
@@ -334,7 +334,7 @@ PARSE_FAIL:
 		NextChar = CharBufferReader_ReadNext(&SourceReader);
 		ui8 ValidChar =		(IsBinary && (NextChar == '0' || NextChar == '1'))
 					|| (	(IsDecimal || IsHex) && NextChar >= '0' && NextChar <= '9')
-					|| (	IsHex && NextChar >= 'A' && NextChar <= 'F')
+					|| (	IsHex && (NextChar >= 'A' && NextChar <= 'F') || (NextChar >= 'a' && NextChar <= 'f'))
 					|| (	IsOctal && NextChar >= '0' && NextChar <= '7');
 
 
@@ -412,15 +412,11 @@ PARSE_FAIL:
 
 	ui32 StringLoc = SourceReader._CurrentOffset;
 
-	// Read contents until the closing " delimiter, handling \ escapes the same way ParseLiteralChar does,
-	// or fail on an unescaped newline, EOF, or buffer overflow.
-	char StringBuffer[1024];
-	memset(StringBuffer, 0, sizeof(StringBuffer));
-	i32 StringLength = 0;
+	struct String_ANSI LiteralStr = String_Create_ANSI(NULL);
 
 	for (;;)
 	{
-		if (StringLength >= sizeof(StringBuffer) - 1)
+		if (LiteralStr.Length >= STRING_MAX_LENGTH_ANSI)
 		{
 			Tokenizer_Error(Tokenizer, StringLoc, "Literal string exceeds maximum length.");
 			goto PARSE_FAIL;
@@ -450,17 +446,31 @@ PARSE_FAIL:
 			}
 		}
 
-		StringBuffer[StringLength++] = NextChar;
+		// Write character to literal string. Resize the literal string here if necessary so we avoid constantly re-sizing it while pushing chars.
+		if (LiteralStr._Capacity - 1 == LiteralStr.Length)
+		{
+			if (LiteralStr._Capacity < STRING_MAX_LENGTH_ANSI / 2)
+			{
+				String_Resize_ANSI(&LiteralStr, LiteralStr._Capacity * 2, 0);
+			}
+			else
+			{
+				String_Resize_ANSI(&LiteralStr, STRING_MAX_LENGTH_ANSI / 2, 0);
+			}
+
+			String_PushChar_ANSI(&LiteralStr, NextChar);
+		}
 	}
+
+	// Shrink literal string down to just the size it needs.
+	// TODO: Make a function that explictly does this for any string ? "ShrinkToFit" ? 
+	String_Resize_ANSI(&LiteralStr, LiteralStr.Length + 1, 1);
 
 	// Successfully parsed a literal string. Output token to Tokenizer and return.
 	struct Token NewToken = { 0 };
 	NewToken.Type = TOKEN_LITERAL_STRING;
 	NewToken.BufferLocation = StringLoc;
-	NewToken.Val.LiteralString = (char*)malloc(StringLength + 1);
-
-	memcpy(NewToken.Val.LiteralString, StringBuffer, StringLength);
-	NewToken.Val.LiteralString[StringLength] = '\0';
+	NewToken.Val.LiteralString = LiteralStr;
 
 	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -554,14 +564,15 @@ ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 				NextChar = CharBufferReader_ReadNext(&SourceReader);
 				if (NextChar == '/')
 				{
-					break; // Multiline comment finished.
+					// Successfully parsed a multi-line comment.
+					CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
+					return 1;
 				}
 			}
 		} while (NextChar != EOF);
-
-		// Successfully parsed a multi-line comment.
-		CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 1);
-		return 1;
+		
+		// Reaching here means the multi-line comment was not closed appropriately. Output an error and continue to failure.
+		Tokenizer_Error(Tokenizer, SourceReader._CurrentOffset, "Unterminated multi-line comment.");
 	}
 
 	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
