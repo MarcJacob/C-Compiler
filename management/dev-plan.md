@@ -29,7 +29,7 @@
   - Literal numbers (int) [DONE]
 - Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [DONE]
 
-## Step 5 — Parser
+## Step 5 — Parser [WIP]
 
 - Takes any token buffer as input.
 - Outputs a syntax tree representing the grammatical structure of the program.

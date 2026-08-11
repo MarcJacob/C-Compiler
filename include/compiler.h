@@ -170,4 +170,99 @@ struct Token
 	} Val; // Main Value union, giving type-specific information about the token.
 };
 
+// Parser Stage
+
+// All possible values for the type of an AST Node.
+enum AST_NODE_TYPE
+{
+	AST_NODE_FUNCTION,		// Function definition or declaration.
+	AST_NODE_FUNC_BLOCK,	// Block of instructions and local declarations found inside functions.
+	AST_NODE_VARIABLE,		// Global, Local, Structure or Param Variable.
+	AST_NODE_STRUCT,		// Structure definition or declaration.
+	AST_NODE_ENUM,			// Enumeration definition or declaration.
+};
+
+// Values for primitive data types + an extra value indicating the type is user-defined. 
+enum DATATYPE
+{
+	DATATYPE_VOID,
+	DATATYPE_CHAR,
+	DATATYPE_SHORT,
+	DATATYPE_INT32,
+	DATATYPE_INT64,
+	DATATYPE_FLOAT,
+	DATATYPE_DOUBLE,
+
+	DATATYPE_USER_DEFINED, // Indicates an Identifier should be read to ascertain the exact type.
+};
+
+// Flags modifying the behavior / definition of a datatype.
+enum DATATYPE_FLAGS
+{
+	IS_UNSIGNED,
+	IS_STATIC,
+	IS_VOLATILE,
+	IS_STRUCT,
+	IS_UNION,
+	IS_ENUM,
+};
+
+// Definition for a value type associated to a variable or a function.
+// Non-unique, can be equal to / compatible with other defs.
+struct DatatypeDef
+{
+	enum DATATYPE Type;
+	enum DATATYPE_FLAGS Flags;
+	ui16 Size; // Total size of the type in bytes.
+
+	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED type.
+	ui8 PointerLevel; // How many pointer indirection layers this has, meaning if > 0, this is a pointer.
+
+};
+
+// Node composing an Abstract Syntax Tree.
+struct AST_Node
+{
+	enum AST_NODE_TYPE Type;
+
+	union
+	{
+		struct
+		{
+			struct DatatypeDef ReturnType;
+			struct Vector Params; // Vector type = AST_Node* (Parameter variables in order of declaration)
+			struct Vector LocalVars; // Vector type = AST_Node* (Local variables within the function, in order of declaration)
+
+			struct AST_Node* Block; // Root function block if this is the function definition.
+		} Function;
+
+		struct
+		{
+			struct AST_Node* Condition; // If non-NULL, Single instruction that triggers a block skip.
+
+			union
+			{
+				ui8 Loops;						// Whether execution should loop and attempt to enter the block again after its last instruction.
+				struct AST_Node* FalseBlock;	// Block to be executed only if condition fails. 
+			};
+
+			struct Vector Instructions; // Vector type = AST_Node* (Operations and sub-blocks);
+		} FunctionBlock;
+
+		struct
+		{
+			struct DatatypeDef Type;
+			ui64 ArraySize; // If > 0, this variable is an array for whatever type is contains.
+		} Variable;
+
+		struct
+		{
+			struct DatatypeDef Type; // "Final" Datatype def for this structure.
+			struct Vector Members; // Vector type = AST_Node*
+		} Struct;
+
+
+	} Val;
+};
+
 #endif // COMPILER_INCLUDED
