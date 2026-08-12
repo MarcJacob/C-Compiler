@@ -4,6 +4,7 @@
 
 // Include stage implementations. This also of course includes the stages' specific symbols which is intended.
 #include "tokenizer/tokenizer.c"
+#include "parser/parser.c"
 // ...
 
 void Compiler_Run(struct CompilerProcess* Compiler)
@@ -97,6 +98,27 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 					break;
 				}
 			}
+		}
+	}
+
+	// Stage 2 - Parser.
+
+	struct Vector ParsedTreeRoots = Vector_Create(struct AST_Node*, 8);
+	{
+		struct ParserProcess Parser = { 0 };
+		Parser.SourceTokens = &Tokens;
+		Parser.RootNodes = &ParsedTreeRoots;
+
+		Parser_Run(&Parser);
+
+		// Handle error, if any.
+		if (Parser.HasError)
+		{
+			Compiler->ErrorCode_Global = COMPILER_PARSER_STAGE_ERROR;
+
+			// TODO: Figure out line & col of error instead of raw buffer location + pass filenames to compiler instead of just the source buffers themselves.
+			Compiler->ErrorMsg = String_CreateFormat_ANSI("PARSER ERROR (%s, Loc = %d) > %s", "<SRC FILENAME>", Parser.Error.Location, Parser.Error.Message.Str);
+			return;
 		}
 	}
 	

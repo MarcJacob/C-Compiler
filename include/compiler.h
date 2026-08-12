@@ -217,7 +217,6 @@ struct DatatypeDef
 
 	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED type.
 	ui8 PointerLevel; // How many pointer indirection layers this has, meaning if > 0, this is a pointer.
-
 };
 
 // Node composing an Abstract Syntax Tree.

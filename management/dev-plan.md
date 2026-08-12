@@ -33,6 +33,9 @@
 
 - Takes any token buffer as input.
 - Outputs a syntax tree representing the grammatical structure of the program.
+- AST node structures (AST_NODE_TYPE, DatatypeDef, AST_Node) defined in include/compiler.h. [DONE]
+- Parser process skeleton: ParserProcess structure, Parser_Error, Parser_Run entry point, wired into Compiler_Run. [DONE]
+- Grammar / parsing logic to actually build the AST from tokens.
 
 ## Step 6 — Symbolizer
 
