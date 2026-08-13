@@ -35,7 +35,13 @@
 - Outputs a syntax tree representing the grammatical structure of the program.
 - AST node structures (AST_NODE_TYPE, DatatypeDef, AST_Node) defined in include/compiler.h. [DONE]
 - Parser process skeleton: ParserProcess structure, Parser_Error, Parser_Run entry point, wired into Compiler_Run. [DONE]
-- Grammar / parsing logic to actually build the AST from tokens.
+- Grammar / parsing logic to actually build the AST from tokens. [WIP]
+  - Datatype parsing (primitive types, specifiers, pointer levels). [DONE]
+  - Top-level dispatch loop (function / struct / global variable) wired into Parser_Run. [DONE]
+  - Function parsing (identifier, parameters, body). [WIP]
+  - Global variable parsing.
+  - Struct parsing.
+  - Expression parsing.
 
 ## Step 6 — Symbolizer
 

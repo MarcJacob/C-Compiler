@@ -122,11 +122,12 @@ enum TOKEN_KEYWORD
 
 	// Type modifiers
 	KEYWORD_STATIC,
+	KEYWORD_SIGNED,
 	KEYWORD_UNSIGNED,
+	KEYWORD_VOLATILE,
 	KEYWORD_STRUCT,
 	KEYWORD_ENUM,
 	KEYWORD_UNION,
-	KEYWORD_VOLATILE,
 
 	// Flow control & Block modifiers
 	KEYWORD_IF,
@@ -143,6 +144,16 @@ enum TOKEN_KEYWORD
 	// Primitive operators
 	KEYWORD_SIZEOF,
 };
+
+inline ui8 Keyword_IsPrimitiveType(enum TOKEN_KEYWORD Keyword)
+{
+	return Keyword >= KEYWORD_VOID && Keyword <= KEYWORD_DOUBLE;
+}
+
+inline ui8 Keyword_IsTypeSpecifier(enum TOKEN_KEYWORD Keyword)
+{
+	return Keyword >= KEYWORD_STATIC && Keyword <= KEYWORD_VOLATILE;
+}
 
 #define IDENTIFIER_MAX_LENGTH (128)
 
@@ -180,6 +191,7 @@ enum AST_NODE_TYPE
 	AST_NODE_VARIABLE,		// Global, Local, Structure or Param Variable.
 	AST_NODE_STRUCT,		// Structure definition or declaration.
 	AST_NODE_ENUM,			// Enumeration definition or declaration.
+	AST_NODE_EXPRESSION,	// Expression with or without a compile-time result.
 };
 
 // Values for primitive data types + an extra value indicating the type is user-defined. 
@@ -199,12 +211,12 @@ enum DATATYPE
 // Flags modifying the behavior / definition of a datatype.
 enum DATATYPE_FLAGS
 {
-	IS_UNSIGNED,
-	IS_STATIC,
-	IS_VOLATILE,
-	IS_STRUCT,
-	IS_UNION,
-	IS_ENUM,
+	DATATYPE_IS_UNSIGNED = 1 << 0,
+	DATATYPE_IS_STATIC = 1 << 1,
+	DATATYPE_IS_VOLATILE = 1 << 2,
+	DATATYPE_IS_STRUCT = 1 << 3,
+	DATATYPE_IS_UNION = 1 << 4,
+	DATATYPE_IS_ENUM = 1 << 5,
 };
 
 // Definition for a value type associated to a variable or a function.
@@ -260,6 +272,15 @@ struct AST_Node
 			struct Vector Members; // Vector type = AST_Node*
 		} Struct;
 
+		struct
+		{
+			struct DatatypeDef ResultType; // Expected return type for this expression.
+			struct AST_Node* LeftOperand; // Operand node (can be sub-expression) left of the operator / unique operand for unary operators.
+			struct AST_Node* RightOperand; // Operand node (can be sub-expression) right of the operator / empty for unary operators.
+
+			enum TOKEN_SYMBOL OperatorSymbol; // Contains the actual operator to apply over the operand(s).
+
+		} Expression;
 
 	} Val;
 };

@@ -10,6 +10,7 @@ struct ParserProcess
 {
 	// Input
 	struct Vector* SourceTokens; // Vector type = struct Token
+	ui32 TokenIndex; // Index of next token to be read.
 
 	// Output
 	struct Vector* RootNodes; // Vector type = struct AST_Node*. Main output.
