@@ -235,12 +235,16 @@ struct DatatypeDef
 struct AST_Node
 {
 	enum AST_NODE_TYPE Type;
+	ui32 BufferLocation; // Source buffer location associated with this node.
+	// TODO: Consider making this a full-blown token pointer / copy of the "main token" behind this node instead,
+	// so as much information as possible can be kept.
 
 	union
 	{
 		struct
 		{
 			struct DatatypeDef ReturnType;
+			struct String_ANSI Name;
 			struct Vector Params; // Vector type = AST_Node* (Parameter variables in order of declaration)
 			struct Vector LocalVars; // Vector type = AST_Node* (Local variables within the function, in order of declaration)
 
@@ -263,12 +267,13 @@ struct AST_Node
 		struct
 		{
 			struct DatatypeDef Type;
+			struct String_ANSI Name;
 			ui64 ArraySize; // If > 0, this variable is an array for whatever type is contains.
 		} Variable;
 
 		struct
 		{
-			struct DatatypeDef Type; // "Final" Datatype def for this structure.
+			struct DatatypeDef Type; // "Final" Datatype def for this structure. Also contains the structure's name.
 			struct Vector Members; // Vector type = AST_Node*
 		} Struct;
 

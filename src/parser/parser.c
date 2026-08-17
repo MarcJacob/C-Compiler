@@ -29,7 +29,14 @@ ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
 {
 	ASSERT(Parser->SourceTokens->Size > 0);
 
-	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->TokenIndex - 1))->BufferLocation;
+	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->SourceTokens->Size - 1))->BufferLocation;
+}
+
+static struct AST_Node* AllocNewNode()
+{
+	struct AST_Node* NewNode = calloc(1, sizeof(struct AST_Node));
+	ASSERT(NewNode != NULL);
+	return NewNode;
 }
 
 // Attempts to parse the next few tokens into a DatatypeDef structure.
@@ -182,7 +189,7 @@ ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDataty
 			goto PARSE_FAIL;
 		}
 
-		NextToken = Parser_NextToken(Parser);
+		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -216,7 +223,8 @@ ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDataty
 	// Parse pointer levels.
 	while (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_STAR)
 	{
-		NextToken = Parser_NextToken(Parser);
+		Parser_NextToken(Parser);
+		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -272,6 +280,8 @@ void Parser_Run(struct ParserProcess* Parser)
 				{
 					ParserLoc = Parser_PeekToken(Parser)->BufferLocation;
 				}
+				// TODO: Improve this error message by adding a general "print token" function so we can
+				// indicate exactly what was wrong alongside the exact file, line and col.
 				Parser_Error(Parser, ParserLoc, "Unknown error while parsing.");
 			}
 
@@ -300,16 +310,116 @@ ui8 ParseGlobalVariable(struct ParserProcess* Parser)
 ui8 ParseFunction(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* FunctionNode = NULL;
+
+	// Attempt to parse a specific sequence:
+	// - A return type
+	// - An identifier
+	// - Open parenthesis symbol
+	// - 0 or more comma-separated variable declarations
+	// - Closing parenthesis symbol
+	// - Either a semicolon or a block
 
 	struct DatatypeDef ReturnType;
 	if (!ParseDatatypeDef(Parser, &ReturnType))
 	{
-		// Not a function.
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (FunctionNode != NULL) free(FunctionNode);
 		return 0;
 	}
+	struct Token* NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	// TODO: Parse function identifier and parameters for declaration. Attempt to parse a body with it for a full definition.
-	return 0;
+	struct Token* IdentifierToken = NextToken;
+	if (IdentifierToken->Type != TOKEN_IDENTIFIER)
+	{
+		goto PARSE_FAIL;
+	}
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (NextToken->Type != TOKEN_SYMBOL || NextToken->Val.Symbol != SYMBOL_PARENTHESIS_OPEN)
+	{
+		goto PARSE_FAIL;
+	}
+
+	// At this point this MUST be a function, so any failure is an error case.
+	FunctionNode = AllocNewNode();
+	FunctionNode->Type = AST_NODE_FUNCTION;
+	FunctionNode->BufferLocation = IdentifierToken->BufferLocation;
+
+	FunctionNode->Val.Function.Name = IdentifierToken->Val.Identifier;
+	FunctionNode->Val.Function.ReturnType = ReturnType;
+	FunctionNode->Val.Function.Params = Vector_Create(struct AST_Node*, 0);
+	FunctionNode->Val.Function.LocalVars = Vector_Create(struct AST_Node*, 0);
+
+
+	// Look for parameters.
+
+	struct DatatypeDef ParamType;
+	while (ParseDatatypeDef(Parser, &ParamType))
+	{
+		NextToken = Parser_NextToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		if (NextToken->Type != TOKEN_IDENTIFIER)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing function parameter.");
+			goto PARSE_FAIL;
+		}
+
+		struct AST_Node* ParamNode = AllocNewNode();
+		ParamNode->Type = AST_NODE_VARIABLE;
+		ParamNode->BufferLocation = NextToken->BufferLocation;
+		ParamNode->Val.Variable.Name = NextToken->Val.Identifier;
+		ParamNode->Val.Variable.Type = ParamType;
+
+		Vector_Push(FunctionNode->Val.Function.Params, struct AST_Node*, ParamNode);
+		
+		NextToken = Parser_NextToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_COMMA)
+		{
+			// Parse next param...
+			continue;
+		}
+
+		// Done parsing params.
+		break;
+	}
+
+	if (NextToken->Type != TOKEN_SYMBOL || NextToken->Val.Symbol != SYMBOL_PARENTHESIS_CLOSE)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected closing parenthesis when parsing function.");
+		goto PARSE_FAIL;
+	}
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_SEMICOLON)
+	{
+		// Parse as declaration. Nothing else to be done.
+	}
+	else if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_BRACE_OPEN)
+	{
+		// Parse as definition.
+		// Parse block (TODO).
+		Parser_Error(Parser, NextToken->BufferLocation, "Function block parsing not implemented.");
+		goto PARSE_FAIL;
+	}
+	else
+	{
+		// Unexpected symbol.
+		Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token when parsing function.");
+		goto PARSE_FAIL;
+	}
+
+	// Parse successful. Add to parser output.
+	Vector_Push(*Parser->RootNodes, struct AST_Node*, FunctionNode);
+	return 1;
 }
 
 ui8 ParseStruct(struct ParserProcess* Parser)
