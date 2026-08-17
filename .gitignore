@@ -21,3 +21,5 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 *.cmake
+CMakePresets.json
+CMakeSettings.json
