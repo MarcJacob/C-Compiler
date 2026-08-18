@@ -79,7 +79,8 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_MODULO,				// %
 
 	SYMBOL_OP_AND,					// &&
-	SYMBOL_OP_BITWISE_AND,			// &
+	SYMBOL_OP_BITWISE_AND,			// & (Used for both bitwise AND and Address Of. Thanks again.)
+	SYMBOL_OP_ADDRESS_OF = SYMBOL_OP_BITWISE_AND,
 	SYMBOL_OP_OR,					// ||
 	SYMBOL_OP_BITWISE_OR,			// |
 	SYMBOL_OP_BITWISE_XOR,			// ^
@@ -107,6 +108,63 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_LEFT_SHIFT_ASSIGN,	// <<=
 	SYMBOL_OP_RIGHT_SHIFT_ASSIGN,	// >>=
 };
+
+static inline ui8 Symbol_IsUnaryOperator(enum TOKEN_SYMBOL Symbol)
+{
+	switch (Symbol)
+	{
+		case SYMBOL_OP_INCREMENT:
+		case SYMBOL_OP_DECREMENT:
+		case SYMBOL_OP_ADD:
+		case SYMBOL_OP_SUB:
+		case SYMBOL_OP_NOT:
+		case SYMBOL_OP_BITWISE_REVERSE:
+		case SYMBOL_OP_DEREF:
+		case SYMBOL_OP_ADDRESS_OF:
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
+{
+	switch (Symbol)
+	{
+		case SYMBOL_OP_ADD:
+		case SYMBOL_OP_SUB:
+		case SYMBOL_OP_MULT:
+		case SYMBOL_OP_DIV:
+		case SYMBOL_OP_MODULO:
+		case SYMBOL_OP_AND:
+		case SYMBOL_OP_BITWISE_AND:
+		case SYMBOL_OP_OR:
+		case SYMBOL_OP_BITWISE_OR:
+		case SYMBOL_OP_BITWISE_XOR:
+		case SYMBOL_OP_RIGHT_SHIFT:
+		case SYMBOL_OP_GREATER_EQUAL:
+		case SYMBOL_OP_GREATER:
+		case SYMBOL_OP_LEFT_SHIFT:
+		case SYMBOL_OP_LOWER_EQUAL:
+		case SYMBOL_OP_LOWER:
+		case SYMBOL_OP_EQUAL:
+		case SYMBOL_OP_ASSIGN:
+		case SYMBOL_OP_UNEQUAL:
+		case SYMBOL_OP_ADD_ASSIGN:
+		case SYMBOL_OP_SUB_ASSIGN:
+		case SYMBOL_OP_MULT_ASSIGN:
+		case SYMBOL_OP_DIV_ASSIGN:
+		case SYMBOL_OP_MODULO_ASSIGN:
+		case SYMBOL_OP_BITWISE_AND_ASSIGN:
+		case SYMBOL_OP_BITWISE_OR_ASSIGN:
+		case SYMBOL_OP_BITWISE_XOR_ASSIGN:
+		case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
+		case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
+			return 1;
+		default:
+			return 0;
+	}
+}
 
 // All possible values for a Keyword token.
 enum TOKEN_KEYWORD
@@ -149,6 +207,7 @@ inline ui8 Keyword_IsPrimitiveType(enum TOKEN_KEYWORD Keyword)
 {
 	return Keyword >= KEYWORD_VOID && Keyword <= KEYWORD_DOUBLE;
 }
+
 
 inline ui8 Keyword_IsTypeSpecifier(enum TOKEN_KEYWORD Keyword)
 {

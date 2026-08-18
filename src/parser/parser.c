@@ -128,7 +128,7 @@ static struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
 static struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
 static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
 static struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
-static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parser, ui8 ParenthesisLevel);
+static struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 ParenthesisLevel, enum TOKEN_SYMBOL EndSymbol);
 
 static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 
@@ -478,7 +478,7 @@ static struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Pars
 		goto PARSE_FAIL;
 	}
 
-	struct AST_Node* ConditionNode = ParseExpressionStatementNode(Parser, 0);
+	struct AST_Node* ConditionNode = ParseExpressionNode(Parser, 0);
 	if (ConditionNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional block expression.");
@@ -565,7 +565,7 @@ static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	InstructionNode->BufferLocation = NextToken->BufferLocation;
 
 	// First statement is initial and goes first in the instructions vector.
-	InstructionNode->Val.Statement.For.InitExpression = ParseExpressionStatementNode(Parser, 0);
+	InstructionNode->Val.Statement.For.InitExpression = ParseExpressionNode(Parser, 0, SYMBOL_SEMICOLON);
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -575,7 +575,7 @@ static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode->Val.Statement.For.LoopCondition = ParseExpressionStatementNode(Parser, 0);	
+	InstructionNode->Val.Statement.For.LoopCondition = ParseExpressionNode(Parser, 0, SYMBOL_SEMICOLON);	
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -585,7 +585,7 @@ static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode->Val.Statement.For.PostLoopExpression = ParseExpressionStatementNode(Parser, 0);
+	InstructionNode->Val.Statement.For.PostLoopExpression = ParseExpressionNode(Parser, 0, SYMBOL_PARENTHESIS_CLOSE);
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -616,22 +616,25 @@ static struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
-static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parser, ui8 ParenthesisLevel)
+static struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 ParenthesisLevel, enum TOKEN_SYMBOL EndSymbol)
 {
-	// Expression parsing: Recursive approach with "base cases" being:
-	// - Literal values
-	// - Identifiers
-	// Outside those cases, the expression always (outside of function calls) defers to parsing:
-	// - A left operand, if any.
-	// - An operator.
-	// - A right operand, if any.
-	// The exact operator is determined with the corresponding symbol and sometimes with the presence / absence of a left / right operand.
-	// In the case of function calls, we read a series of expressions separated by commas as parameters.
+	/*
+		Expression Parsing:
+		- Run a loop parsing "expressionables". Expressionables are components of expressions in the form of "temporary" expression nodes.
+		- Keep a buffer of up to one expressionable that isn't yet "used" and keep looking forward.
+		- When reaching a "Stop Point" (closing parenthesis making us reach back above entry parenthesis level or the EndSymbol if ParenthesisLevel == 0),
+			output current buffered expressionable as the root expression.
+		- The other valid case is reaching an operator that makes sense contextually. This will trigger the recursive parsing of a child right operand node if necessary.
+		- Parenthesis level is checked every time a new expressionable or child expression node has been parsed, aswell as the start & end of the algorithm.
+		- So long as a stop point isn't reached, the process continues, buffering the latest expression(able) that was parsed, and applying binary operator precedence if necessary.
+	*/
 
 	int StartTokenIndex = Parser->TokenIndex;
+	int EntryParenthesisLevel = ParenthesisLevel; // If local parenthesis level ever gets below entry, parsing stops.
 	struct AST_Node* ExpressionNode = NULL;
 
-	struct Token* NextToken = Parser_PeekToken(Parser);
+
+	struct Token* NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
@@ -642,63 +645,7 @@ static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parse
 		return NULL;
 	}
 
-	ExpressionNode = AllocNewNode(AST_NODE_EXPRESSION);
-	ExpressionNode->BufferLocation = NextToken->BufferLocation;
-
-	// Handle base cases (Literals & Identifiers).
-	if (NextToken->Type == TOKEN_LITERAL_CHAR)
-	{
-		ExpressionNode->Val.Expression.Type = EXP_LITERAL_CHAR;
-		ExpressionNode->Val.Expression.Literal.Character = NextToken->Val.LiteralCharacter;
-
-		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Char();
-
-		Parser_NextToken(Parser);
-		return ExpressionNode;
-	}
-	if (NextToken->Type == TOKEN_LITERAL_STRING)
-	{
-		ExpressionNode->Val.Expression.Type = EXP_LITERAL_STRING;
-		ExpressionNode->Val.Expression.Literal.String = NextToken->Val.LiteralString;
-
-		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_String();
-
-		Parser_NextToken(Parser);
-		return ExpressionNode;
-	}
-	if (NextToken->Type == TOKEN_LITERAL_NUMBER_INT)
-	{
-		ExpressionNode->Val.Expression.Type = EXP_LITERAL_INT;
-		ExpressionNode->Val.Expression.Literal.Integer = NextToken->Val.LiteralNumber.Integer;
-
-		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
-
-		Parser_NextToken(Parser);
-		return ExpressionNode;
-	}
-	if (NextToken->Type == TOKEN_LITERAL_NUMBER_FLOAT)
-	{
-		ExpressionNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
-		ExpressionNode->Val.Expression.Literal.FloatingPoint = NextToken->Val.LiteralNumber.Float;
-
-		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Float();
-
-		Parser_NextToken(Parser);
-		return ExpressionNode;
-	}
-	if (NextToken->Type == TOKEN_LITERAL_NUMBER_DOUBLE)
-	{
-		ExpressionNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
-		ExpressionNode->Val.Expression.Literal.FloatingPoint = NextToken->Val.LiteralNumber.Double;
-
-		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Double();
-
-		Parser_NextToken(Parser);
-		return ExpressionNode;
-	}
-
-	Parser_Error(Parser, NextToken->BufferLocation, "Non-literal expression parsing is unimplemented.");
-	goto PARSE_FAIL;
+	// ...
 }
 
 static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
@@ -736,7 +683,7 @@ static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	}
 	else
 	{
-		InstructionNode = ParseExpressionStatementNode(Parser, 0);
+		InstructionNode = ParseExpressionNode(Parser, 0, SYMBOL_SEMICOLON);
 	}
 
 	if (InstructionNode == NULL)
