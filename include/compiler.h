@@ -238,9 +238,10 @@ struct DatatypeDef
 
 enum EXPRESSION_TYPE
 {
-	EXP_LITERAL_INT, // Expression is just a literal whole number.
+	EXP_LITERAL_INT, // Expression is a literal whole number.
 	EXP_LITERAL_FLOAT, // Expression is a literal floating-point number.
 	EXP_LITERAL_STRING, // Expression is a literal string.
+	EXP_LITERAL_CHAR, // Expression is a literal character.
 
 	EXP_VARIABLE, // Expression reads a variable value.
 
@@ -360,6 +361,7 @@ struct AST_Node
 				{
 					i64 Integer;
 					double FloatingPoint;
+					char Character;
 					struct String_ANSI String;
 				} Literal;
 

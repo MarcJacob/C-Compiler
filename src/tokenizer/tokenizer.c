@@ -330,7 +330,7 @@ PARSE_FAIL:
 			goto PARSE_FAIL;
 		}
 
-		NextChar = CharBufferReader_ReadNext(&SourceReader);
+		NextChar = CharBufferReader_PeekNext(&SourceReader);
 		ui8 ValidChar =		(IsBinary && (NextChar == '0' || NextChar == '1'))
 					|| (	(IsDecimal || IsHex) && NextChar >= '0' && NextChar <= '9')
 					|| (	IsHex && (NextChar >= 'A' && NextChar <= 'F') || (NextChar >= 'a' && NextChar <= 'f'))
@@ -350,6 +350,9 @@ PARSE_FAIL:
 			
 			break; // If none of the above error cases matched, break out of the loop !
 		}
+
+		// Consume number character.
+		CharBufferReader_ReadNext(&SourceReader);
 
 		NumStrBuffer[FigureCount] = NextChar;
 	}

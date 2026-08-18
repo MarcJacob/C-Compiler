@@ -50,6 +50,73 @@ static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD Keywor
 	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
 }
 
+#define POINTER_SIZE (_WIN64 ? 8 : 4)
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Void() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 0;
+	Def.Type = DATATYPE_VOID;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Char() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 1;
+	Def.Type = DATATYPE_CHAR;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Short()
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 2;
+	Def.Type = DATATYPE_SHORT;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Int32() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 4;
+	Def.Type = DATATYPE_INT32;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Int64() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 8;
+	Def.Type = DATATYPE_INT64;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Float() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 4;
+	Def.Type = DATATYPE_FLOAT;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Double() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 8;
+	Def.Type = DATATYPE_DOUBLE;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_String() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.PointerLevel = 1;
+	Def.Size = POINTER_SIZE;
+	Def.Type = DATATYPE_CHAR;
+	return Def;
+}
+
 // Attempts to parse the next few tokens into a DatatypeDef structure.
 // AllowVoid determines whether non-pointer void type is considered valid.
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
@@ -118,6 +185,7 @@ void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Form
 	va_end(args);
 }
 
+
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
 	ui8 AllowVoid)
 {
@@ -151,10 +219,12 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		return 0;
 	}
 
+	enum DATATYPE_FLAGS Flags = 0;
+
 	// Check for static-ness.
 	if (NextToken->Val.Keyword == KEYWORD_STATIC)
 	{
-		OutDatatypeDef->Flags = DATATYPE_IS_STATIC;
+		Flags = DATATYPE_IS_STATIC;
 		NextToken = Parser_NextToken(Parser);
 		if (NextToken == NULL)
 		{
@@ -184,7 +254,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Determine volatility.
 	if (NextToken->Val.Keyword == KEYWORD_VOLATILE)
 	{
-		OutDatatypeDef->Flags |= DATATYPE_IS_VOLATILE;
+		Flags |= DATATYPE_IS_VOLATILE;
 		NextToken = Parser_NextToken(Parser);
 		if (NextToken == NULL)
 		{
@@ -193,7 +263,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 
 	// Determine signage.
-	OutDatatypeDef->Flags |= DATATYPE_IS_UNSIGNED * (NextToken->Val.Keyword == KEYWORD_UNSIGNED);
+	Flags |= DATATYPE_IS_UNSIGNED * (NextToken->Val.Keyword == KEYWORD_UNSIGNED);
 	ui8 SignKeywordPresent = 0;
 	if (NextToken->Val.Keyword == KEYWORD_SIGNED
 		|| NextToken->Val.Keyword == KEYWORD_UNSIGNED)
@@ -208,8 +278,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		// If signage keyword is present and next token isn't a primitive type, then the signage alone represents a 32 bits integer.
 		if (NextToken->Type != TOKEN_KEYWORD || !Keyword_IsPrimitiveType(NextToken->Val.Keyword))
 		{
-			OutDatatypeDef->Type = DATATYPE_INT32;
-			OutDatatypeDef->Size = 4;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
 		}
 	}
 
@@ -224,24 +293,20 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-			OutDatatypeDef->Type = DATATYPE_VOID;
-			OutDatatypeDef->Size = _WIN64 * 4 + 4; // Assume this will be a pointer of a least a single level of indirection.
+			
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Void();
 			break;
 		case KEYWORD_CHAR:
-			OutDatatypeDef->Type = DATATYPE_CHAR;
-			OutDatatypeDef->Size = 1;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Char();
 			break;
 		case KEYWORD_SHORT:
-			OutDatatypeDef->Type = DATATYPE_SHORT;
-			OutDatatypeDef->Size = 2;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Short();
 			break;
 		case KEYWORD_INT:
-			OutDatatypeDef->Type = DATATYPE_INT32;
-			OutDatatypeDef->Size = 4;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
 			break;
 		case KEYWORD_LONG:
-			OutDatatypeDef->Type = DATATYPE_INT64;
-			OutDatatypeDef->Size = 8;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int64();
 			break;
 		case KEYWORD_FLOAT:
 			if (SignKeywordPresent)
@@ -249,9 +314,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-
-			OutDatatypeDef->Type = DATATYPE_FLOAT;
-			OutDatatypeDef->Size = 4;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Float();
 			break;
 		case KEYWORD_DOUBLE:
 			if (SignKeywordPresent)
@@ -259,9 +322,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-
-			OutDatatypeDef->Type = DATATYPE_DOUBLE;
-			OutDatatypeDef->Size = 8;
+			*OutDatatypeDef = GetPrimitiveDatatypeDef_Double();
 			break;
 		default:
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected keyword.");
@@ -280,8 +341,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			if (NextToken->Type != TOKEN_KEYWORD || NextToken->Val.Keyword != KEYWORD_LONG)
 			{
 				// Retrograde back to INT32. TODO: Handle long double.
-				OutDatatypeDef->Type = DATATYPE_INT32;
-				OutDatatypeDef->Size = 4;
+				*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
 			}
 			else
 			{
@@ -289,14 +349,6 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				NextToken = Parser_NextToken(Parser);
 			}
 		}
-	}
-
-	// By this point we MUST have a valid size.
-	if (OutDatatypeDef->Size == 0)
-	{
-		// Something didn't make sense...
-		Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
-		goto PARSE_FAIL;
 	}
 
 	// Parse pointer levels.
@@ -310,6 +362,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		}
 
 		OutDatatypeDef->PointerLevel++;
+		OutDatatypeDef->Size = POINTER_SIZE;
 	}
 
 	// Check specific error case - non-pointer VOID type.
@@ -318,6 +371,9 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 		goto PARSE_FAIL;
 	}
+
+	// Apply flags and return.
+	OutDatatypeDef->Flags = Flags;
 
 PARSE_SUCCESS:
 	return 1;
@@ -572,8 +628,77 @@ static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parse
 	// The exact operator is determined with the corresponding symbol and sometimes with the presence / absence of a left / right operand.
 	// In the case of function calls, we read a series of expressions separated by commas as parameters.
 
-	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expression statement parsing not implemented.");
-	return NULL;
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* ExpressionNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Expression statement.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (ExpressionNode != NULL) free(ExpressionNode);
+		return NULL;
+	}
+
+	ExpressionNode = AllocNewNode(AST_NODE_EXPRESSION);
+	ExpressionNode->BufferLocation = NextToken->BufferLocation;
+
+	// Handle base cases (Literals & Identifiers).
+	if (NextToken->Type == TOKEN_LITERAL_CHAR)
+	{
+		ExpressionNode->Val.Expression.Type = EXP_LITERAL_CHAR;
+		ExpressionNode->Val.Expression.Literal.Character = NextToken->Val.LiteralCharacter;
+
+		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Char();
+
+		Parser_NextToken(Parser);
+		return ExpressionNode;
+	}
+	if (NextToken->Type == TOKEN_LITERAL_STRING)
+	{
+		ExpressionNode->Val.Expression.Type = EXP_LITERAL_STRING;
+		ExpressionNode->Val.Expression.Literal.String = NextToken->Val.LiteralString;
+
+		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_String();
+
+		Parser_NextToken(Parser);
+		return ExpressionNode;
+	}
+	if (NextToken->Type == TOKEN_LITERAL_NUMBER_INT)
+	{
+		ExpressionNode->Val.Expression.Type = EXP_LITERAL_INT;
+		ExpressionNode->Val.Expression.Literal.Integer = NextToken->Val.LiteralNumber.Integer;
+
+		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+
+		Parser_NextToken(Parser);
+		return ExpressionNode;
+	}
+	if (NextToken->Type == TOKEN_LITERAL_NUMBER_FLOAT)
+	{
+		ExpressionNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
+		ExpressionNode->Val.Expression.Literal.FloatingPoint = NextToken->Val.LiteralNumber.Float;
+
+		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Float();
+
+		Parser_NextToken(Parser);
+		return ExpressionNode;
+	}
+	if (NextToken->Type == TOKEN_LITERAL_NUMBER_DOUBLE)
+	{
+		ExpressionNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
+		ExpressionNode->Val.Expression.Literal.FloatingPoint = NextToken->Val.LiteralNumber.Double;
+
+		ExpressionNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Double();
+
+		Parser_NextToken(Parser);
+		return ExpressionNode;
+	}
+
+	Parser_Error(Parser, NextToken->BufferLocation, "Non-literal expression parsing is unimplemented.");
+	goto PARSE_FAIL;
 }
 
 static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)

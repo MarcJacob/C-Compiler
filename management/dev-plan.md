@@ -42,7 +42,7 @@
   - Statement parsing (block, if/while, for skeleton, switch stub, expressions / flow control / var dec & def stubs). [WIP]
   - Global variable parsing.
   - Struct parsing.
-  - Expression parsing.
+  - Expression parsing. [WIP]
 
 ## Step 6 — Symbolizer
 
