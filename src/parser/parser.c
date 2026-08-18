@@ -40,7 +40,9 @@ static struct AST_Node* AllocNewNode()
 }
 
 // Attempts to parse the next few tokens into a DatatypeDef structure.
-ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef)
+// AllowVoid determines whether non-pointer void type is considered valid.
+ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
+	ui8 AllowVoid)
 {
 	ui32 StartIndex = Parser->TokenIndex;
 
@@ -234,7 +236,7 @@ ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDataty
 	}
 
 	// Check specific error case - non-pointer VOID type.
-	if (OutDatatypeDef->Type == DATATYPE_VOID && OutDatatypeDef->PointerLevel == 0)
+	if (!AllowVoid && OutDatatypeDef->Type == DATATYPE_VOID && OutDatatypeDef->PointerLevel == 0)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 		goto PARSE_FAIL;
@@ -321,7 +323,7 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 	// - Either a semicolon or a block
 
 	struct DatatypeDef ReturnType;
-	if (!ParseDatatypeDef(Parser, &ReturnType))
+	if (!ParseDatatypeDef(Parser, &ReturnType, 1))
 	{
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function.");
@@ -361,7 +363,7 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 	// Look for parameters.
 
 	struct DatatypeDef ParamType;
-	while (ParseDatatypeDef(Parser, &ParamType))
+	while (ParseDatatypeDef(Parser, &ParamType, 0))
 	{
 		NextToken = Parser_NextToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;

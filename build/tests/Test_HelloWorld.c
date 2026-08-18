@@ -5,7 +5,7 @@
 	Test multi-line comment.
 */
 
-int foo();
+void foo();
 int main(int argc, char** argv);
 
 /*
