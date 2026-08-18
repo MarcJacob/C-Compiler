@@ -296,6 +296,8 @@ void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
 	{
 		// Create new buffer, copy old buffer into it if it exists and zero out extra characters.
 		char* NewStringBuffer = malloc(NewCapacity);
+		ASSERT(NewStringBuffer != NULL);
+
 		if (Str->Str != NULL)
 		{
 			memcpy(NewStringBuffer, Str->Str, Str->_Capacity);

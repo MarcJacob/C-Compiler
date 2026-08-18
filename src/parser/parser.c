@@ -32,16 +32,86 @@ ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
 	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->SourceTokens->Size - 1))->BufferLocation;
 }
 
-static struct AST_Node* AllocNewNode()
+static struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
 {
 	struct AST_Node* NewNode = calloc(1, sizeof(struct AST_Node));
 	ASSERT(NewNode != NULL);
+
+	NewNode->Type = NodeType;
 	return NewNode;
 }
 
+static ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch);
+static ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch);
+
 // Attempts to parse the next few tokens into a DatatypeDef structure.
 // AllowVoid determines whether non-pointer void type is considered valid.
-ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
+static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
+	ui8 AllowVoid);
+
+static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser);
+
+// Root Parser functions
+
+// Attempts to parse a new AST, covering a Global Variable symbol declaration and optionally its definition.
+ui8 ParseGlobal_Variable(struct ParserProcess* Parser);
+
+// Attempts to parse a new AST, covering a Function symbol declaration and optionally its definition.
+ui8 ParseGlobal_Function(struct ParserProcess* Parser);
+
+// Attempts to parse a new AST, covering a Struct declaration and optionally its definition.
+ui8 ParseGlobal_Struct(struct ParserProcess* Parser);
+
+// Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
+// in the RootNodes vector in the Process.
+void Parser_Run(struct ParserProcess* Parser)
+{
+	ASSERT(Parser->SourceTokens != NULL);
+	ASSERT(Parser->RootNodes != NULL);
+
+	while (Parser_PeekToken(Parser) != NULL)
+	{
+		// Attempt to parse AST Node trees in an arbitrary order.
+		if (	ParseGlobal_Function(Parser)
+			||	ParseGlobal_Struct(Parser)
+			||	ParseGlobal_Variable(Parser))
+		{
+			// Successfully parsed node tree.
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+
+void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...)
+{
+	if (Parser->HasError) return; // For now this means we follow a "most specific error only" model.
+	// Later we may want to bubble up the entire "Error hierarchy".
+
+	Parser->HasError = 1;
+	Parser->Error.Location = BufferLoc;
+
+	va_list args;
+	va_start(args, Format);
+	Parser->Error.Message = String_CreateFormatV_ANSI(Format, args);
+	va_end(args);
+}
+
+static ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_SYMBOL && Token->Val.Symbol == SymbolMatch;
+}
+
+static ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
+}
+
+static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
 	ui8 AllowVoid)
 {
 	ui32 StartIndex = Parser->TokenIndex;
@@ -223,7 +293,7 @@ ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDataty
 	}
 
 	// Parse pointer levels.
-	while (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_STAR)
+	while (Token_IsSymbol(NextToken, SYMBOL_STAR))
 	{
 		Parser_NextToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
@@ -246,70 +316,311 @@ PARSE_SUCCESS:
 	return 1;
 }
 
-// Root Parser functions
-
-// Attempts to parse a new AST, covering a Global Variable symbol declaration and optionally its definition.
-ui8 ParseGlobalVariable(struct ParserProcess* Parser);
-
-// Attempts to parse a new AST, covering a Function symbol declaration and optionally its definition.
-ui8 ParseFunction(struct ParserProcess* Parser);
-
-// Attempts to parse a new AST, covering a Struct declaration and optionally its definition.
-ui8 ParseStruct(struct ParserProcess* Parser);
-
-// Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
-// in the RootNodes vector in the Process.
-void Parser_Run(struct ParserProcess* Parser)
+// Parses a block of instructions, defined as a indefinite amount of sequential instructions
+// located between two braces.
+struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 {
-	ASSERT(Parser->SourceTokens != NULL);
-	ASSERT(Parser->RootNodes != NULL);
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* BlockNode = NULL;
 
-	while (Parser_PeekToken(Parser) != NULL)
+	struct Token* NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL)
 	{
-		// Attempt to parse AST Node trees in an arbitrary order.
-		if (	ParseFunction(Parser)
-			||	ParseStruct(Parser)
-			||	ParseGlobalVariable(Parser))
-		{
-			// Successfully parsed node tree.
-		}
-		else
-		{
-			if (!Parser->HasError)
-			{
-				ui32 ParserLoc = Parser_GetLastTokenBufferLoc(Parser);
-				if (Parser_PeekToken(Parser) != NULL)
-				{
-					ParserLoc = Parser_PeekToken(Parser)->BufferLocation;
-				}
-				// TODO: Improve this error message by adding a general "print token" function so we can
-				// indicate exactly what was wrong alongside the exact file, line and col.
-				Parser_Error(Parser, ParserLoc, "Unknown error while parsing.");
-			}
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (BlockNode != NULL) free(BlockNode);
+		return NULL;
+	}
 
-			break;
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected '{' token.");
+		goto PARSE_FAIL;
+	}
+
+	BlockNode = AllocNewNode(AST_NODE_INSTRUCTION_BLOCK);
+	BlockNode->BufferLocation = NextToken->BufferLocation;
+	BlockNode->Val.Instruction.Block.Instructions = Vector_Create(struct AST_Node*, 0);
+
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+	{
+		// Parse instructions on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
+
+		struct AST_Node* NextInstruction = ParseInstructionNode(Parser);
+		while (NextInstruction != NULL)
+		{
+			Vector_Push(BlockNode->Val.Instruction.Block.Instructions, struct AST_Node*, NextInstruction);
+
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+			if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE)) break;
+
+			NextInstruction = ParseInstructionNode(Parser);
+		}
+
+		if (Parser->HasError)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing instructions block.");
+			goto PARSE_FAIL;
 		}
 	}
+
+	NextToken = Parser_NextToken(Parser);
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected '}' token");
+		goto PARSE_FAIL;
+	}
+
+	return BlockNode;
 }
 
-void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...)
+// Parses an instruction block with either IF or WHILE modifier.
+struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser)
 {
-	Parser->HasError = 1;
-	Parser->Error.Location = BufferLoc;
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* InstructionNode = NULL;
 
-	va_list args;
-	va_start(args, Format);
-	Parser->Error.Message = String_CreateFormatV_ANSI(Format, args);
-	va_end(args);
+	struct Token* NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing conditional instruction.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (InstructionNode != NULL) free(InstructionNode);
+		return NULL;
+	}
+
+	ui8 IsWhile = Token_IsKeyword(NextToken, KEYWORD_WHILE);
+	if (	!IsWhile
+		&&	!Token_IsKeyword(NextToken, KEYWORD_IF))
+	{
+		// Not a conditional block.
+		goto PARSE_FAIL;
+	}
+
+	InstructionNode = AllocNewNode(IsWhile ? AST_NODE_INSTRUCTION_WHILE : AST_NODE_INSTRUCTION_IF);
+	InstructionNode->BufferLocation = NextToken->BufferLocation;
+
+	// Look for an opening parenthesis, a valid expression node, then a closing parenthesis.
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected '(' token.");
+		goto PARSE_FAIL;
+	}
+
+	struct AST_Node* ConditionNode = /* ParseExpressionNode(Parser) */ NULL;
+	if (0 && ConditionNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional block expression.");
+		goto PARSE_FAIL;
+	}
+
+	if (IsWhile)
+	{
+		InstructionNode->Val.Instruction.While.LoopCondition = ConditionNode;
+	}
+	else
+	{
+		InstructionNode->Val.Instruction.If.EntryCondition = ConditionNode;
+	}
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+		goto PARSE_FAIL;
+	}
+
+	struct AST_Node* ExecNode = ParseInstructionNode(Parser);
+	if (ExecNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional instruction.");
+		goto PARSE_FAIL;
+	}
+
+	if (IsWhile)
+	{
+		InstructionNode->Val.Instruction.While.ExecInstruction = ExecNode;
+	}
+	else
+	{
+		InstructionNode->Val.Instruction.If.ExecInstruction = ExecNode;
+
+		// Check for an else instruction.
+		NextToken = Parser_PeekToken(Parser);
+		if (Token_IsKeyword(NextToken, KEYWORD_ELSE))
+		{
+			Parser_NextToken(Parser);
+			InstructionNode->Val.Instruction.If.ExecInstruction_Else = ParseInstructionNode(Parser);
+			if (InstructionNode->Val.Instruction.If.ExecInstruction_Else == NULL)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing else instruction.");
+				goto PARSE_FAIL;
+			}
+		}
+	}
+
+	return InstructionNode;
 }
 
-ui8 ParseGlobalVariable(struct ParserProcess* Parser)
+struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
+{
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* InstructionNode = NULL;
+
+	struct Token* NextToken = Parser_NextToken(Parser);
+	if (!Token_IsKeyword(NextToken, KEYWORD_FOR))
+	{
+		// Not a for instruction.
+		goto PARSE_FAIL;
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing For instruction.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (InstructionNode != NULL) free(InstructionNode);
+		return NULL;
+	}
+
+	// Look for an opening parenthesis, a valid expression node, then a closing parenthesis.
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected '(' token.");
+		goto PARSE_FAIL;
+	}
+
+	InstructionNode = AllocNewNode(AST_NODE_INSTRUCTION_FOR);
+	InstructionNode->BufferLocation = NextToken->BufferLocation;
+
+	// First statement is initial and goes first in the instructions vector.
+	//InstructionNode->Val.Instruction.For.InitStatement = ParseInstructionNode(Parser);
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
+		goto PARSE_FAIL;
+	}
+
+	//InstructionNode->Val.Instruction.For.LoopCondition = ParseInstructionNode(Parser);	
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
+		goto PARSE_FAIL;
+	}
+
+	//InstructionNode->Val.Instruction.For.PostLoopInstruction = ParseInstructionNode(Parser);
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+	}
+
+	InstructionNode->Val.Instruction.For.ExecInstruction = ParseInstructionNode(Parser);
+	if (InstructionNode->Val.Instruction.For.ExecInstruction == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected instruction following FOR instruction.");
+		goto PARSE_FAIL;
+	}
+	return InstructionNode;
+}
+
+struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
+{
+	// TODO: Parse switch statement.
+	// - Keyword check, expression.
+	// - Braces.
+	// - Go through every instruction in the block, ignore cases.
+	// - Case / default keywords followed by a compile-time expression, : then link each to instruction.
+
+	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Switch instruction parsing not implemented.");
+	return NULL;
+}
+
+struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser)
+{
+	// TODO: Parse any type of statement instruction:
+	// - Variable declaration / definition.
+	// - Root expression.
+	// - Flow control keywords (return, goto, break, continue...).
+
+	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Statement instruction parsing not implemented.");
+	return NULL;
+}
+
+// Parses a new Instruction Node, (a single statement or a block).
+struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser)
+{
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* InstructionNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (InstructionNode != NULL) free(InstructionNode);
+		return NULL;
+	}
+
+	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
+	{
+		InstructionNode = ParseBlockInstructionNode(Parser);
+	}
+	else if (Token_IsKeyword(NextToken, KEYWORD_IF)
+		|| Token_IsKeyword(NextToken, KEYWORD_WHILE))
+	{
+		InstructionNode = ParseConditionalInstructionNode(Parser);
+	}
+	else if (Token_IsKeyword(NextToken, KEYWORD_FOR))
+	{
+		InstructionNode = ParseForInstructionNode(Parser);
+	}
+	else if (Token_IsKeyword(NextToken, KEYWORD_SWITCH))
+	{
+		InstructionNode = ParseSwitchInstructionNode(Parser);
+	}
+	else
+	{
+		InstructionNode = ParseStatementInstructionNode(Parser);
+	}
+
+	if (InstructionNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse Instruction node.");
+		goto PARSE_FAIL;
+	}
+
+	return InstructionNode;
+}
+
+ui8 ParseGlobal_Variable(struct ParserProcess* Parser)
 {
 	// UNIMPLEMENTED.
 	return 0;
 }
 
-ui8 ParseFunction(struct ParserProcess* Parser)
+ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* FunctionNode = NULL;
@@ -344,20 +655,18 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	if (NextToken->Type != TOKEN_SYMBOL || NextToken->Val.Symbol != SYMBOL_PARENTHESIS_OPEN)
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{
 		goto PARSE_FAIL;
 	}
 
 	// At this point this MUST be a function, so any failure is an error case.
-	FunctionNode = AllocNewNode();
-	FunctionNode->Type = AST_NODE_FUNCTION;
+	FunctionNode = AllocNewNode(AST_NODE_FUNCTION);
 	FunctionNode->BufferLocation = IdentifierToken->BufferLocation;
 
 	FunctionNode->Val.Function.Name = IdentifierToken->Val.Identifier;
 	FunctionNode->Val.Function.ReturnType = ReturnType;
 	FunctionNode->Val.Function.Params = Vector_Create(struct AST_Node*, 0);
-	FunctionNode->Val.Function.LocalVars = Vector_Create(struct AST_Node*, 0);
 
 
 	// Look for parameters.
@@ -373,8 +682,7 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 			goto PARSE_FAIL;
 		}
 
-		struct AST_Node* ParamNode = AllocNewNode();
-		ParamNode->Type = AST_NODE_VARIABLE;
+		struct AST_Node* ParamNode = AllocNewNode(AST_NODE_VARIABLE);
 		ParamNode->BufferLocation = NextToken->BufferLocation;
 		ParamNode->Val.Variable.Name = NextToken->Val.Identifier;
 		ParamNode->Val.Variable.Type = ParamType;
@@ -383,7 +691,7 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 		
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-		if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_COMMA)
+		if (Token_IsSymbol(NextToken, SYMBOL_COMMA))
 		{
 			// Parse next param...
 			NextToken = Parser_NextToken(Parser);
@@ -396,24 +704,24 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 
 	NextToken = Parser_NextToken(Parser);
 
-	if (NextToken->Type != TOKEN_SYMBOL || NextToken->Val.Symbol != SYMBOL_PARENTHESIS_CLOSE)
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected closing parenthesis when parsing function.");
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected closing parenthesis when parsing function prototype.");
 		goto PARSE_FAIL;
 	}
 
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_SEMICOLON)
+	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
 	{
-		// Parse as declaration. Nothing else to be done.
+		// Parse as declaration. Nothing else to be done other than consuming the token.
+		NextToken = Parser_NextToken(Parser);
 	}
-	else if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_BRACE_OPEN)
+	else if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 	{
 		// Parse as definition.
-		// Parse block (TODO).
-		Parser_Error(Parser, NextToken->BufferLocation, "Function block parsing not implemented.");
-		goto PARSE_FAIL;
+		// First parse a whole block, then go through it and collect any internal variable declarations
+		FunctionNode->Val.Function.Instructions = ParseBlockInstructionNode(Parser);
 	}
 	else
 	{
@@ -427,7 +735,7 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 	return 1;
 }
 
-ui8 ParseStruct(struct ParserProcess* Parser)
+ui8 ParseGlobal_Struct(struct ParserProcess* Parser)
 {
 	// UNIMPLEMENTED.
 	return 0;

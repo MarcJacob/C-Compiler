@@ -186,12 +186,17 @@ struct Token
 // All possible values for the type of an AST Node.
 enum AST_NODE_TYPE
 {
-	AST_NODE_FUNCTION,		// Function definition or declaration.
-	AST_NODE_FUNC_BLOCK,	// Block of instructions and local declarations found inside functions.
 	AST_NODE_VARIABLE,		// Global, Local, Structure or Param Variable.
 	AST_NODE_STRUCT,		// Structure definition or declaration.
 	AST_NODE_ENUM,			// Enumeration definition or declaration.
-	AST_NODE_EXPRESSION,	// Expression with or without a compile-time result.
+	AST_NODE_FUNCTION,		// Function definition or declaration.
+	AST_NODE_INSTRUCTION,	// "Executable" node found inside a block of some kind.
+	AST_NODE_INSTRUCTION_BLOCK,			// Container instruction for other instructions.
+	AST_NODE_INSTRUCTION_STATEMENT,		// "Leaf" instruction executing an expression, a variable declaration / definition or a flow control.
+	AST_NODE_INSTRUCTION_IF,			// Non-looping condition instruction executing the next instruction only if a condition expression returns > 0, or an else instruction if specified.
+	AST_NODE_INSTRUCTION_WHILE,			// Looping condition instruction executing the next instruction only if a condition expression returns > 0 and attempting re-entry.
+	AST_NODE_INSTRUCTION_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
+	AST_NODE_EXPRESSION,	// Expression with or without a compile-time result located inside instructions and variable definitions.
 };
 
 // Values for primitive data types + an extra value indicating the type is user-defined. 
@@ -246,23 +251,55 @@ struct AST_Node
 			struct DatatypeDef ReturnType;
 			struct String_ANSI Name;
 			struct Vector Params; // Vector type = AST_Node* (Parameter variables in order of declaration)
-			struct Vector LocalVars; // Vector type = AST_Node* (Local variables within the function, in order of declaration)
-
-			struct AST_Node* Block; // Root function block if this is the function definition.
+			struct AST_Node* Instructions; // Root instruction block if this is the function definition.
 		} Function;
 
+		// Root type for any executable instruction, located inside a block.
 		struct
 		{
-			struct AST_Node* Condition; // If non-NULL, Single instruction that triggers a block skip.
-
 			union
 			{
-				ui8 Loops;						// Whether execution should loop and attempt to enter the block again after its last instruction.
-				struct AST_Node* FalseBlock;	// Block to be executed only if condition fails. 
+				struct
+				{
+					struct AST_Node* EntryCondition; // Expression node that should resolve to > 0 for initial entry into the block.
+
+					struct AST_Node* ExecInstruction; // Instruction to be executed on successful entry.
+					struct AST_Node* ExecInstruction_Else;	// Instruction to be executed on entry failure.
+				} If;
+				
+				struct
+				{
+					struct AST_Node* EntryCondition; // If non-NULL, expression node that should resolve to > 0 for initial entry into the block.
+					struct AST_Node* LoopCondition; // Expression node that should resolve to > 0 for re-entry.
+
+					struct AST_Node* ExecInstruction; // Instruction executed on each loop.
+				} While;
+
+				struct
+				{
+					struct AST_Node* InitStatement; // Initial expression statement to be ran regardless before initial entry is attempted.
+					struct AST_Node* LoopCondition; // Expression statement that should resolve to > 0 for initial and repeated entry.
+					struct AST_Node* PostLoopInstruction; // Expression statement to be executed after each loop before re-entry is attempted.
+
+					struct AST_Node* ExecInstruction; // Instruction executed on each loop.
+				} For;
+
+				// Container for an indefinite amount of sub-instructions.
+				struct
+				{
+					struct Vector Instructions; // Sub-instructions contained in the block, in order of declaration.
+				} Block;
+				
+				// "Single statement" instruction types with no sub-instructions.
+				union
+				{
+					struct AST_Node* Expression; // Root expression node representing an operating instruction.
+					struct AST_Node* Variable; // Variable node representing a variable declaration / definition.
+					struct AST_Node* Flow; // "Flow" instruction affecting the program's execution flow (goto, return, break, continue, case...).
+				} Statement;
 			};
 
-			struct Vector Instructions; // Vector type = AST_Node* (Operations and sub-blocks);
-		} FunctionBlock;
+		} Instruction;
 
 		struct
 		{
