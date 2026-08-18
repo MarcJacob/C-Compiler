@@ -42,6 +42,8 @@ static struct AST_Node* AllocNewNode()
 // Attempts to parse the next few tokens into a DatatypeDef structure.
 ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef)
 {
+	ui32 StartIndex = Parser->TokenIndex;
+
 	// Zero out output immediately.
 	memset(OutDatatypeDef, 0, sizeof(*OutDatatypeDef));
 
@@ -50,8 +52,6 @@ ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDataty
 	{
 		goto PARSE_FAIL_EOF;
 	}
-
-	ui32 StartIndex = Parser->TokenIndex;
 
 	// Check value of first token. It needs to be a primitive type or one of the user defined type keywords (struct, union, enum).
 	// TODO: Support using identifiers for typedef'd types.
@@ -379,17 +379,20 @@ ui8 ParseFunction(struct ParserProcess* Parser)
 
 		Vector_Push(FunctionNode->Val.Function.Params, struct AST_Node*, ParamNode);
 		
-		NextToken = Parser_NextToken(Parser);
+		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 		if (NextToken->Type == TOKEN_SYMBOL && NextToken->Val.Symbol == SYMBOL_COMMA)
 		{
 			// Parse next param...
+			NextToken = Parser_NextToken(Parser);
 			continue;
 		}
 
 		// Done parsing params.
 		break;
 	}
+
+	NextToken = Parser_NextToken(Parser);
 
 	if (NextToken->Type != TOKEN_SYMBOL || NextToken->Val.Symbol != SYMBOL_PARENTHESIS_CLOSE)
 	{
