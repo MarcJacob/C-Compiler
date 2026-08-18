@@ -532,6 +532,7 @@ struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+		goto PARSE_FAIL;
 	}
 
 	InstructionNode->Val.Instruction.For.ExecInstruction = ParseInstructionNode(Parser);
