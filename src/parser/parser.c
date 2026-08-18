@@ -55,15 +55,15 @@ static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD Keywor
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
 	ui8 AllowVoid);
 
-// Instruction Parser functions.
+// Statement Parser functions.
 
-static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser);
-static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser);
-static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser);
-static struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser);
-static struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parser, ui8 ParenthesisLevel);
 
-static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 
 // Root Parser functions
 
@@ -323,7 +323,7 @@ PARSE_SUCCESS:
 	return 1;
 }
 
-static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* BlockNode = NULL;
@@ -345,9 +345,9 @@ static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	BlockNode = AllocNewNode(AST_NODE_INSTRUCTION_BLOCK);
+	BlockNode = AllocNewNode(AST_NODE_STATEMENT_BLOCK);
 	BlockNode->BufferLocation = NextToken->BufferLocation;
-	BlockNode->Val.Instruction.Block.Instructions = Vector_Create(struct AST_Node*, 0);
+	BlockNode->Val.Statement.Block.Statements = Vector_Create(struct AST_Node*, 0);
 
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -356,16 +356,16 @@ static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 	{
 		// Parse instructions on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
 
-		struct AST_Node* NextInstruction = ParseInstructionNode(Parser);
+		struct AST_Node* NextInstruction = ParseStatementNode(Parser);
 		while (NextInstruction != NULL)
 		{
-			Vector_Push(BlockNode->Val.Instruction.Block.Instructions, struct AST_Node*, NextInstruction);
+			Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextInstruction);
 
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 			if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE)) break;
 
-			NextInstruction = ParseInstructionNode(Parser);
+			NextInstruction = ParseStatementNode(Parser);
 		}
 
 		if (Parser->HasError)
@@ -386,7 +386,7 @@ static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 	return BlockNode;
 }
 
-static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
@@ -410,7 +410,7 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode = AllocNewNode(IsWhile ? AST_NODE_INSTRUCTION_WHILE : AST_NODE_INSTRUCTION_IF);
+	InstructionNode = AllocNewNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
 	InstructionNode->BufferLocation = NextToken->BufferLocation;
 
 	// Look for an opening parenthesis, a valid expression node, then a closing parenthesis.
@@ -422,8 +422,8 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 		goto PARSE_FAIL;
 	}
 
-	struct AST_Node* ConditionNode = /* ParseExpressionNode(Parser) */ NULL;
-	if (0 && ConditionNode == NULL)
+	struct AST_Node* ConditionNode = ParseExpressionStatementNode(Parser, 0);
+	if (ConditionNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional block expression.");
 		goto PARSE_FAIL;
@@ -431,11 +431,11 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 
 	if (IsWhile)
 	{
-		InstructionNode->Val.Instruction.While.LoopCondition = ConditionNode;
+		InstructionNode->Val.Statement.While.LoopCondition = ConditionNode;
 	}
 	else
 	{
-		InstructionNode->Val.Instruction.If.EntryCondition = ConditionNode;
+		InstructionNode->Val.Statement.If.EntryCondition = ConditionNode;
 	}
 
 	NextToken = Parser_NextToken(Parser);
@@ -446,7 +446,7 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 		goto PARSE_FAIL;
 	}
 
-	struct AST_Node* ExecNode = ParseInstructionNode(Parser);
+	struct AST_Node* ExecNode = ParseStatementNode(Parser);
 	if (ExecNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional instruction.");
@@ -455,19 +455,19 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 
 	if (IsWhile)
 	{
-		InstructionNode->Val.Instruction.While.ExecInstruction = ExecNode;
+		InstructionNode->Val.Statement.While.ExecStatement = ExecNode;
 	}
 	else
 	{
-		InstructionNode->Val.Instruction.If.ExecInstruction = ExecNode;
+		InstructionNode->Val.Statement.If.ExecStatement = ExecNode;
 
 		// Check for an else instruction.
 		NextToken = Parser_PeekToken(Parser);
 		if (Token_IsKeyword(NextToken, KEYWORD_ELSE))
 		{
 			Parser_NextToken(Parser);
-			InstructionNode->Val.Instruction.If.ExecInstruction_Else = ParseInstructionNode(Parser);
-			if (InstructionNode->Val.Instruction.If.ExecInstruction_Else == NULL)
+			InstructionNode->Val.Statement.If.ExecInstruction_Else = ParseStatementNode(Parser);
+			if (InstructionNode->Val.Statement.If.ExecInstruction_Else == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing else instruction.");
 				goto PARSE_FAIL;
@@ -478,7 +478,7 @@ static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Pa
 	return InstructionNode;
 }
 
-static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
@@ -505,11 +505,11 @@ static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode = AllocNewNode(AST_NODE_INSTRUCTION_FOR);
+	InstructionNode = AllocNewNode(AST_NODE_STATEMENT_FOR);
 	InstructionNode->BufferLocation = NextToken->BufferLocation;
 
 	// First statement is initial and goes first in the instructions vector.
-	//InstructionNode->Val.Instruction.For.InitStatement = ParseInstructionNode(Parser);
+	InstructionNode->Val.Statement.For.InitExpression = ParseExpressionStatementNode(Parser, 0);
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -519,7 +519,7 @@ static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	//InstructionNode->Val.Instruction.For.LoopCondition = ParseInstructionNode(Parser);	
+	InstructionNode->Val.Statement.For.LoopCondition = ParseExpressionStatementNode(Parser, 0);	
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -529,7 +529,7 @@ static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	//InstructionNode->Val.Instruction.For.PostLoopInstruction = ParseInstructionNode(Parser);
+	InstructionNode->Val.Statement.For.PostLoopExpression = ParseExpressionStatementNode(Parser, 0);
 
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -539,8 +539,8 @@ static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode->Val.Instruction.For.ExecInstruction = ParseInstructionNode(Parser);
-	if (InstructionNode->Val.Instruction.For.ExecInstruction == NULL)
+	InstructionNode->Val.Statement.For.ExecStatement = ParseStatementNode(Parser);
+	if (InstructionNode->Val.Statement.For.ExecStatement == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected instruction following FOR instruction.");
 		goto PARSE_FAIL;
@@ -548,7 +548,7 @@ static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 	return InstructionNode;
 }
 
-static struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser)
 {
 	// TODO: Parse switch statement.
 	// - Keyword check, expression.
@@ -560,18 +560,23 @@ static struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
-static struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseExpressionStatementNode(struct ParserProcess* Parser, ui8 ParenthesisLevel)
 {
-	// TODO: Parse any type of statement instruction:
-	// - Variable declaration / definition.
-	// - Root expression.
-	// - Flow control keywords (return, goto, break, continue...).
+	// Expression parsing: Recursive approach with "base cases" being:
+	// - Literal values
+	// - Identifiers
+	// Outside those cases, the expression always (outside of function calls) defers to parsing:
+	// - A left operand, if any.
+	// - An operator.
+	// - A right operand, if any.
+	// The exact operator is determined with the corresponding symbol and sometimes with the presence / absence of a left / right operand.
+	// In the case of function calls, we read a series of expressions separated by commas as parameters.
 
-	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Statement instruction parsing not implemented.");
+	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expression statement parsing not implemented.");
 	return NULL;
 }
 
-static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
@@ -589,29 +594,29 @@ static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser)
 
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 	{
-		InstructionNode = ParseBlockInstructionNode(Parser);
+		InstructionNode = ParseBlockStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_IF)
 		|| Token_IsKeyword(NextToken, KEYWORD_WHILE))
 	{
-		InstructionNode = ParseConditionalInstructionNode(Parser);
+		InstructionNode = ParseConditionalStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_FOR))
 	{
-		InstructionNode = ParseForInstructionNode(Parser);
+		InstructionNode = ParseForStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_SWITCH))
 	{
-		InstructionNode = ParseSwitchInstructionNode(Parser);
+		InstructionNode = ParseSwitchStatementNode(Parser);
 	}
 	else
 	{
-		InstructionNode = ParseStatementInstructionNode(Parser);
+		InstructionNode = ParseExpressionStatementNode(Parser, 0);
 	}
 
 	if (InstructionNode == NULL)
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse Instruction node.");
+		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse Statement node.");
 		goto PARSE_FAIL;
 	}
 
@@ -725,7 +730,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	{
 		// Parse as definition.
 		// First parse a whole block, then go through it and collect any internal variable declarations
-		FunctionNode->Val.Function.Instructions = ParseBlockInstructionNode(Parser);
+		FunctionNode->Val.Function.Statements = ParseBlockStatementNode(Parser);
 	}
 	else
 	{

@@ -190,12 +190,12 @@ enum AST_NODE_TYPE
 	AST_NODE_STRUCT,		// Structure definition or declaration.
 	AST_NODE_ENUM,			// Enumeration definition or declaration.
 	AST_NODE_FUNCTION,		// Function definition or declaration.
-	AST_NODE_INSTRUCTION,	// "Executable" node found inside a block of some kind.
-	AST_NODE_INSTRUCTION_BLOCK,			// Container instruction for other instructions.
-	AST_NODE_INSTRUCTION_STATEMENT,		// "Leaf" instruction executing an expression, a variable declaration / definition or a flow control.
-	AST_NODE_INSTRUCTION_IF,			// Non-looping condition instruction executing the next instruction only if a condition expression returns > 0, or an else instruction if specified.
-	AST_NODE_INSTRUCTION_WHILE,			// Looping condition instruction executing the next instruction only if a condition expression returns > 0 and attempting re-entry.
-	AST_NODE_INSTRUCTION_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
+	AST_NODE_STATEMENT,	// "Executable" node found inside a block of some kind.
+	AST_NODE_STATEMENT_BLOCK,			// Container statement for other statements.
+	AST_NODE_STATEMENT_LEAF,		// "Leaf" statement executing an expression, a variable declaration / definition or a flow control.
+	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
+	AST_NODE_STATEMENT_WHILE,			// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
+	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
 	AST_NODE_EXPRESSION,	// Expression with or without a compile-time result located inside instructions and variable definitions.
 };
 
@@ -236,6 +236,25 @@ struct DatatypeDef
 	ui8 PointerLevel; // How many pointer indirection layers this has, meaning if > 0, this is a pointer.
 };
 
+enum EXPRESSION_TYPE
+{
+	EXP_LITERAL_INT, // Expression is just a literal whole number.
+	EXP_LITERAL_FLOAT, // Expression is a literal floating-point number.
+	EXP_LITERAL_STRING, // Expression is a literal string.
+
+	EXP_VARIABLE, // Expression reads a variable value.
+
+	EXP_UNARY, // Expression is a unary operator applied over one sub-expression.
+	EXP_BINARY, // Expression is a binary operator applied over two sub-expressions.
+	EXP_FUNCTION_CALL, // Expression is a function call's return value.
+};
+
+// Returns whether the passed type of expression is supposed to have sub-expressions.
+static inline ui8 Expression_IsLeafType(enum EXPRESSION_TYPE Type)
+{
+	return Type < EXP_UNARY;
+}
+
 // Node composing an Abstract Syntax Tree.
 struct AST_Node
 {
@@ -251,7 +270,7 @@ struct AST_Node
 			struct DatatypeDef ReturnType;
 			struct String_ANSI Name;
 			struct Vector Params; // Vector type = AST_Node* (Parameter variables in order of declaration)
-			struct AST_Node* Instructions; // Root instruction block if this is the function definition.
+			struct AST_Node* Statements; // Root instruction block if this is the function definition.
 		} Function;
 
 		// Root type for any executable instruction, located inside a block.
@@ -263,8 +282,8 @@ struct AST_Node
 				{
 					struct AST_Node* EntryCondition; // Expression node that should resolve to > 0 for initial entry into the block.
 
-					struct AST_Node* ExecInstruction; // Instruction to be executed on successful entry.
-					struct AST_Node* ExecInstruction_Else;	// Instruction to be executed on entry failure.
+					struct AST_Node* ExecStatement; // Statement to be executed on successful entry.
+					struct AST_Node* ExecInstruction_Else;	// Statement to be executed on entry failure.
 				} If;
 				
 				struct
@@ -272,40 +291,41 @@ struct AST_Node
 					struct AST_Node* EntryCondition; // If non-NULL, expression node that should resolve to > 0 for initial entry into the block.
 					struct AST_Node* LoopCondition; // Expression node that should resolve to > 0 for re-entry.
 
-					struct AST_Node* ExecInstruction; // Instruction executed on each loop.
+					struct AST_Node* ExecStatement; // Statement executed on each loop.
 				} While;
 
 				struct
 				{
-					struct AST_Node* InitStatement; // Initial expression statement to be ran regardless before initial entry is attempted.
+					struct AST_Node* InitExpression; // Initial expression statement to be ran regardless before initial entry is attempted.
 					struct AST_Node* LoopCondition; // Expression statement that should resolve to > 0 for initial and repeated entry.
-					struct AST_Node* PostLoopInstruction; // Expression statement to be executed after each loop before re-entry is attempted.
+					struct AST_Node* PostLoopExpression; // Expression statement to be executed after each loop before re-entry is attempted.
 
-					struct AST_Node* ExecInstruction; // Instruction executed on each loop.
+					struct AST_Node* ExecStatement; // Statement executed on each loop.
 				} For;
 
 				// Container for an indefinite amount of sub-instructions.
 				struct
 				{
-					struct Vector Instructions; // Sub-instructions contained in the block, in order of declaration.
+					struct Vector Statements; // Sub-instructions contained in the block, in order of declaration.
 				} Block;
 				
 				// "Single statement" instruction types with no sub-instructions.
-				union
-				{
-					struct AST_Node* Expression; // Root expression node representing an operating instruction.
-					struct AST_Node* Variable; // Variable node representing a variable declaration / definition.
-					struct AST_Node* Flow; // "Flow" instruction affecting the program's execution flow (goto, return, break, continue, case...).
-				} Statement;
+
+				struct AST_Node* Expression; // Root expression node representing an operating instruction.
+				struct AST_Node* Variable; // Variable node representing a variable declaration / definition.
+				struct AST_Node* Control; // "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
 			};
 
-		} Instruction;
+		} Statement;
 
 		struct
 		{
 			struct DatatypeDef Type;
 			struct String_ANSI Name;
 			ui64 ArraySize; // If > 0, this variable is an array for whatever type is contains.
+
+			struct AST_Node* Value; // For variable definitions, specifies the value expression to use for initialization. For arrays, the value expression for array size.
+
 		} Variable;
 
 		struct
@@ -317,10 +337,43 @@ struct AST_Node
 		struct
 		{
 			struct DatatypeDef ResultType; // Expected return type for this expression.
-			struct AST_Node* LeftOperand; // Operand node (can be sub-expression) left of the operator / unique operand for unary operators.
-			struct AST_Node* RightOperand; // Operand node (can be sub-expression) right of the operator / empty for unary operators.
+			enum EXPRESSION_TYPE Type; // Type of expression.
 
-			enum TOKEN_SYMBOL OperatorSymbol; // Contains the actual operator to apply over the operand(s).
+			ui8 CompileTimeResolvable; // Whether this expression has a compile-time-resolvable value (required for array sizes and such).
+
+			union
+			{
+				struct
+				{
+					struct AST_Node* LeftOperand; // Expression sub-node.
+					struct AST_Node* RightOperand; // Expression sub-node.
+					enum TOKEN_SYMBOL OperatorSymbol;
+				} BinaryOp;
+
+				struct
+				{
+					struct AST_Node* Operand; // Expression sub-node.
+					enum TOKEN_SYMBOL OperatorSymbol;
+				} UnaryOp;
+
+				struct
+				{
+					i64 Integer;
+					double FloatingPoint;
+					struct String_ANSI String;
+				} Literal;
+
+				struct
+				{
+					struct String_ANSI Name;
+				} Variable;
+
+				struct
+				{
+					struct String_ANSI* FunctionName;
+					struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
+				} FunctionCall;
+			};
 
 		} Expression;
 
