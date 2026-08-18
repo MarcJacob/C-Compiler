@@ -3,12 +3,9 @@
 
 // Helpers
 
-// Emits an Error into the ParserProcess structure. From there on the Parser Process should finish as soon as possible.
-void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...);
-
 // Returns the next Token to be read without advancing the internal reading cursor.
 // Returns NULL when out of tokens.
-struct Token* Parser_PeekToken(struct ParserProcess* Parser)
+static inline struct Token* Parser_PeekToken(struct ParserProcess* Parser)
 {
 	if (Parser->SourceTokens->Size <= Parser->TokenIndex) return NULL;
 
@@ -17,7 +14,7 @@ struct Token* Parser_PeekToken(struct ParserProcess* Parser)
 
 // Returns the next Token to be read and advances the internal reading cursor.
 // Returns NULL when out of tokens.
-struct Token* Parser_NextToken(struct ParserProcess* Parser)
+static inline struct Token* Parser_NextToken(struct ParserProcess* Parser)
 {
 	if (Parser->SourceTokens->Size <= Parser->TokenIndex) return NULL;
 
@@ -25,14 +22,14 @@ struct Token* Parser_NextToken(struct ParserProcess* Parser)
 }
 
 // Used to report buffer location when encountering unexpected EOF.
-ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
+static inline ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
 {
 	ASSERT(Parser->SourceTokens->Size > 0);
 
 	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->SourceTokens->Size - 1))->BufferLocation;
 }
 
-static struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
+static inline struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
 {
 	struct AST_Node* NewNode = calloc(1, sizeof(struct AST_Node));
 	ASSERT(NewNode != NULL);
@@ -41,13 +38,30 @@ static struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
 	return NewNode;
 }
 
-static ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch);
-static ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch);
+static inline ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_SYMBOL && Token->Val.Symbol == SymbolMatch;
+}
+
+static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
+}
 
 // Attempts to parse the next few tokens into a DatatypeDef structure.
 // AllowVoid determines whether non-pointer void type is considered valid.
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
 	ui8 AllowVoid);
+
+// Instruction Parser functions.
+
+static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser);
 
 static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser);
 
@@ -61,6 +75,11 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Struct declaration and optionally its definition.
 ui8 ParseGlobal_Struct(struct ParserProcess* Parser);
+
+// Error Handling
+
+// Emits an Error into the ParserProcess structure. From there on the Parser Process should finish as soon as possible.
+void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...);
 
 // Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
 // in the RootNodes vector in the Process.
@@ -97,18 +116,6 @@ void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Form
 	va_start(args, Format);
 	Parser->Error.Message = String_CreateFormatV_ANSI(Format, args);
 	va_end(args);
-}
-
-static ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch)
-{
-	ASSERT(Token != NULL);
-	return Token->Type == TOKEN_SYMBOL && Token->Val.Symbol == SymbolMatch;
-}
-
-static ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch)
-{
-	ASSERT(Token != NULL);
-	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
 }
 
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
@@ -316,9 +323,7 @@ PARSE_SUCCESS:
 	return 1;
 }
 
-// Parses a block of instructions, defined as a indefinite amount of sequential instructions
-// located between two braces.
-struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* BlockNode = NULL;
@@ -381,8 +386,7 @@ struct AST_Node* ParseBlockInstructionNode(struct ParserProcess* Parser)
 	return BlockNode;
 }
 
-// Parses an instruction block with either IF or WHILE modifier.
-struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
@@ -474,7 +478,7 @@ struct AST_Node* ParseConditionalInstructionNode(struct ParserProcess* Parser)
 	return InstructionNode;
 }
 
-struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
@@ -544,7 +548,7 @@ struct AST_Node* ParseForInstructionNode(struct ParserProcess* Parser)
 	return InstructionNode;
 }
 
-struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
 {
 	// TODO: Parse switch statement.
 	// - Keyword check, expression.
@@ -556,7 +560,7 @@ struct AST_Node* ParseSwitchInstructionNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
-struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser)
 {
 	// TODO: Parse any type of statement instruction:
 	// - Variable declaration / definition.
@@ -567,8 +571,7 @@ struct AST_Node* ParseStatementInstructionNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
-// Parses a new Instruction Node, (a single statement or a block).
-struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseInstructionNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* InstructionNode = NULL;
