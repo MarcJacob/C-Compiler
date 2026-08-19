@@ -114,6 +114,7 @@ static inline struct DatatypeDef GetPrimitiveDatatypeDef_String()
 	Def.PointerLevel = 1;
 	Def.Size = POINTER_SIZE;
 	Def.Type = DATATYPE_CHAR;
+	Def.Flags = DATATYPE_IS_CONST;
 	return Def;
 }
 
@@ -224,12 +225,17 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Check for static-ness.
 	if (NextToken->Val.Keyword == KEYWORD_STATIC)
 	{
-		Flags = DATATYPE_IS_STATIC;
+		Flags |= DATATYPE_IS_STATIC;
 		NextToken = Parser_NextToken(Parser);
-		if (NextToken == NULL)
-		{
-			goto PARSE_FAIL_EOF;
-		}
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	}
+
+	// Check for const-ness. (TODO: Check in any order with static, volatile and other specifiers...)
+	if (NextToken->Val.Keyword == KEYWORD_CONST)
+	{
+		Flags |= DATATYPE_IS_CONST;
+		NextToken = Parser_NextToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
 	// Handle structured / enumerated types...
@@ -478,7 +484,8 @@ static struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Pars
 		goto PARSE_FAIL;
 	}
 
-	struct AST_Node* ConditionNode = ParseExpressionNode(Parser, 0);
+	// Parse condition expression, starting at parenthesis level 1 so it treats the closing parenthesis as its end point.
+	struct AST_Node* ConditionNode = ParseExpressionNode(Parser, 1, SYMBOL_SEMICOLON);
 	if (ConditionNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional block expression.");
@@ -616,6 +623,91 @@ static struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
+// Attempts to parse the next available token as a literal expression.
+static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser)
+{
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) return NULL;
+
+	struct AST_Node* LiteralNode = AllocNewNode(AST_NODE_EXPRESSION);
+
+	switch (NextToken->Type)
+	{
+	case TOKEN_LITERAL_CHAR:
+		LiteralNode->Val.Expression.Type = EXP_LITERAL_CHAR;
+		LiteralNode->Val.Expression.Literal.Character = NextToken->Val.LiteralCharacter;
+		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Char();
+		break;
+	case TOKEN_LITERAL_NUMBER_INT:
+		LiteralNode->Val.Expression.Type = EXP_LITERAL_INT;
+		LiteralNode->Val.Expression.Literal.Integer = NextToken->Val.LiteralNumber.Integer;
+		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+		break;
+	case TOKEN_LITERAL_NUMBER_FLOAT:
+		LiteralNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
+		LiteralNode->Val.Expression.Literal.Float = NextToken->Val.LiteralNumber.Float;
+		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Float();
+		break;
+	case TOKEN_LITERAL_NUMBER_DOUBLE:
+		LiteralNode->Val.Expression.Type = EXP_LITERAL_DOUBLE;
+		LiteralNode->Val.Expression.Literal.Double = NextToken->Val.LiteralNumber.Double;
+		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Double();
+		break;
+	case TOKEN_LITERAL_STRING:
+		LiteralNode->Val.Expression.Type = EXP_LITERAL_STRING;
+		LiteralNode->Val.Expression.Literal.String = NextToken->Val.LiteralString;
+		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_String();
+		break;
+	default:
+		free(LiteralNode);
+		return NULL;
+	}
+
+	// Consume token and return node.
+	Parser_NextToken(Parser);
+	return LiteralNode;
+}
+
+// Attempts to parse the next available token as a variable read expression node.
+static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parser)
+{
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) return NULL;
+
+	// For now we accept any encountered identifier as a variable read.
+	// When implementing function call parsing, make sure to check that there isn't
+	// an opening parenthesis right after the identifier.
+	if (NextToken->Type != TOKEN_IDENTIFIER)
+	{
+		return NULL;
+	}
+
+	struct AST_Node* VarNode = AllocNewNode(AST_NODE_EXPRESSION);
+	VarNode->Val.Expression.Type = EXP_VARIABLE;
+	VarNode->Val.Expression.Variable.Name = NextToken->Val.LiteralString;
+
+	// Consume token and return.
+	Parser_NextToken(Parser);
+	return VarNode;
+}
+
+// Attempts to parse the next available token as an operator expression node, WITHOUT attempting to parse
+// the next tokens for an operand.
+static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parser)
+{
+	return NULL;
+}
+
+// Attempts to parse the next tokens as a function call, starting sub-expression parsing processes
+// for each parameter, delimited by commas (effectively overriding the standard nature of the comma operator).
+static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parser)
+{
+	// TODO...
+	// Don't forget to stop the function name being interpreted as a variable name
+	// in ParseExpressionable_Variable.
+	return NULL;
+}
+
 static struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 ParenthesisLevel, enum TOKEN_SYMBOL EndSymbol)
 {
 	/*
@@ -631,21 +723,157 @@ static struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 Pa
 
 	int StartTokenIndex = Parser->TokenIndex;
 	int EntryParenthesisLevel = ParenthesisLevel; // If local parenthesis level ever gets below entry, parsing stops.
-	struct AST_Node* ExpressionNode = NULL;
+	struct AST_Node* PrevExpression = NULL;
 
-
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Expression statement.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (ExpressionNode != NULL) free(ExpressionNode);
+		if (PrevExpression != NULL) free(PrevExpression);
 		return NULL;
 	}
 
-	// ...
+	// Immediately deny parsing anything if the first encountered token is a closing parenthesis or the end symbol.
+	// This is necessary in cases where an operator triggers further parsing but doesn't actually expect a right operand.
+	if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE) || Token_IsSymbol(NextToken, EndSymbol))
+	{
+		goto PARSE_FAIL;
+	}
+
+	// "Buffer" the last successfully-parsed expression to be
+	// applied to an operator we find or returned as the root expression.
+	struct AST_Node* ExpressionNode = NULL;
+
+	// Loop until a stop point or an error case is reached.
+	for (;;)
+	{
+		// Check for parenthesis level increase.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+		{
+			ParenthesisLevel++;
+			NextToken = Parser_NextToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		}
+
+		struct AST_Node* Expressionable = NULL;
+
+		// Handle all valid Expressionable types.
+		Expressionable = ParseExpressionable_Literal(Parser);
+		if (Expressionable == NULL)
+			Expressionable = ParseExpressionable_Variable(Parser);
+		if (Expressionable == NULL)
+			Expressionable = ParseExpressionable_Operator(Parser);
+		if (Expressionable == NULL)
+			Expressionable = ParseExpressionable_Function(Parser);
+
+		if (Expressionable == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Invalid token while parsing expression.");
+			goto PARSE_FAIL;
+		}
+
+		// Process parsed expressionable according to its type:
+		// - Leaf expression types and function calls (TODO) just check that they're not mis-located.
+		// - Operator expressions resolve their nature as a left/right unary or binary operator and check for validity
+		//	by parsing the next available expression if any.
+
+		struct AST_Node* NextExpression = NULL; // Pre-declare for operator parsing.
+		switch (Expressionable->Val.Expression.Type)
+		{
+		case EXP_LITERAL_CHAR:
+		case EXP_LITERAL_INT:
+		case EXP_LITERAL_FLOAT:
+		case EXP_LITERAL_STRING:
+		case EXP_FUNCTION_CALL:
+			// Ensure we don't have a buffered previous expression already.
+			if (PrevExpression != NULL)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Unexpected literal while parsing expression.");
+				goto PARSE_FAIL;
+			}
+			break;
+		case EXP_OP:
+
+			// Regardless of operator type, parse the next available expression as a potential right operand
+			// with the buffered expression node (if any) being the left operand.
+			// Then check for validity with the actual symbol type (Left Unary = no buffered expression, non-NULL right operand.
+			// Right Unary = Buffered expression, NULL right operand. Binary = both non-NULL).
+
+			NextExpression = ParseExpressionNode(Parser, ParenthesisLevel, EndSymbol);
+
+			if (Symbol_IsBinaryOperator(Expressionable->Val.Expression.Op.OperatorSymbol)
+				&& (PrevExpression != NULL && NextExpression != NULL))
+			{
+				// ... Complete binary operator node. Apply operator precedence (TODO).
+			}
+			else if (Symbol_IsRightUnaryOperator(Expressionable->Val.Expression.Op.OperatorSymbol)
+				&&	(PrevExpression != NULL && NextExpression == NULL))
+			{
+				// Complete right unary operator node.
+				Expressionable->Val.Expression.Op.LeftOperand = PrevExpression;				
+				Expressionable->Val.Expression.ResultType = PrevExpression->Val.Expression.ResultType;
+
+			}
+			else if (Symbol_IsLeftUnaryOperator(Expressionable->Val.Expression.Op.OperatorSymbol)
+				&& (PrevExpression == NULL && NextExpression != NULL))
+			{
+				// Complete left unary operator node.
+				Expressionable->Val.Expression.Op.RightOperand = NextExpression;
+				Expressionable->Val.Expression.ResultType = NextExpression->Val.Expression.ResultType;
+			}
+			else
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Invalid operator / operand combination.");
+				goto PARSE_FAIL;
+			}
+
+			break;
+		}
+
+		// PrevExpression can now become the Expressionable as it should have been "integrated" into it
+		// in non-error cases, if it wasn't NULL.
+		PrevExpression = Expressionable;
+
+		// Peek next token, so as not to consume our potential stop point (parent expression / node will need it for its own delimitations).
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		// Check for parenthesis level decrease & possible stop point.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			// Check for stop point - parenthesis level crossing below entry level.
+			if (--ParenthesisLevel < EntryParenthesisLevel)
+			{
+				goto EXP_STOP_POINT;
+			}
+			
+			// ... Otherwise consume the token and peek next.
+			Parser_NextToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		}
+
+		// Check for End symbol & output error if still inside parenthesis.
+		if (Token_IsSymbol(Parser, EndSymbol))
+		{
+			if (ParenthesisLevel == 0)
+				goto EXP_STOP_POINT;
+			else
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Encountered expression-ending symbol with unterminated parenthesis scope.");
+				goto PARSE_FAIL;
+			}
+		}
+
+		// Continue to next expressionable...
+	}
+
+EXP_STOP_POINT:
+	// Return currently buffered "previous expression".
+	return PrevExpression;
 }
 
 static struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)

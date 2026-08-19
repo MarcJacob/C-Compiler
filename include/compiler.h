@@ -107,16 +107,17 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_BITWISE_XOR_ASSIGN,	// ^=
 	SYMBOL_OP_LEFT_SHIFT_ASSIGN,	// <<=
 	SYMBOL_OP_RIGHT_SHIFT_ASSIGN,	// >>=
+
+	SYMBOL_OP_STRUCT_DEREF,			// ->
+	SYMBOL_OP_STRUCT_READ,			// .
 };
 
-static inline ui8 Symbol_IsUnaryOperator(enum TOKEN_SYMBOL Symbol)
+static inline ui8 Symbol_IsLeftUnaryOperator(enum TOKEN_SYMBOL Symbol)
 {
 	switch (Symbol)
 	{
-		case SYMBOL_OP_INCREMENT:
-		case SYMBOL_OP_DECREMENT:
-		case SYMBOL_OP_ADD:
-		case SYMBOL_OP_SUB:
+		case SYMBOL_OP_INCREMENT:	// As Pre-increment
+		case SYMBOL_OP_DECREMENT:	// As Pre-decrement
 		case SYMBOL_OP_NOT:
 		case SYMBOL_OP_BITWISE_REVERSE:
 		case SYMBOL_OP_DEREF:
@@ -125,6 +126,23 @@ static inline ui8 Symbol_IsUnaryOperator(enum TOKEN_SYMBOL Symbol)
 		default:
 			return 0;
 	}
+}
+
+static inline ui8 Symbol_IsRightUnaryOperator(enum TOKEN_SYMBOL Symbol)
+{
+	switch (Symbol)
+	{
+		case SYMBOL_OP_INCREMENT: // As post-increment
+		case SYMBOL_OP_DECREMENT: // As post-decrement
+			return 1;
+		default:
+			return 0;
+	}
+}
+
+static inline ui8 Symbol_IsUnaryOperator(enum TOKEN_SYMBOL Symbol)
+{
+	return Symbol_IsLeftUnaryOperator(Symbol) || Symbol_IsRightUnaryOperator(Symbol);
 }
 
 static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
@@ -160,6 +178,8 @@ static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
 		case SYMBOL_OP_BITWISE_XOR_ASSIGN:
 		case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
 		case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
+		case SYMBOL_OP_STRUCT_DEREF:
+		case SYMBOL_OP_STRUCT_READ:
 			return 1;
 		default:
 			return 0;
@@ -182,6 +202,7 @@ enum TOKEN_KEYWORD
 	KEYWORD_STATIC,
 	KEYWORD_SIGNED,
 	KEYWORD_UNSIGNED,
+	KEYWORD_CONST,
 	KEYWORD_VOLATILE,
 	KEYWORD_STRUCT,
 	KEYWORD_ENUM,
@@ -277,10 +298,11 @@ enum DATATYPE_FLAGS
 {
 	DATATYPE_IS_UNSIGNED = 1 << 0,
 	DATATYPE_IS_STATIC = 1 << 1,
-	DATATYPE_IS_VOLATILE = 1 << 2,
-	DATATYPE_IS_STRUCT = 1 << 3,
-	DATATYPE_IS_UNION = 1 << 4,
-	DATATYPE_IS_ENUM = 1 << 5,
+	DATATYPE_IS_CONST = 1 << 2,
+	DATATYPE_IS_VOLATILE = 1 << 3,
+	DATATYPE_IS_STRUCT = 1 << 4,
+	DATATYPE_IS_UNION = 1 << 5,
+	DATATYPE_IS_ENUM = 1 << 6,
 };
 
 // Definition for a value type associated to a variable or a function.
@@ -299,20 +321,20 @@ enum EXPRESSION_TYPE
 {
 	EXP_LITERAL_INT, // Expression is a literal whole number.
 	EXP_LITERAL_FLOAT, // Expression is a literal floating-point number.
+	EXP_LITERAL_DOUBLE, // Expression is a literal double-precision floating-point number.
 	EXP_LITERAL_STRING, // Expression is a literal string.
 	EXP_LITERAL_CHAR, // Expression is a literal character.
 
 	EXP_VARIABLE, // Expression reads a variable value.
 
-	EXP_UNARY, // Expression is a unary operator applied over one sub-expression.
-	EXP_BINARY, // Expression is a binary operator applied over two sub-expressions.
+	EXP_OP, // Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
 	EXP_FUNCTION_CALL, // Expression is a function call's return value.
 };
 
 // Returns whether the passed type of expression is supposed to have sub-expressions.
 static inline ui8 Expression_IsLeafType(enum EXPRESSION_TYPE Type)
 {
-	return Type < EXP_UNARY;
+	return Type < EXP_OP;
 }
 
 // Node composing an Abstract Syntax Tree.
@@ -408,18 +430,13 @@ struct AST_Node
 					struct AST_Node* LeftOperand; // Expression sub-node.
 					struct AST_Node* RightOperand; // Expression sub-node.
 					enum TOKEN_SYMBOL OperatorSymbol;
-				} BinaryOp;
-
-				struct
-				{
-					struct AST_Node* Operand; // Expression sub-node.
-					enum TOKEN_SYMBOL OperatorSymbol;
-				} UnaryOp;
+				} Op;
 
 				struct
 				{
 					i64 Integer;
-					double FloatingPoint;
+					float Float;
+					double Double;
 					char Character;
 					struct String_ANSI String;
 				} Literal;
