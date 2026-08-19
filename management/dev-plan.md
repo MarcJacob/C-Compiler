@@ -43,6 +43,7 @@
   - Global variable parsing.
   - Struct parsing.
   - Expression parsing. [WIP]
+    - Function call expressionables.
 
 ## Step 6 — Symbolizer
 

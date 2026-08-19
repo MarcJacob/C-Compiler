@@ -26,4 +26,80 @@ struct ParserProcess
 // Sets the HasError flag on the Parser process and fills in the error message.
 void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* MsgFormat, ...);
 
+struct Token* Parser_PeekToken(struct ParserProcess* Parser);
+struct Token* Parser_NextToken(struct ParserProcess* Parser);
+ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser);
+
+struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType);
+void FreeNode(struct AST_Node* Node);
+void FreeNodeVector(struct Vector* NodeVec);
+
+#define POINTER_SIZE (_WIN64 ? 8 : 4)
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Void() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 0;
+	Def.Type = DATATYPE_VOID;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Char() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 1;
+	Def.Type = DATATYPE_CHAR;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Short()
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 2;
+	Def.Type = DATATYPE_SHORT;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Int32() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 4;
+	Def.Type = DATATYPE_INT32;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Int64() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 8;
+	Def.Type = DATATYPE_INT64;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Float() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 4;
+	Def.Type = DATATYPE_FLOAT;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_Double() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.Size = 8;
+	Def.Type = DATATYPE_DOUBLE;
+	return Def;
+}
+
+static inline struct DatatypeDef GetPrimitiveDatatypeDef_String() 
+{
+	struct DatatypeDef Def = { 0 };
+	Def.PointerLevel = 1;
+	Def.Size = POINTER_SIZE;
+	Def.Type = DATATYPE_CHAR;
+	Def.Flags = DATATYPE_IS_CONST;
+	return Def;
+}
+
 #endif // PARSER_INCLUDED

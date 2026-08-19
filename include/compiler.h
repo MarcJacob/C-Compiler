@@ -261,22 +261,35 @@ struct Token
 	} Val; // Main Value union, giving type-specific information about the token.
 };
 
+static inline ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_SYMBOL && Token->Val.Symbol == SymbolMatch;
+}
+
+static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch)
+{
+	ASSERT(Token != NULL);
+	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
+}
+
 // Parser Stage
 
 // All possible values for the type of an AST Node.
 enum AST_NODE_TYPE
 {
-	AST_NODE_VARIABLE,		// Global, Local, Structure or Param Variable.
-	AST_NODE_STRUCT,		// Structure definition or declaration.
-	AST_NODE_ENUM,			// Enumeration definition or declaration.
-	AST_NODE_FUNCTION,		// Function definition or declaration.
-	AST_NODE_STATEMENT,	// "Executable" node found inside a block of some kind.
-	AST_NODE_STATEMENT_BLOCK,			// Container statement for other statements.
-	AST_NODE_STATEMENT_LEAF,		// "Leaf" statement executing an expression, a variable declaration / definition or a flow control.
+	AST_NODE_VARIABLE,				// Global, Local, Structure or Param Variable.
+	AST_NODE_STRUCT,				// Structure definition or declaration.
+	AST_NODE_ENUM,					// Enumeration definition or declaration.
+	AST_NODE_FUNCTION,				// Function definition or declaration.
+	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
+	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
+	AST_NODE_STATEMENT_VAR,			// A single statement initializing a variable.
+	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
+	AST_NODE_STATEMENT_BLOCK,		// Container statement for other statements.
 	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
-	AST_NODE_STATEMENT_WHILE,			// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
+	AST_NODE_STATEMENT_WHILE,		// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
 	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
-	AST_NODE_EXPRESSION,	// Expression with or without a compile-time result located inside instructions and variable definitions.
 };
 
 // Values for primitive data types + an extra value indicating the type is user-defined. 
@@ -365,7 +378,7 @@ struct AST_Node
 					struct AST_Node* EntryCondition; // Expression node that should resolve to > 0 for initial entry into the block.
 
 					struct AST_Node* ExecStatement; // Statement to be executed on successful entry.
-					struct AST_Node* ExecInstruction_Else;	// Statement to be executed on entry failure.
+					struct AST_Node* ExecStatement_Else;	// Statement to be executed on entry failure.
 				} If;
 				
 				struct
@@ -404,7 +417,7 @@ struct AST_Node
 		{
 			struct DatatypeDef Type;
 			struct String_ANSI Name;
-			ui64 ArraySize; // If > 0, this variable is an array for whatever type is contains.
+			ui8 IsArray;
 
 			struct AST_Node* Value; // For variable definitions, specifies the value expression to use for initialization. For arrays, the value expression for array size.
 
@@ -422,6 +435,7 @@ struct AST_Node
 			enum EXPRESSION_TYPE Type; // Type of expression.
 
 			ui8 CompileTimeResolvable; // Whether this expression has a compile-time-resolvable value (required for array sizes and such). Determined by Symbolizer.
+			ui8 ParenthesisLevel; // How "deep" inside parenthesis this expression is located. 
 
 			union
 			{
@@ -448,7 +462,7 @@ struct AST_Node
 
 				struct
 				{
-					struct String_ANSI* FunctionName;
+					struct String_ANSI FunctionName;
 					struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
 				} FunctionCall;
 			};
