@@ -630,6 +630,7 @@ static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser
 	if (NextToken == NULL) return NULL;
 
 	struct AST_Node* LiteralNode = AllocNewNode(AST_NODE_EXPRESSION);
+	LiteralNode->BufferLocation = NextToken->BufferLocation;
 
 	switch (NextToken->Type)
 	{
@@ -683,6 +684,8 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 	}
 
 	struct AST_Node* VarNode = AllocNewNode(AST_NODE_EXPRESSION);
+	VarNode->BufferLocation = NextToken->BufferLocation;
+
 	VarNode->Val.Expression.Type = EXP_VARIABLE;
 	VarNode->Val.Expression.Variable.Name = NextToken->Val.LiteralString;
 
@@ -695,7 +698,25 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 // the next tokens for an operand.
 static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parser)
 {
-	return NULL;
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) return NULL;
+
+	if (NextToken->Type != TOKEN_SYMBOL 
+		|| (!Symbol_IsBinaryOperator(NextToken->Val.Symbol) 
+			&& !Symbol_IsUnaryOperator(NextToken->Val.Symbol)))
+	{
+		return NULL;
+	}
+
+	// Parse next token as an operator node.
+	struct AST_Node* OpExpression = AllocNewNode(AST_NODE_EXPRESSION);
+	OpExpression->BufferLocation = NextToken->BufferLocation;
+	OpExpression->Val.Expression.Type = EXP_OP;
+	OpExpression->Val.Expression.Op.OperatorSymbol = NextToken->Val.Symbol;
+
+	// Consume token and return.
+	Parser_NextToken(Parser);
+	return OpExpression;
 }
 
 // Attempts to parse the next tokens as a function call, starting sub-expression parsing processes
@@ -808,6 +829,10 @@ static struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 Pa
 				&& (PrevExpression != NULL && NextExpression != NULL))
 			{
 				// ... Complete binary operator node. Apply operator precedence (TODO).
+				Expressionable->Val.Expression.Op.LeftOperand = PrevExpression;
+				Expressionable->Val.Expression.Op.RightOperand = NextExpression;
+				
+				// Result type to be resolved by Symbolizer.
 			}
 			else if (Symbol_IsRightUnaryOperator(Expressionable->Val.Expression.Op.OperatorSymbol)
 				&&	(PrevExpression != NULL && NextExpression == NULL))

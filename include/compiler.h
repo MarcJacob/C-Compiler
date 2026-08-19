@@ -421,7 +421,7 @@ struct AST_Node
 			struct DatatypeDef ResultType; // Expected return type for this expression.
 			enum EXPRESSION_TYPE Type; // Type of expression.
 
-			ui8 CompileTimeResolvable; // Whether this expression has a compile-time-resolvable value (required for array sizes and such).
+			ui8 CompileTimeResolvable; // Whether this expression has a compile-time-resolvable value (required for array sizes and such). Determined by Symbolizer.
 
 			union
 			{
