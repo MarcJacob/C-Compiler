@@ -5,6 +5,8 @@
 	Test multi-line comment.
 */
 
+int test = 5 + 4 + (3 + 2) * 1;
+
 int main(int argc, char** argv);
 
 int a = 2;

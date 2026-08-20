@@ -151,13 +151,19 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 		return RootExpression;
 	}
 
-	// If left operand's operator has a LOWER precedence than root expression's, then it should act first.
+	// If left operand's operator has a LOWER precedence than root expression's, or left operand's right operand has same parenthesis level as root (and root is lower parenthesis level), then it should act first.
 	// To achieve this, left operand's right operand becomes root's left operand, root becomes left operand's right operand,
 	// and left operand becomes the new root.
 	while (LeftOperand != NULL
 		&& LeftOperand->Val.Expression.Type == EXP_OP
-		&& Symbol_CompareOpPrecedence(RootExpression->Val.Expression.Op.OperatorSymbol, 
-			LeftOperand->Val.Expression.Op.OperatorSymbol) == 1)
+		// Check parenthesis level.
+		&& ((LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel > LeftOperand->Val.Expression.ParenthesisLevel
+			&& RootExpression->Val.Expression.ParenthesisLevel > LeftOperand->Val.Expression.ParenthesisLevel)
+		// Check operator precedence.
+			|| Symbol_CompareOpPrecedence(RootExpression->Val.Expression.Op.OperatorSymbol, 
+				LeftOperand->Val.Expression.Op.OperatorSymbol) == 1
+			)
+		)
 	{
 		struct AST_Node* Left_Right = LeftOperand->Val.Expression.Op.RightOperand;
 		LeftOperand->Val.Expression.Op.RightOperand = RootExpression;
