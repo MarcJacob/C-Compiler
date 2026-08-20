@@ -23,3 +23,7 @@ Makefile
 *.cmake
 CMakePresets.json
 CMakeSettings.json
+
+# Ignore any file that contains the "local" pre-extension.
+
+*.local.*
