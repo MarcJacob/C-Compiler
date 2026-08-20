@@ -531,6 +531,8 @@ void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer)
 	ASSERT(Tokenizer != NULL);
 	ASSERT(Tokenizer->Tokens != NULL);
 
+	printf("===== TOKENIZER OUTPUT =====\n\n");
+
 	for (int TokenIndex = 0; TokenIndex < Tokenizer->Tokens->Size; TokenIndex++)
 	{
 		struct Token* Tok = Vector_GetPtr(Tokenizer->Tokens, TokenIndex);

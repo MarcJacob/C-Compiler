@@ -134,6 +134,17 @@ static void PrintIndent(ui32 Depth)
 	for (ui32 i = 0; i < Depth; i++) printf("  ");
 }
 
+// Prints a named header for a sub-node of a complex statement (e.g. an IF's CONDITION / THEN / ELSE) before printing the node itself one level deeper.
+// Skipped entirely if Node is NULL, so optional sub-nodes don't leave a dangling, empty-looking header.
+static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Depth)
+{
+	if (Node == NULL) return;
+
+	PrintIndent(Depth);
+	printf("[%s]\n", Label);
+	PrintNode(Node, Depth + 1);
+}
+
 // Prints an Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
 static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 {
@@ -219,22 +230,22 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		break;
 	case AST_NODE_STATEMENT_IF:
 		printf("<IF>\n");
-		PrintNode(Node->Val.Statement.If.EntryCondition, Depth + 1);
-		PrintNode(Node->Val.Statement.If.ExecStatement, Depth + 1);
-		PrintNode(Node->Val.Statement.If.ExecStatement_Else, Depth + 1);
+		PrintLabeledNode("CONDITION", Node->Val.Statement.If.EntryCondition, Depth + 1);
+		PrintLabeledNode("THEN", Node->Val.Statement.If.ExecStatement, Depth + 1);
+		PrintLabeledNode("ELSE", Node->Val.Statement.If.ExecStatement_Else, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_WHILE:
 		printf("<WHILE>\n");
-		PrintNode(Node->Val.Statement.While.EntryCondition, Depth + 1);
-		PrintNode(Node->Val.Statement.While.LoopCondition, Depth + 1);
-		PrintNode(Node->Val.Statement.While.ExecStatement, Depth + 1);
+		PrintLabeledNode("ENTRY_CONDITION", Node->Val.Statement.While.EntryCondition, Depth + 1);
+		PrintLabeledNode("LOOP_CONDITION", Node->Val.Statement.While.LoopCondition, Depth + 1);
+		PrintLabeledNode("BODY", Node->Val.Statement.While.ExecStatement, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_FOR:
 		printf("<FOR>\n");
-		PrintNode(Node->Val.Statement.For.InitExpression, Depth + 1);
-		PrintNode(Node->Val.Statement.For.LoopCondition, Depth + 1);
-		PrintNode(Node->Val.Statement.For.PostLoopExpression, Depth + 1);
-		PrintNode(Node->Val.Statement.For.ExecStatement, Depth + 1);
+		PrintLabeledNode("INIT", Node->Val.Statement.For.InitExpression, Depth + 1);
+		PrintLabeledNode("CONDITION", Node->Val.Statement.For.LoopCondition, Depth + 1);
+		PrintLabeledNode("POST", Node->Val.Statement.For.PostLoopExpression, Depth + 1);
+		PrintLabeledNode("BODY", Node->Val.Statement.For.ExecStatement, Depth + 1);
 		break;
 	}
 }
@@ -243,6 +254,8 @@ void Parser_PrintTree(struct ParserProcess* Parser)
 {
 	ASSERT(Parser != NULL);
 	ASSERT(Parser->RootNodes != NULL);
+
+	printf("\n===== PARSER OUTPUT =====\n\n");
 
 	for (int i = 0; i < Parser->RootNodes->Size; i++)
 	{
