@@ -125,11 +125,92 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 
 	if (Expressionable == NULL)
 		return NULL;
+
+	return Expressionable;
 }
 
+// Parses a full operator expression from an optional preceding node tree (which can become either the new operator's left operand, or use the new operator as its right operand).
+struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* PrevNode, struct AST_Node* Op)
+{
+	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Operator parsing unimplemented.");
+	return NULL;
+}
+
+// Entry point of expression parsing. Parses a "root expression" until reaching an end character (closing parenthesis or semicolon).
 struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
 {
-	// ...
-	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expression parsing STILL not implemented.");
-	return NULL;
+	int TokenStartIndex = Parser->TokenIndex;
+
+	struct AST_Node* ExpressionRootNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing expression.");
+	PARSE_FAIL:
+		if (ExpressionRootNode != NULL) FreeNode(ExpressionRootNode);
+		return NULL;
+	}
+
+	ExpressionRootNode = ParseExpressionableNode(Parser);
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// Constantly try to update the root node to cover the next expressionables / sub-expression that are found until a stop point is reached.
+	for (;;)
+	{
+		// Check for End Symbol.
+		if (Token_IsSymbol(NextToken, EndSymbol))
+		{
+			Parser_NextToken(Parser);
+			break;
+		}
+
+		// Get the next node composing the expression.
+		struct AST_Node* NextNode = NULL;
+		if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+		{
+			// When encountering an opening parenthesis scope, 
+			NextToken = Parser_NextToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+			// Recursive call to parse the entire sub-expression (IE until a matching closing parenthesis is encountered).
+			NextNode = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
+			if (Parser->HasError) goto PARSE_FAIL;
+		}
+		else
+		{
+			NextNode = ParseExpressionableNode(Parser);
+		}
+
+		// If no node was successfully parsed, then we encountered an invalid character.
+		if (NextNode == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token in expression.");
+			goto PARSE_FAIL;
+		}
+
+		if (NextNode->Val.Expression.Type == EXP_OP)
+		{
+			ExpressionRootNode = ParseOperatorExpression(Parser, ExpressionRootNode, NextNode);
+			if (ExpressionRootNode == NULL)
+			{
+				if (Parser->HasError) goto PARSE_FAIL;
+				else break;
+			}
+		}
+		else if (ExpressionRootNode == NULL)
+		{
+			ExpressionRootNode = NextNode;
+			continue;
+		}
+		else // Error case if two non-operator nodes are put in succession.
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected operand in expression.");
+			goto PARSE_FAIL;
+		}
+	}
+
+	return ExpressionRootNode;
 }

@@ -102,4 +102,22 @@ static inline struct DatatypeDef GetPrimitiveDatatypeDef_String()
 	return Def;
 }
 
+// Attempts to parse the next few tokens into a DatatypeDef structure.
+// AllowVoid determines whether non-pointer void type is considered valid.
+static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
+	ui8 AllowVoid);
+
+// Statement & Expression Parsing functions.
+
+// Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
+// If NULL is returned, then the parser has encountered an error or failed to read any expressionable tokens.
+// The end symbol token is consumed.
+struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
+
+struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
+struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
+struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
+struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
+struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
+
 #endif // PARSER_INCLUDED

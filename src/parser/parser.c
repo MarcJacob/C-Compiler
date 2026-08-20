@@ -125,23 +125,6 @@ void FreeNodeVector(struct Vector* NodeVec)
 	Vector_Destroy(NodeVec);
 }
 
-// Attempts to parse the next few tokens into a DatatypeDef structure.
-// AllowVoid determines whether non-pointer void type is considered valid.
-static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
-	ui8 AllowVoid);
-
-// Statement Parser functions.
-
-// Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
-// Implemented in expression_parsing.c
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
-
-struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
-
 // Root Parser functions
 
 // Attempts to parse a new AST, covering a Global Variable symbol declaration and optionally its definition.
@@ -484,7 +467,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	InstructionNode = AllocNewNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
 	InstructionNode->BufferLocation = NextToken->BufferLocation;
 
-	// Look for an opening parenthesis, a valid expression node, then a closing parenthesis.
+	// Parse the condition expression, specifically placing it in a parenthesis scope.
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
@@ -493,7 +476,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	// Parse condition expression
+	// Parse condition expression until matching closing parenthesis.
 	struct AST_Node* ConditionNode = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
 	if (ConditionNode == NULL)
 	{
@@ -508,14 +491,6 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	else
 	{
 		InstructionNode->Val.Statement.If.EntryCondition = ConditionNode;
-	}
-
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
-		goto PARSE_FAIL;
 	}
 
 	struct AST_Node* ExecNode = ParseStatementNode(Parser);
@@ -568,7 +543,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		return NULL;
 	}
 
-	// Look for an opening parenthesis, a valid expression node, then a closing parenthesis.
+	// Enclose the three expressions into a parenthesis scope. The first two are parsed up until encountering a semicolon, the third the closing parenthesis.
 	NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
@@ -580,36 +555,13 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	InstructionNode = AllocNewNode(AST_NODE_STATEMENT_FOR);
 	InstructionNode->BufferLocation = NextToken->BufferLocation;
 
-	// First statement is initial and goes first in the instructions vector.
+	// Parse init, condition and post-loop expressions.
 	InstructionNode->Val.Statement.For.InitExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
-
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	if (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
-		goto PARSE_FAIL;
-	}
-
+	if (Parser->HasError) goto PARSE_FAIL;
 	InstructionNode->Val.Statement.For.LoopCondition = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);	
-
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	if (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
-		goto PARSE_FAIL;
-	}
-
+	if (Parser->HasError) goto PARSE_FAIL;
 	InstructionNode->Val.Statement.For.PostLoopExpression = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
-
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
-		goto PARSE_FAIL;
-	}
+	if (Parser->HasError) goto PARSE_FAIL;
 
 	InstructionNode->Val.Statement.For.ExecStatement = ParseStatementNode(Parser);
 	if (InstructionNode->Val.Statement.For.ExecStatement == NULL)
