@@ -60,6 +60,8 @@
 - Tokenizer: Literal numbers — float and double parsing.
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
 - Compiler: Handle multiple input files.
+- Expression parsing: Complete `Symbol_GetOpPrecedenceLevel` for all operators and handle right-associativity (e.g. `=` and compound assignments) in `HandleOperatorPrecedence`, which currently assumes left-associativity on equal precedence.
+- Expression parsing: Support unary `+`/`-` (`SYMBOL_OP_SUB`/`SYMBOL_OP_ADD` are not in `Symbol_IsLeftUnaryOperator`, so e.g. `-a` currently fails to parse).
 
 ---
 
