@@ -633,8 +633,63 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 
 ui8 ParseGlobal_Variable(struct ParserProcess* Parser)
 {
-	// UNIMPLEMENTED.
-	return 0;
+	int TokenStartIndex = Parser->TokenIndex;
+
+	struct AST_Node* VarNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
+	PARSE_FAIL:
+		if (VarNode != NULL) FreeNode(VarNode);
+		return 0;
+	}
+
+	VarNode = AllocNewNode(AST_NODE_VARIABLE);
+	VarNode->BufferLocation = NextToken->BufferLocation;
+
+	if (!ParseDatatypeDef(Parser, &VarNode->Val.Variable.Type, 0))
+	{
+		goto PARSE_FAIL;
+	}
+
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (NextToken->Type != TOKEN_IDENTIFIER)
+	{
+		goto PARSE_FAIL;
+	}
+
+	VarNode->Val.Variable.Name = String_Copy_ANSI(NextToken->Val.Identifier);
+	
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		// Parse as simple declaration, which requires nothing else.
+	}
+	else if (Token_IsSymbol(NextToken, SYMBOL_OP_ASSIGN))
+	{
+		// Parse variable value definition.
+		VarNode->Val.Variable.Value = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+
+	}
+	else if (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+	{
+		// Parse as array definition.
+
+		VarNode->Val.Variable.Value = ParseExpressionNode(Parser, SYMBOL_BRACKET_CLOSE);
+		VarNode->Val.Variable.IsArray = 1;
+
+		goto PARSE_FAIL;
+	}
+
+	Vector_PushPtr(Parser->RootNodes, VarNode);
+	return 1;
 }
 
 ui8 ParseGlobal_Function(struct ParserProcess* Parser)
@@ -681,7 +736,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	FunctionNode = AllocNewNode(AST_NODE_FUNCTION);
 	FunctionNode->BufferLocation = IdentifierToken->BufferLocation;
 
-	FunctionNode->Val.Function.Name = IdentifierToken->Val.Identifier;
+	FunctionNode->Val.Function.Name = String_Copy_ANSI(IdentifierToken->Val.Identifier);
 	FunctionNode->Val.Function.ReturnType = ReturnType;
 	FunctionNode->Val.Function.Params = Vector_Create(struct AST_Node*, 0);
 
@@ -701,7 +756,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 
 		struct AST_Node* ParamNode = AllocNewNode(AST_NODE_VARIABLE);
 		ParamNode->BufferLocation = NextToken->BufferLocation;
-		ParamNode->Val.Variable.Name = NextToken->Val.Identifier;
+		ParamNode->Val.Variable.Name = String_Copy_ANSI(NextToken->Val.Identifier);
 		ParamNode->Val.Variable.Type = ParamType;
 
 		Vector_Push(FunctionNode->Val.Function.Params, struct AST_Node*, ParamNode);

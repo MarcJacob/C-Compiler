@@ -47,6 +47,7 @@ struct String_ANSI
 struct String_ANSI String_Create_ANSI(const char* InitChars);
 struct String_ANSI String_CreateFormatV_ANSI(const char* StrFormat, va_list args);
 struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...);
+struct String_ANSI String_Copy_ANSI(const struct String_ANSI Src);
 void String_Free_ANSI(struct String_ANSI* Str);
 
 void String_PushChar_ANSI(struct String_ANSI* Str, char Char);
@@ -377,9 +378,14 @@ struct String_ANSI String_CreateFormat_ANSI(const char* StrFormat, ...)
 	return NewString;
 }
 
+struct String_ANSI String_Copy_ANSI(const struct String_ANSI Src)
+{
+	return String_Create_ANSI(Src.Str);
+}
+
 void String_Free_ANSI(struct String_ANSI* Str)
 {
-	ASSERT(Str == NULL);
+	ASSERT(Str != NULL);
 	String_Resize_ANSI(Str, 0, 1);
 }
 #endif // STRING_ANSI_INCLUDED
