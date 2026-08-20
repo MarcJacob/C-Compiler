@@ -347,6 +347,9 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 			goto PARSE_FAIL;
 		}
 
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
 		// Check for closing parenthesis.
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
@@ -355,6 +358,8 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 			ParenthesisLevel--;
+
+			if (ParenthesisLevel == 0) break;
 		}
 	}
 

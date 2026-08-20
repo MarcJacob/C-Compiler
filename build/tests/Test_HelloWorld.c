@@ -12,7 +12,7 @@ int b = 5;
 
 int main(int argc, char** argv)
 {
-	if (a + 3 * (2 + b))
+	if (5 + ((a + b + c)))
 	{
 
 	}
