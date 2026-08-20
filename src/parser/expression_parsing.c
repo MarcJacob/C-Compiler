@@ -208,7 +208,6 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 			return NULL;
 		}
 
-
 		// Look for opening parenthesis.
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 		{
@@ -219,6 +218,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 			ParenthesisLevel++;
 		}
 
+		// Parse next available expressionable.
 		RightOperand = ParseExpressionableNode(Parser);
 		if (RightOperand == NULL)
 		{
@@ -291,6 +291,17 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 
 	ui8 ParenthesisLevel = 0;
 
+	// Check for opening parenthesis, before the first expressionable is parsed.
+	// After that, it can only increase while parsing the right operand of an operator.
+	while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		Parser_NextToken(Parser);
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		ParenthesisLevel++;
+	}
+
 	// Constantly try to update the root node to cover the next expressionables / sub-expression that are found until a stop point is reached.
 	for (;;)
 	{
@@ -301,16 +312,6 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		{
 			Parser_NextToken(Parser);
 			break;
-		}
-
-		// Check for opening parenthesis.
-		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
-		{
-			Parser_NextToken(Parser);
-			NextToken = Parser_PeekToken(Parser);
-			if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
-			ParenthesisLevel++;
 		}
 
 		// Get the next node composing the expression.
