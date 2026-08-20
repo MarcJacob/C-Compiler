@@ -125,6 +125,131 @@ void FreeNodeVector(struct Vector* NodeVec)
 	Vector_Destroy(NodeVec);
 }
 
+// AST Printing
+
+static void PrintNode(struct AST_Node* Node, ui32 Depth);
+
+static void PrintIndent(ui32 Depth)
+{
+	for (ui32 i = 0; i < Depth; i++) printf("  ");
+}
+
+// Prints an Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
+static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
+{
+	switch (Node->Val.Expression.Type)
+	{
+	case EXP_LITERAL_INT:
+		printf("<LITERAL_INT: %lld>\n", Node->Val.Expression.Literal.Integer);
+		break;
+	case EXP_LITERAL_FLOAT:
+		printf("<LITERAL_FLOAT: %f>\n", Node->Val.Expression.Literal.Float);
+		break;
+	case EXP_LITERAL_DOUBLE:
+		printf("<LITERAL_DOUBLE: %lf>\n", Node->Val.Expression.Literal.Double);
+		break;
+	case EXP_LITERAL_STRING:
+		printf("<LITERAL_STRING: \"%s\">\n", Node->Val.Expression.Literal.String.Str);
+		break;
+	case EXP_LITERAL_CHAR:
+		printf("<LITERAL_CHAR: '%c'>\n", Node->Val.Expression.Literal.Character);
+		break;
+	case EXP_VARIABLE:
+		printf("<VAR_READ: '%s'>\n", Node->Val.Expression.Variable.Name.Str);
+		break;
+	case EXP_OP:
+		printf("<OP: '%s'>\n", Symbol_ToString(Node->Val.Expression.Op.OperatorSymbol));
+		PrintNode(Node->Val.Expression.Op.LeftOperand, Depth + 1);
+		PrintNode(Node->Val.Expression.Op.RightOperand, Depth + 1);
+		break;
+	case EXP_FUNCTION_CALL:
+		printf("<FUNCTION_CALL: '%s'>\n", Node->Val.Expression.FunctionCall.FunctionName.Str);
+		for (int i = 0; i < Node->Val.Expression.FunctionCall.Params.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Val.Expression.FunctionCall.Params, struct AST_Node*, i), Depth + 1);
+		break;
+	}
+}
+
+// Prints a single AST node and recurses into its children, indenting each depth level by two spaces.
+static void PrintNode(struct AST_Node* Node, ui32 Depth)
+{
+	if (Node == NULL) return;
+
+	PrintIndent(Depth);
+
+	switch (Node->Type)
+	{
+	case AST_NODE_VARIABLE:
+		printf("<VARIABLE: '%s'>\n", Node->Val.Variable.Name.Str);
+		PrintNode(Node->Val.Variable.Value, Depth + 1);
+		break;
+	case AST_NODE_STRUCT:
+		printf("<STRUCT>\n");
+		for (int i = 0; i < Node->Val.Struct.Members.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Val.Struct.Members, struct AST_Node*, i), Depth + 1);
+		break;
+	case AST_NODE_ENUM:
+		printf("<ENUM>\n");
+		break;
+	case AST_NODE_FUNCTION:
+		printf("<FUNCTION: '%s'>\n", Node->Val.Function.Name.Str);
+		for (int i = 0; i < Node->Val.Function.Params.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Val.Function.Params, struct AST_Node*, i), Depth + 1);
+		PrintNode(Node->Val.Function.Statements, Depth + 1);
+		break;
+	case AST_NODE_EXPRESSION:
+		PrintExpressionNode(Node, Depth);
+		break;
+	case AST_NODE_STATEMENT_EXP:
+		printf("<STATEMENT_EXP>\n");
+		PrintNode(Node->Val.Statement.Expression, Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_VAR:
+		printf("<STATEMENT_VAR>\n");
+		PrintNode(Node->Val.Statement.Variable, Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_CONTROL:
+		printf("<STATEMENT_CONTROL>\n");
+		PrintNode(Node->Val.Statement.Control, Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_BLOCK:
+		printf("<BLOCK>\n");
+		for (int i = 0; i < Node->Val.Statement.Block.Statements.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Val.Statement.Block.Statements, struct AST_Node*, i), Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_IF:
+		printf("<IF>\n");
+		PrintNode(Node->Val.Statement.If.EntryCondition, Depth + 1);
+		PrintNode(Node->Val.Statement.If.ExecStatement, Depth + 1);
+		PrintNode(Node->Val.Statement.If.ExecStatement_Else, Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_WHILE:
+		printf("<WHILE>\n");
+		PrintNode(Node->Val.Statement.While.EntryCondition, Depth + 1);
+		PrintNode(Node->Val.Statement.While.LoopCondition, Depth + 1);
+		PrintNode(Node->Val.Statement.While.ExecStatement, Depth + 1);
+		break;
+	case AST_NODE_STATEMENT_FOR:
+		printf("<FOR>\n");
+		PrintNode(Node->Val.Statement.For.InitExpression, Depth + 1);
+		PrintNode(Node->Val.Statement.For.LoopCondition, Depth + 1);
+		PrintNode(Node->Val.Statement.For.PostLoopExpression, Depth + 1);
+		PrintNode(Node->Val.Statement.For.ExecStatement, Depth + 1);
+		break;
+	}
+}
+
+void Parser_PrintTree(struct ParserProcess* Parser)
+{
+	ASSERT(Parser != NULL);
+	ASSERT(Parser->RootNodes != NULL);
+
+	for (int i = 0; i < Parser->RootNodes->Size; i++)
+	{
+		PrintNode(Vector_GetValueAt(*Parser->RootNodes, struct AST_Node*, i), 0);
+	}
+}
+
 // Root Parser functions
 
 // Attempts to parse a new AST, covering a Global Variable symbol declaration and optionally its definition.
@@ -688,7 +813,7 @@ ui8 ParseGlobal_Variable(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	Vector_PushPtr(Parser->RootNodes, VarNode);
+	Vector_Push(*Parser->RootNodes, struct AST_Node*, VarNode);
 	return 1;
 }
 

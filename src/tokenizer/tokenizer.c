@@ -189,65 +189,9 @@ PARSE_FAIL:
 	}
 }
 
-struct SymbolToStringPair
-{
-	enum TOKEN_SYMBOL Symbol;
-	const char* String;
-};
-
 // Longer symbols are listed before any shorter symbol they share a prefix with (eg. "--" before "-"),
-// since ParseSymbol takes the first match found in this table.
-static struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
-{
-	{ SYMBOL_SEMICOLON, ";" },
-	{ SYMBOL_COMMA, "," },
-	{ SYMBOL_COLON, ":" },
-	{ SYMBOL_PARENTHESIS_OPEN, "(" },
-	{ SYMBOL_PARENTHESIS_CLOSE, ")" },
-	{ SYMBOL_BRACKET_OPEN, "[" },
-	{ SYMBOL_BRACKET_CLOSE, "]" },
-	{ SYMBOL_BRACE_OPEN, "{" },
-	{ SYMBOL_BRACE_CLOSE, "}" },
-
-	{ SYMBOL_OP_ARROW, "->" },
-	{ SYMBOL_OP_INCREMENT, "++" },
-	{ SYMBOL_OP_ADD_ASSIGN, "+=" },
-	{ SYMBOL_OP_ADD, "+" },
-	{ SYMBOL_OP_DECREMENT, "--" },
-	{ SYMBOL_OP_SUB_ASSIGN, "-=" },
-	{ SYMBOL_OP_SUB, "-" },
-	{ SYMBOL_OP_MULT_ASSIGN, "*=" },
-	{ SYMBOL_STAR, "*" },
-	{ SYMBOL_OP_DIV_ASSIGN, "/=" },
-	{ SYMBOL_OP_DIV, "/" },
-	{ SYMBOL_OP_MODULO_ASSIGN, "%=" },
-	{ SYMBOL_OP_MODULO, "%" },
-
-	{ SYMBOL_OP_AND, "&&" },
-	{ SYMBOL_OP_BITWISE_AND_ASSIGN, "&=" },
-	{ SYMBOL_OP_BITWISE_AND, "&" },
-	{ SYMBOL_OP_OR, "||" },
-	{ SYMBOL_OP_BITWISE_OR_ASSIGN, "|=" },
-	{ SYMBOL_OP_BITWISE_OR, "|" },
-	{ SYMBOL_OP_BITWISE_XOR_ASSIGN, "^=" },
-	{ SYMBOL_OP_BITWISE_XOR, "^" },
-
-	{ SYMBOL_OP_RIGHT_SHIFT_ASSIGN, ">>=" },
-	{ SYMBOL_OP_RIGHT_SHIFT, ">>" },
-	{ SYMBOL_OP_GREATER_EQUAL, ">=" },
-	{ SYMBOL_OP_GREATER, ">" },
-	{ SYMBOL_OP_LEFT_SHIFT_ASSIGN, "<<=" },
-	{ SYMBOL_OP_LEFT_SHIFT, "<<" },
-	{ SYMBOL_OP_LOWER_EQUAL, "<=" },
-	{ SYMBOL_OP_LOWER, "<" },
-	{ SYMBOL_OP_EQUAL, "==" },
-	{ SYMBOL_OP_ASSIGN, "=" },
-	{ SYMBOL_OP_UNEQUAL, "!=" },
-	{ SYMBOL_OP_NOT, "!" },
-
-	{ SYMBOL_OP_BITWISE_REVERSE, "~" },
-};
-
+// since ParseSymbol takes the first match found in this table. Table itself is defined in compiler.h
+// as SYMBOL_TO_STRING_TABLE, shared with Symbol_ToString for use anywhere in the program.
 ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
@@ -579,6 +523,59 @@ ui8 ParseComment(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 
 	CloseNestedBufferReader_ANSI(&SourceReader, EntryReader, 0);
 	return 0; // Failed to parse a comment.
+}
+
+// Prints every token currently held by the Tokenizer process to stdout, one line per token.
+void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer)
+{
+	ASSERT(Tokenizer != NULL);
+	ASSERT(Tokenizer->Tokens != NULL);
+
+	for (int TokenIndex = 0; TokenIndex < Tokenizer->Tokens->Size; TokenIndex++)
+	{
+		struct Token* Tok = Vector_GetPtr(Tokenizer->Tokens, TokenIndex);
+
+		switch (Tok->Type)
+		{
+		case TOKEN_COMMENT:
+			printf("<COMMENT>\n");
+			break;
+		case TOKEN_IDENTIFIER:
+			printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier.Str);
+			break;
+		case TOKEN_KEYWORD:
+		{
+			static const int KeywordTableSize = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
+			for (int KeywordIndex = 0; KeywordIndex < KeywordTableSize; KeywordIndex++)
+			{
+				if (KEYWORD_TO_STRING_TABLE[KeywordIndex].Keyword == Tok->Val.Keyword)
+				{
+					printf("<KEYWORD: '%s'>\n", KEYWORD_TO_STRING_TABLE[KeywordIndex].String);
+					break;
+				}
+			}
+			break;
+		}
+		case TOKEN_SYMBOL:
+			printf("<SYMBOL: '%s'>\n", Symbol_ToString(Tok->Val.Symbol));
+			break;
+		case TOKEN_LITERAL_STRING:
+			printf("<LITERAL_STRING: \"%s\">\n", Tok->Val.LiteralString.Str);
+			break;
+		case TOKEN_LITERAL_CHAR:
+			printf("<LITERAL_CHAR: '%c'>\n", Tok->Val.LiteralCharacter);
+			break;
+		case TOKEN_LITERAL_NUMBER_INT:
+			printf("<LITERAL_NUMBER_INT: %lld>\n", Tok->Val.LiteralNumber.Integer);
+			break;
+		case TOKEN_LITERAL_NUMBER_FLOAT:
+			printf("<LITERAL_NUMBER_FLOAT: %f>\n", Tok->Val.LiteralNumber.Float);
+			break;
+		case TOKEN_LITERAL_NUMBER_DOUBLE:
+			printf("<LITERAL_NUMBER_DOUBLE: %lf>\n", Tok->Val.LiteralNumber.Double);
+			break;
+		}
+	}
 }
 
 

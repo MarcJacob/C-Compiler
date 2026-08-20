@@ -24,4 +24,7 @@ struct TokenizerProcess
 // Sets the HasError flag on the Tokenizer process and fills in the error message.
 void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const char* MsgFormat, ...);
 
+// Prints every token currently held by the Tokenizer process to stdout, one line per token.
+void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer);
+
 #endif // TOKENIZER_INCLUDED

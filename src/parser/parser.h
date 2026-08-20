@@ -34,6 +34,9 @@ struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType);
 void FreeNode(struct AST_Node* Node);
 void FreeNodeVector(struct Vector* NodeVec);
 
+// Prints every root AST node tree held by the Parser process to stdout, using indentation to represent node hierarchy.
+void Parser_PrintTree(struct ParserProcess* Parser);
+
 #define POINTER_SIZE (_WIN64 ? 8 : 4)
 
 static inline struct DatatypeDef GetPrimitiveDatatypeDef_Void() 

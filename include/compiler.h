@@ -214,6 +214,76 @@ inline ui8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL O
 	return APrec == BPrec ? 0 : (APrec > BPrec ? 1 : -1);
 }
 
+struct SymbolToStringPair
+{
+	enum TOKEN_SYMBOL Symbol;
+	const char* String;
+};
+
+// Longer symbols are listed before any shorter symbol they share a prefix with (eg. "--" before "-"),
+// since the Tokenizer's symbol parsing takes the first match found in this table.
+static const struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
+{
+	{ SYMBOL_SEMICOLON, ";" },
+	{ SYMBOL_COMMA, "," },
+	{ SYMBOL_COLON, ":" },
+	{ SYMBOL_PARENTHESIS_OPEN, "(" },
+	{ SYMBOL_PARENTHESIS_CLOSE, ")" },
+	{ SYMBOL_BRACKET_OPEN, "[" },
+	{ SYMBOL_BRACKET_CLOSE, "]" },
+	{ SYMBOL_BRACE_OPEN, "{" },
+	{ SYMBOL_BRACE_CLOSE, "}" },
+
+	{ SYMBOL_OP_ARROW, "->" },
+	{ SYMBOL_OP_INCREMENT, "++" },
+	{ SYMBOL_OP_ADD_ASSIGN, "+=" },
+	{ SYMBOL_OP_ADD, "+" },
+	{ SYMBOL_OP_DECREMENT, "--" },
+	{ SYMBOL_OP_SUB_ASSIGN, "-=" },
+	{ SYMBOL_OP_SUB, "-" },
+	{ SYMBOL_OP_MULT_ASSIGN, "*=" },
+	{ SYMBOL_STAR, "*" },
+	{ SYMBOL_OP_DIV_ASSIGN, "/=" },
+	{ SYMBOL_OP_DIV, "/" },
+	{ SYMBOL_OP_MODULO_ASSIGN, "%=" },
+	{ SYMBOL_OP_MODULO, "%" },
+
+	{ SYMBOL_OP_AND, "&&" },
+	{ SYMBOL_OP_BITWISE_AND_ASSIGN, "&=" },
+	{ SYMBOL_OP_BITWISE_AND, "&" },
+	{ SYMBOL_OP_OR, "||" },
+	{ SYMBOL_OP_BITWISE_OR_ASSIGN, "|=" },
+	{ SYMBOL_OP_BITWISE_OR, "|" },
+	{ SYMBOL_OP_BITWISE_XOR_ASSIGN, "^=" },
+	{ SYMBOL_OP_BITWISE_XOR, "^" },
+
+	{ SYMBOL_OP_RIGHT_SHIFT_ASSIGN, ">>=" },
+	{ SYMBOL_OP_RIGHT_SHIFT, ">>" },
+	{ SYMBOL_OP_GREATER_EQUAL, ">=" },
+	{ SYMBOL_OP_GREATER, ">" },
+	{ SYMBOL_OP_LEFT_SHIFT_ASSIGN, "<<=" },
+	{ SYMBOL_OP_LEFT_SHIFT, "<<" },
+	{ SYMBOL_OP_LOWER_EQUAL, "<=" },
+	{ SYMBOL_OP_LOWER, "<" },
+	{ SYMBOL_OP_EQUAL, "==" },
+	{ SYMBOL_OP_ASSIGN, "=" },
+	{ SYMBOL_OP_UNEQUAL, "!=" },
+	{ SYMBOL_OP_NOT, "!" },
+
+	{ SYMBOL_OP_BITWISE_REVERSE, "~" },
+};
+
+// Returns the string representation of a Symbol token value (eg. SYMBOL_OP_ADD -> "+"), or NULL if not found.
+static inline const char* Symbol_ToString(enum TOKEN_SYMBOL Symbol)
+{
+	static const int TableSize = sizeof(SYMBOL_TO_STRING_TABLE) / sizeof(struct SymbolToStringPair);
+	for (int i = 0; i < TableSize; i++)
+	{
+		if (SYMBOL_TO_STRING_TABLE[i].Symbol == Symbol) return SYMBOL_TO_STRING_TABLE[i].String;
+	}
+	return NULL;
+}
+
 // All possible values for a Keyword token.
 enum TOKEN_KEYWORD
 {

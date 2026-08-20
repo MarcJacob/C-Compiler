@@ -42,62 +42,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 		}
 		else
 		{
-			// Print all the parsed tokens.
-			for (int TokenIndex = 0; TokenIndex < Tokens.Size; TokenIndex++)
-			{
-				struct Token* Tok = Vector_GetPtr(&Tokens, TokenIndex);
-
-				switch (Tok->Type)
-				{
-				case TOKEN_COMMENT:
-					printf("<COMMENT>\n");
-					break;
-				case TOKEN_IDENTIFIER:
-					printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier.Str);
-					break;
-				case TOKEN_KEYWORD:
-				{
-					static const int KeywordTableSize = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
-					for (int KeywordIndex = 0; KeywordIndex < KeywordTableSize; KeywordIndex++)
-					{
-						if (KEYWORD_TO_STRING_TABLE[KeywordIndex].Keyword == Tok->Val.Keyword)
-						{
-							printf("<KEYWORD: '%s'>\n", KEYWORD_TO_STRING_TABLE[KeywordIndex].String);
-							break;
-						}
-					}
-					break;
-				}
-				case TOKEN_SYMBOL:
-				{
-					static const int SymbolTableSize = sizeof(SYMBOL_TO_STRING_TABLE) / sizeof(struct SymbolToStringPair);
-					for (int SymbolIndex = 0; SymbolIndex < SymbolTableSize; SymbolIndex++)
-					{
-						if (SYMBOL_TO_STRING_TABLE[SymbolIndex].Symbol == Tok->Val.Symbol)
-						{
-							printf("<SYMBOL: '%s'>\n", SYMBOL_TO_STRING_TABLE[SymbolIndex].String);
-							break;
-						}
-					}
-					break;
-				}
-				case TOKEN_LITERAL_STRING:
-					printf("<LITERAL_STRING: \"%s\">\n", Tok->Val.LiteralString.Str);
-					break;
-				case TOKEN_LITERAL_CHAR:
-					printf("<LITERAL_CHAR: '%c'>\n", Tok->Val.LiteralCharacter);
-					break;
-				case TOKEN_LITERAL_NUMBER_INT:
-					printf("<LITERAL_NUMBER_INT: %lld>\n", Tok->Val.LiteralNumber.Integer);
-					break;
-				case TOKEN_LITERAL_NUMBER_FLOAT:
-					printf("<LITERAL_NUMBER_FLOAT: %f>\n", Tok->Val.LiteralNumber.Float);
-					break;
-				case TOKEN_LITERAL_NUMBER_DOUBLE:
-					printf("<LITERAL_NUMBER_DOUBLE: %lf>\n", Tok->Val.LiteralNumber.Double);
-					break;
-				}
-			}
+			Tokenizer_PrintTokens(&Tokenizer);
 		}
 	}
 
@@ -119,6 +64,10 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 			// TODO: Figure out line & col of error instead of raw buffer location + pass filenames to compiler instead of just the source buffers themselves.
 			Compiler->ErrorMsg = String_CreateFormat_ANSI("PARSER ERROR (%s, Loc = %d) > %s", "<SRC FILENAME>", Parser.Error.Location, Parser.Error.Message.Str);
 			return;
+		}
+		else
+		{
+			Parser_PrintTree(&Parser);
 		}
 	}
 	
