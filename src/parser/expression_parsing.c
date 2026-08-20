@@ -129,11 +129,147 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 	return Expressionable;
 }
 
-// Parses a full operator expression from an optional preceding node tree (which can become either the new operator's left operand, or use the new operator as its right operand).
-struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* PrevNode, struct AST_Node* Op)
+// Handles operator precedence between a "root" operator expression, and its left operand.
+// If the left operand is itself an operator expression with an operator of LOWER precedence (and the same parenthesis level),
+// then the root becomes the left operand's right operand, itself becoming the root's left operand, and the left operand becomes the new root (return value).
+static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression)
 {
-	Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Operator parsing unimplemented.");
-	return NULL;
+	ASSERT(RootExpression != NULL);
+
+	struct AST_Node* LeftOperand = RootExpression->Val.Expression.Op.LeftOperand;
+	ASSERT(LeftOperand != NULL);
+
+	if (LeftOperand->Val.Expression.Type != EXP_OP)
+	{
+		// Left operand is not an operator itself.
+		return RootExpression;
+	}
+
+	if (RootExpression->Val.Expression.ParenthesisLevel < LeftOperand->Val.Expression.ParenthesisLevel)
+	{
+		// Left operand is inside an extra parenthesis scope.
+		return RootExpression;
+	}
+
+	// If left operand's operator has a LOWER precedence than root expression's, then it should act first.
+	// To achieve this, left operand's right operand becomes root's left operand, root becomes left operand's right operand,
+	// and left operand becomes the new root.
+	while (LeftOperand != NULL
+		&& LeftOperand->Val.Expression.Type == EXP_OP
+		&& Symbol_CompareOpPrecedence(RootExpression->Val.Expression.Op.OperatorSymbol, 
+			LeftOperand->Val.Expression.Op.OperatorSymbol) == 1)
+	{
+		struct AST_Node* Left_Right = LeftOperand->Val.Expression.Op.RightOperand;
+		LeftOperand->Val.Expression.Op.RightOperand = RootExpression;
+		RootExpression->Val.Expression.Op.LeftOperand = Left_Right;
+
+		RootExpression = LeftOperand;
+		LeftOperand = RootExpression->Val.Expression.Op.LeftOperand;
+	}
+
+	return RootExpression;
+}
+
+// Handles parsing the right operand of a newly-parsed operator expressionable, if required.
+// The expressionable must have its parenthesis level and left operand assigned.
+// OutParenthesisLevel allows keeping track of current parenthesis level after the function returns.
+// Returns the root of the resulting expression tree.
+static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel)
+{
+	ASSERT(Op != NULL);
+	ASSERT(Op->Val.Expression.Type == EXP_OP);
+
+	enum TOKEN_SYMBOL OpSymbol = Op->Val.Expression.Op.OperatorSymbol;
+
+	// Check error case: Unary left operator given a left operand or unary right / binary operator NOT given a left operand.
+	ui8 NeedsLeftOperand = Symbol_IsRightUnaryOperator(OpSymbol) || Symbol_IsBinaryOperator(OpSymbol);
+	if (NeedsLeftOperand != (Op->Val.Expression.Op.LeftOperand != NULL))
+	{
+		Parser_Error(Parser, Op->BufferLocation, "Invalid operands for operator.");
+		return NULL;
+	}
+
+	ui8 NeedsRightOperand = Symbol_IsLeftUnaryOperator(OpSymbol) || Symbol_IsBinaryOperator(OpSymbol);
+
+	// Initialize parenthesis level to whatever the entry Operator has been assigned to.
+	ui8 ParenthesisLevel = Op->Val.Expression.ParenthesisLevel;
+	if (NeedsRightOperand)
+	{
+		// New operator requires a right operand.
+		struct AST_Node* RightOperand = NULL;
+
+		struct Token* NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL)
+		{
+		PARSE_FAIL_EOF:
+			Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing expression.");
+		PARSE_FAIL:
+			if (RightOperand != NULL) FreeNode(RightOperand);
+			return NULL;
+		}
+
+
+		// Look for opening parenthesis.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+		{
+			Parser_NextToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+			ParenthesisLevel++;
+		}
+
+		RightOperand = ParseExpressionableNode(Parser);
+		if (RightOperand == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
+			goto PARSE_FAIL;
+		}
+
+		RightOperand->Val.Expression.ParenthesisLevel = ParenthesisLevel;
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		// If right operand expressionable is itself an operator, recursively call this function on it.
+		if (RightOperand->Val.Expression.Type == EXP_OP)
+		{
+			// The right operand is parsed without a left operand for itself meaning it will only work with left unary operators.
+			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
+			if (Op->Val.Expression.Op.RightOperand == NULL)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse right operand operator expression.");
+				goto PARSE_FAIL;
+			}
+		}
+		else
+		{
+			Op->Val.Expression.Op.RightOperand = RightOperand;
+		}
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		// Check for closing parenthesis up until reaching back out of our own parenthesis level.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			if (ParenthesisLevel < Op->Val.Expression.ParenthesisLevel) break;
+			ParenthesisLevel--;
+
+			Parser_NextToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		}
+	}
+
+	// If a left operand is present, handle precedence between it and this operator expression.
+	if (NeedsLeftOperand)
+	{
+		Op = HandleOperatorPrecedence(Op);
+	}
+
+	*OutParenthesisLevel = ParenthesisLevel;
+	return Op;
 }
 
 // Entry point of expression parsing. Parses a "root expression" until reaching an end character (closing parenthesis or semicolon).
@@ -153,47 +289,48 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		return NULL;
 	}
 
-	ExpressionRootNode = ParseExpressionableNode(Parser);
-	NextToken = Parser_PeekToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	ui8 ParenthesisLevel = 0;
 
 	// Constantly try to update the root node to cover the next expressionables / sub-expression that are found until a stop point is reached.
 	for (;;)
 	{
-		// Check for End Symbol.
-		if (Token_IsSymbol(NextToken, EndSymbol))
+		NextToken = Parser_PeekToken(Parser);
+
+		// Check for End Symbol if outside a parenthesis scope.
+		if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, EndSymbol))
 		{
 			Parser_NextToken(Parser);
 			break;
 		}
 
-		// Get the next node composing the expression.
-		struct AST_Node* NextNode = NULL;
-		if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+		// Check for opening parenthesis.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 		{
-			// When encountering an opening parenthesis scope, 
-			NextToken = Parser_NextToken(Parser);
+			Parser_NextToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-			// Recursive call to parse the entire sub-expression (IE until a matching closing parenthesis is encountered).
-			NextNode = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
-			if (Parser->HasError) goto PARSE_FAIL;
-		}
-		else
-		{
-			NextNode = ParseExpressionableNode(Parser);
+			ParenthesisLevel++;
 		}
 
-		// If no node was successfully parsed, then we encountered an invalid character.
+		// Get the next node composing the expression.
+		struct AST_Node* NextNode = ParseExpressionableNode(Parser);
 		if (NextNode == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token in expression.");
 			goto PARSE_FAIL;
 		}
+		NextNode->BufferLocation = NextToken->BufferLocation;
+		NextNode->Val.Expression.ParenthesisLevel = ParenthesisLevel;
 
 		if (NextNode->Val.Expression.Type == EXP_OP)
 		{
-			ExpressionRootNode = ParseOperatorExpression(Parser, ExpressionRootNode, NextNode);
+			// If we're here then it means parsing has just started or that the previous node can be operated on (as opposed
+			// to an incomplete operator node which can't yet), so it can be put into the new node's left operand slot right away.
+			NextNode->Val.Expression.Op.LeftOperand = ExpressionRootNode;
+
+			// Continue parsing to obtain the right operand of this operator.
+			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel);
 			if (ExpressionRootNode == NULL)
 			{
 				if (Parser->HasError) goto PARSE_FAIL;
@@ -203,12 +340,21 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		else if (ExpressionRootNode == NULL)
 		{
 			ExpressionRootNode = NextNode;
-			continue;
 		}
 		else // Error case if two non-operator nodes are put in succession.
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected operand in expression.");
 			goto PARSE_FAIL;
+		}
+
+		// Check for closing parenthesis.
+		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			Parser_NextToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+			ParenthesisLevel--;
 		}
 	}
 

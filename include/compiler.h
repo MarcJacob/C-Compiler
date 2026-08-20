@@ -186,6 +186,34 @@ static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
 	}
 }
 
+// Returns the Precedence Level of the given operator symbol.
+// A higher value means a higher precedence.
+inline ui8 Symbol_GetOpPrecedenceLevel(enum TOKEN_SYMBOL Op)
+{
+	// TODO: Complete with all operators...
+	switch (Op)
+	{
+	case SYMBOL_OP_ADD:
+	case SYMBOL_OP_SUB:
+		return 0;
+	case SYMBOL_OP_MULT:
+	case SYMBOL_OP_DIV:
+	case SYMBOL_OP_MODULO:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+// Returns 0 if the operators are of the same precedence level, 1 if A > B, -1 if B < A.
+inline ui8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL OpB)
+{
+	ui8 APrec = Symbol_GetOpPrecedenceLevel(OpA);
+	ui8 BPrec = Symbol_GetOpPrecedenceLevel(OpB);
+
+	return APrec == BPrec ? 0 : (APrec > BPrec ? 1 : -1);
+}
+
 // All possible values for a Keyword token.
 enum TOKEN_KEYWORD
 {
