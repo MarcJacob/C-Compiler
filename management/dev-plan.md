@@ -39,7 +39,10 @@
   - Datatype parsing (primitive types, specifiers, pointer levels). [DONE]
   - Top-level dispatch loop (function / struct / global variable) wired into Parser_Run. [DONE]
   - Function parsing (identifier, parameters, body). [DONE]
-  - Statement parsing (block, if/while, for, switch stub, expressions / flow control / var dec & def stubs). [WIP]
+  - Statement parsing (block, if/while, for, expressions, return/break/continue with break/continue resolved to their enclosing loop). [DONE]
+  - Switch statement parsing.
+  - Goto statement parsing.
+  - Local variable declaration parsing (inside statement blocks).
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
   - Struct parsing.

@@ -1131,6 +1131,24 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 		// Parse as definition.
 		// First parse a whole block, then go through it and collect any internal variable declarations
 		FunctionNode->Val.Function.Statements = ParseBlockStatementNode(Parser);
+
+		// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
+		struct Vector Substatements = GetAllStatements(FunctionNode->Val.Function.Statements);
+
+		for (int i = 0; i < Substatements.Size; i++)
+		{
+			struct AST_Node* Substatement = Vector_GetValueAt(Substatements, struct AST_Node*, i);
+			ASSERT(Substatement != NULL);
+
+			if (Substatement->Type != AST_NODE_STATEMENT_CONTROL) continue;
+			enum TOKEN_KEYWORD Kwd = Substatement->Val.Statement.Control.Keyword;
+
+			if (Kwd != KEYWORD_RETURN) continue;
+			ASSERT(Substatement->Val.Statement.Control.TargetStatement == NULL); // If a return statement is already linked to something, things are very very wrong...
+
+			Substatement->Val.Statement.Control.TargetStatement = FunctionNode;
+		}
+
 	}
 	else
 	{
