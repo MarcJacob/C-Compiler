@@ -535,6 +535,7 @@ static struct Vector GetAllStatements_Block(struct AST_Node* BlockStatement)
 	{
 		struct Vector Sub = GetAllStatements(Vector_GetValueAt(BlockStatement->Val.Statement.Block.Statements, struct AST_Node*, i));
 		Vector_Append(&BlockStatements, &Sub);
+		Vector_Destroy(&Sub);
 	}
 
 	return BlockStatements;
@@ -556,11 +557,16 @@ static struct Vector GetAllStatements_Conditional(struct AST_Node* ConditionalSt
 
 		Vector_Append(&CondStatements, &ExecStatements);
 		Vector_Append(&CondStatements, &ElseExecStatements);
+
+		Vector_Destroy(&ExecStatements);
+		Vector_Destroy(&ElseExecStatements);
 	}
 	else
 	{
 		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.While.ExecStatement);
 		Vector_Append(&CondStatements, &ExecStatements);
+
+		Vector_Destroy(&ExecStatements);
 	}
 
 	return CondStatements;
@@ -577,7 +583,8 @@ static struct Vector GetAllStatements_For(struct AST_Node* ForStatement)
 	struct Vector ExecStatements = GetAllStatements(ForStatement->Val.Statement.For.ExecStatement);
 
 	Vector_Append(&ForStatements, &ExecStatements);
-	
+	Vector_Destroy(&ExecStatements);
+
 	return ForStatements;
  }
 
@@ -606,6 +613,7 @@ static struct Vector GetAllStatements(struct AST_Node* RootStatement)
 	}
 
 	Vector_Append(&Statements, &SubBlock);
+	Vector_Destroy(&SubBlock);
 
 	return Statements;
 }
@@ -647,10 +655,10 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 	}
 
 	// Parse statements on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
-	struct AST_Node* NextInstruction = ParseStatementNode(Parser);
-	while (NextInstruction != NULL)
+	struct AST_Node* NextStatement = ParseStatementNode(Parser);
+	while (NextStatement != NULL)
 	{
-		Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextInstruction);
+		Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextStatement);
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -660,7 +668,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 			break;
 		}
 
-		NextInstruction = ParseStatementNode(Parser);
+		NextStatement = ParseStatementNode(Parser);
 	}
 
 	if (Parser->HasError)
@@ -752,6 +760,8 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 
 			Substatement->Val.Statement.Control.TargetStatement = StatementNode;
 		}
+
+		Vector_Destroy(&Substatements);
 	}
 	else
 	{
@@ -836,6 +846,8 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		Substatement->Val.Statement.Control.TargetStatement = StatementNode;
 	}
 
+	Vector_Destroy(&Substatements);
+
 	return StatementNode;
 }
 
@@ -876,6 +888,9 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	{
 	case KEYWORD_GOTO:
 		Parser_Error(Parser, NextToken->BufferLocation, "goto keyword parsing is unimplemented.");
+		goto PARSE_FAIL;
+	case KEYWORD_CASE:
+		Parser_Error(Parser, NextToken->BufferLocation, "case keyword parsing is unimplemented.");
 		goto PARSE_FAIL;
 	case KEYWORD_BREAK:
 	case KEYWORD_CONTINUE:
