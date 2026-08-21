@@ -563,6 +563,57 @@ inline ui8 Keyword_IsTypeSpecifier(enum TOKEN_KEYWORD Keyword)
 	return Keyword >= KEYWORD_STATIC && Keyword <= KEYWORD_VOLATILE;
 }
 
+struct KeywordToStringPair
+{
+	enum TOKEN_KEYWORD Keyword;
+	const char* String;
+};
+
+// Case-sensitive matching table for keyword token values and their source string equivalent.
+static const struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
+{
+	{ KEYWORD_VOID, "void" },
+	{ KEYWORD_CHAR, "char" },
+	{ KEYWORD_SHORT, "short" },
+	{ KEYWORD_INT, "int" },
+	{ KEYWORD_FLOAT, "float" },
+	{ KEYWORD_LONG, "long" },
+	{ KEYWORD_DOUBLE, "double" },
+
+	{ KEYWORD_STATIC, "static" },
+	{ KEYWORD_SIGNED, "signed" },
+	{ KEYWORD_UNSIGNED, "unsigned" },
+	{ KEYWORD_CONST, "const" },
+	{ KEYWORD_VOLATILE, "volatile" },
+	{ KEYWORD_STRUCT, "struct" },
+	{ KEYWORD_ENUM, "enum" },
+	{ KEYWORD_UNION, "union" },
+
+	{ KEYWORD_IF, "if" },
+	{ KEYWORD_ELSE, "else" },
+	{ KEYWORD_FOR, "for" },
+	{ KEYWORD_DO, "do" },
+	{ KEYWORD_WHILE, "while" },
+	{ KEYWORD_SWITCH, "switch" },
+
+	{ KEYWORD_CASE, "case" },
+	{ KEYWORD_BREAK, "break" },
+	{ KEYWORD_CONTINUE, "continue" },
+	{ KEYWORD_RETURN, "return" },
+	{ KEYWORD_GOTO, "goto" },
+};
+
+// Returns the string representation of a Keyword token value (eg. KEYWORD_RETURN -> "return"), or NULL if not found.
+static inline const char* Keyword_ToString(enum TOKEN_KEYWORD Keyword)
+{
+	static const int TableSize = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
+	for (int i = 0; i < TableSize; i++)
+	{
+		if (KEYWORD_TO_STRING_TABLE[i].Keyword == Keyword) return KEYWORD_TO_STRING_TABLE[i].String;
+	}
+	return NULL;
+}
+
 #define IDENTIFIER_MAX_LENGTH (128)
 
 struct Token

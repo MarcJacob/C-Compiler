@@ -214,7 +214,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		PrintNode(Node->Val.Statement.Expression, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
-		printf("<STATEMENT_CONTROL>\n");
+		printf("<%s>\n", Keyword_ToString(Node->Val.Statement.Control.Keyword));
 		PrintNode(Node->Val.Statement.Control.Expression, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
@@ -223,6 +223,8 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 			printf("<BLOCK>\n");
 			for (int i = 0; i < Node->Val.Statement.Block.Statements.Size; i++)
 				PrintNode(Vector_GetValueAt(Node->Val.Statement.Block.Statements, struct AST_Node*, i), Depth + 1);
+			PrintIndent(Depth);
+			printf("</BLOCK>\n");
 		}
 		else
 		{

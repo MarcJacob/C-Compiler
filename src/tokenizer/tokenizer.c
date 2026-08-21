@@ -72,42 +72,8 @@ void Tokenizer_Error(struct TokenizerProcess* Tokenizer, ui32 BufferLoc, const c
 	va_end(args);
 }
 
-struct KeywordToStringPair
-{
-	enum TOKEN_KEYWORD Keyword;
-	const char* String;
-};
-
-// Case-sensitive matching table for keyword token values and their source string equivalent.
-struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
-{
-	{ KEYWORD_VOID, "void" },
-	{ KEYWORD_CHAR, "char" },
-	{ KEYWORD_SHORT, "short" },
-	{ KEYWORD_INT, "int" },
-	{ KEYWORD_FLOAT, "float" },
-	{ KEYWORD_LONG, "long" },
-	{ KEYWORD_DOUBLE, "double" },
-
-	{ KEYWORD_STATIC, "static" },
-	{ KEYWORD_UNSIGNED, "unsigned" },
-	{ KEYWORD_STRUCT, "struct" },
-	{ KEYWORD_ENUM, "enum" },
-	{ KEYWORD_UNION, "union" },
-	{ KEYWORD_VOLATILE, "volatile" },
-
-	{ KEYWORD_IF, "if" },
-	{ KEYWORD_ELSE, "else" },
-	{ KEYWORD_FOR, "for" },
-	{ KEYWORD_DO, "do" },
-	{ KEYWORD_WHILE, "while" },
-	{ KEYWORD_SWITCH, "switch" },
-	{ KEYWORD_CASE, "case" },
-	{ KEYWORD_BREAK, "break" },
-	{ KEYWORD_CONTINUE, "continue" },
-	{ KEYWORD_RETURN, "return" },
-};
-
+// Keyword <-> string matching table now lives in compiler.h as KEYWORD_TO_STRING_TABLE, shared with
+// Keyword_ToString for use anywhere in the program (mirrors SYMBOL_TO_STRING_TABLE / Symbol_ToString).
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)
 {
 	struct CharBufferReader_ANSI SourceReader = OpenNestedBufferReader_ANSI(EntryReader);
@@ -544,18 +510,8 @@ void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer)
 			printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier.Str);
 			break;
 		case TOKEN_KEYWORD:
-		{
-			static const int KeywordTableSize = sizeof(KEYWORD_TO_STRING_TABLE) / sizeof(struct KeywordToStringPair);
-			for (int KeywordIndex = 0; KeywordIndex < KeywordTableSize; KeywordIndex++)
-			{
-				if (KEYWORD_TO_STRING_TABLE[KeywordIndex].Keyword == Tok->Val.Keyword)
-				{
-					printf("<KEYWORD: '%s'>\n", KEYWORD_TO_STRING_TABLE[KeywordIndex].String);
-					break;
-				}
-			}
+			printf("<KEYWORD: '%s'>\n", Keyword_ToString(Tok->Val.Keyword));
 			break;
-		}
 		case TOKEN_SYMBOL:
 			printf("<SYMBOL: '%s'>\n", Symbol_ToString(Tok->Val.Symbol));
 			break;
