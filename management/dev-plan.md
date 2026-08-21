@@ -41,6 +41,7 @@
   - Function parsing (identifier, parameters, body). [WIP]
   - Statement parsing (block, if/while, for skeleton, switch stub, expressions / flow control / var dec & def stubs). [WIP]
   - Global variable parsing.
+  - Array & Array Access operator parsing.
   - Struct parsing.
   - Expression parsing. [WIP]
     - Function call expressionables.

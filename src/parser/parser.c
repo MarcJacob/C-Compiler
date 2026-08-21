@@ -166,7 +166,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		printf("<LITERAL_CHAR: '%c'>\n", Node->Val.Expression.Literal.Character);
 		break;
 	case EXP_VARIABLE:
-		printf("<VAR_READ: '%s'>\n", Node->Val.Expression.Variable.Name.Str);
+		printf("<VAR_ACCESS: '%s'>\n", Node->Val.Expression.Variable.Name.Str);
 		break;
 	case EXP_OP:
 		printf("<OP: '%s'>\n", Symbol_ToString(Node->Val.Expression.Op.OperatorSymbol));
@@ -224,9 +224,16 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		PrintNode(Node->Val.Statement.Control, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
-		printf("<BLOCK>\n");
-		for (int i = 0; i < Node->Val.Statement.Block.Statements.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Val.Statement.Block.Statements, struct AST_Node*, i), Depth + 1);
+		if (Node->Val.Statement.Block.Statements.Size > 0)
+		{
+			printf("<BLOCK>\n");
+			for (int i = 0; i < Node->Val.Statement.Block.Statements.Size; i++)
+				PrintNode(Vector_GetValueAt(Node->Val.Statement.Block.Statements, struct AST_Node*, i), Depth + 1);
+		}
+		else
+		{
+			printf("<EMPTY BLOCK>\n");
+		}
 		break;
 	case AST_NODE_STATEMENT_IF:
 		printf("<IF>\n");
@@ -488,7 +495,9 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 
 	// Parse pointer levels.
-	while (Token_IsSymbol(NextToken, SYMBOL_STAR))
+	// (Since the token is consumed and the symbol information is discarded, no need for deambiguation...
+	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR)
+		|| Token_IsSymbol(NextToken, SYMBOL_OP_DEREF)) // ... but still support using DEREF in case the token source was not built from text).
 	{
 		Parser_NextToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
@@ -788,41 +797,52 @@ ui8 ParseGlobal_Variable(struct ParserProcess* Parser)
 	VarNode = AllocNewNode(AST_NODE_VARIABLE);
 	VarNode->BufferLocation = NextToken->BufferLocation;
 
+	// Attempt to parse a data type directly into the node.
+	// If it fails, then we know we're not dealing with a variable, but it could be something else
+	// hence no error is output.
 	if (!ParseDatatypeDef(Parser, &VarNode->Val.Variable.Type, 0))
 	{
 		goto PARSE_FAIL;
 	}
 
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	// Attempt to parse an expression.
+	// If successful, then we know we're dealing with a variable or an error case.
+	// Otherwise, we're probably dealing with a function or structure.
 
-	if (NextToken->Type != TOKEN_IDENTIFIER)
+	struct AST_Node* VarExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+	if (VarExpression == NULL)
 	{
 		goto PARSE_FAIL;
 	}
 
-	VarNode->Val.Variable.Name = String_Copy_ANSI(NextToken->Val.Identifier);
-	
-	NextToken = Parser_NextToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	// If the expression is just a variable node, then we have a declaration.
+	// If the expression is an assignment node with a variable left operand, then we have a definition.
+	// If the expression is an array access node with a variable left operand, then we have an array definition (TODO).
 
-	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	if (VarExpression->Val.Expression.Type == EXP_VARIABLE)
 	{
-		// Parse as simple declaration, which requires nothing else.
+		// Variable declaration.
+		// Consume the expression node to get the variable name and leave the variable node without a value node.
+		VarNode->Val.Variable.Name = String_Copy_ANSI(VarExpression->Val.Expression.Variable.Name);
+		FreeNode(VarExpression);
 	}
-	else if (Token_IsSymbol(NextToken, SYMBOL_OP_ASSIGN))
+	else if (VarExpression->Val.Expression.Type == EXP_OP
+		&& VarExpression->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ASSIGN
+		&& VarExpression->Val.Expression.Op.LeftOperand->Val.Expression.Type == EXP_VARIABLE)
 	{
-		// Parse variable value definition.
-		VarNode->Val.Variable.Value = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
-
+		// Variable definition.
+		// Copy the name from the expression but leave the full expression in as the variable node's value node.
+		VarNode->Val.Variable.Name = String_Copy_ANSI(VarExpression->Val.Expression.Op.LeftOperand->Val.Expression.Variable.Name);
+		VarNode->Val.Variable.Value = VarExpression;
 	}
-	else if (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+	else if (0 /* && VarExpression->Val.Expression.Type == EXP_OP
+		&& VarExpression->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS */)
 	{
-		// Parse as array definition.
-
-		VarNode->Val.Variable.Value = ParseExpressionNode(Parser, SYMBOL_BRACKET_CLOSE);
-		VarNode->Val.Variable.IsArray = 1;
-
+		// ... TODO Array definition.
+	}
+	else
+	{
+		Parser_Error(Parser, VarExpression->BufferLocation, "Unexpected expression format in declaration.");
 		goto PARSE_FAIL;
 	}
 

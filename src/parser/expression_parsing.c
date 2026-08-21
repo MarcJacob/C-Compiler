@@ -81,8 +81,8 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 	if (NextToken == NULL) return NULL;
 
 	if (NextToken->Type != TOKEN_SYMBOL 
-		|| (!Symbol_IsBinaryOperator(NextToken->Val.Symbol) 
-			&& !Symbol_IsUnaryOperator(NextToken->Val.Symbol)))
+		|| (!Symbol_IsBinaryOp(NextToken->Val.Symbol) 
+			&& !Symbol_IsUnaryOp(NextToken->Val.Symbol)))
 	{
 		return NULL;
 	}
@@ -145,32 +145,73 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 		return RootExpression;
 	}
 
+	if (LeftOperand->Val.Expression.Op.RightOperand == NULL)
+	{
+		// Left operand has no right operand - no precedence can apply.
+		return RootExpression;
+	}
+
 	if (RootExpression->Val.Expression.ParenthesisLevel < LeftOperand->Val.Expression.ParenthesisLevel)
 	{
 		// Left operand is inside an extra parenthesis scope.
 		return RootExpression;
 	}
 
-	// If left operand's operator has a LOWER precedence than root expression's, or left operand's right operand has same parenthesis level as root (and root is lower parenthesis level), then it should act first.
-	// To achieve this, left operand's right operand becomes root's left operand, root becomes left operand's right operand,
-	// and left operand becomes the new root.
-	while (LeftOperand != NULL
-		&& LeftOperand->Val.Expression.Type == EXP_OP
-		// Check parenthesis level.
-		&& ((LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel > LeftOperand->Val.Expression.ParenthesisLevel
-			&& RootExpression->Val.Expression.ParenthesisLevel > LeftOperand->Val.Expression.ParenthesisLevel)
-		// Check operator precedence.
-			|| Symbol_CompareOpPrecedence(RootExpression->Val.Expression.Op.OperatorSymbol, 
-				LeftOperand->Val.Expression.Op.OperatorSymbol) == 1
-			)
+	// Cache the "entry root" into the actual expression we'll be descending into the left expression tree.
+	// RootExpression will be set to the first left operand that was promoted to be the root. 
+	struct AST_Node* EntryNode = RootExpression;
+
+	struct AST_Node* Left_Right_Operand = LeftOperand->Val.Expression.Op.RightOperand;
+	enum TOKEN_SYMBOL LeftOp = LeftOperand->Val.Expression.Op.OperatorSymbol;
+	enum TOKEN_SYMBOL EntryNodeOp = EntryNode->Val.Expression.Op.OperatorSymbol;
+
+	ui8 Left_ParenthesisLevel = LeftOperand->Val.Expression.ParenthesisLevel;
+	ui8 Left_Right_ParenthesisLevel = LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel;
+	ui8 EntryNodeParenthesisLevel = EntryNode->Val.Expression.ParenthesisLevel;
+
+	struct AST_Node* ParentNode = NULL;
+
+	// Repeatedly attempt to perform a swap.
+	// It must avoid crossing a right-to-left / left-to-right boundary, parenthesis levels and
+	// left operand must have LOWER precedence if the two have the same associativity, or it must be right-to-left and root left-to-right.
+	while (
+		// Check that we're not crossing a right-to-left / left-to-right boundary.
+		!(!Symbol_IsOpLeftToRightAssociative(EntryNodeOp) && Symbol_IsOpLeftToRightAssociative(LeftOp))
+		// Check parenthesis level (Is entry at a deeper or similar level along with the left operand's right operand ?)
+		&& (EntryNodeParenthesisLevel >= Left_Right_ParenthesisLevel)
+		// If not at a deeper parenthesis level then left operand, Check operator precedence or associativity rules.
+		&& (EntryNodeParenthesisLevel > Left_ParenthesisLevel
+			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) && ((Symbol_IsOpLeftToRightAssociative(LeftOp) == Symbol_IsOpLeftToRightAssociative(EntryNodeOp))))
+			|| !Symbol_IsOpLeftToRightAssociative(LeftOp) && Symbol_IsOpLeftToRightAssociative(EntryNodeOp))
 		)
 	{
-		struct AST_Node* Left_Right = LeftOperand->Val.Expression.Op.RightOperand;
-		LeftOperand->Val.Expression.Op.RightOperand = RootExpression;
-		RootExpression->Val.Expression.Op.LeftOperand = Left_Right;
+		// Perform swap.
+		LeftOperand->Val.Expression.Op.RightOperand = EntryNode;
+		EntryNode->Val.Expression.Op.LeftOperand = Left_Right_Operand;
 
-		RootExpression = LeftOperand;
-		LeftOperand = RootExpression->Val.Expression.Op.LeftOperand;
+		// If this is the first swap, assign Left Operand as the new Root Expression before we lose track of it.
+		if (RootExpression == EntryNode) RootExpression = LeftOperand;
+
+		if (ParentNode != NULL)
+		{
+			ParentNode->Val.Expression.Op.RightOperand = LeftOperand;
+		}
+		ParentNode = LeftOperand;
+
+		LeftOperand = Left_Right_Operand;
+
+		// Check break conditions.
+		if (LeftOperand == NULL) break; // The Left Operand lacked its own right operand.
+		if (LeftOperand->Val.Expression.Type != EXP_OP) break; // The new left operand is not an operator.
+		if (EntryNode->Val.Expression.ParenthesisLevel < LeftOperand->Val.Expression.ParenthesisLevel) break; // The new left operand is on a deeper parenthesis level.
+
+		Left_Right_Operand = LeftOperand->Val.Expression.Op.RightOperand;
+		if (Left_Right_Operand == NULL) break; // The new left operand does not have a right operand.
+
+		// Update check / cached values.
+		LeftOp = LeftOperand->Val.Expression.Op.OperatorSymbol;
+		Left_ParenthesisLevel = LeftOperand->Val.Expression.ParenthesisLevel;
+		Left_Right_ParenthesisLevel = LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel;
 	}
 
 	return RootExpression;
@@ -188,14 +229,36 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	enum TOKEN_SYMBOL OpSymbol = Op->Val.Expression.Op.OperatorSymbol;
 
 	// Check error case: Unary left operator given a left operand or unary right / binary operator NOT given a left operand.
-	ui8 NeedsLeftOperand = Symbol_IsRightUnaryOperator(OpSymbol) || Symbol_IsBinaryOperator(OpSymbol);
-	if (NeedsLeftOperand != (Op->Val.Expression.Op.LeftOperand != NULL))
+	ui8 NeedsLeftOperand = Symbol_IsRightUnaryOp(OpSymbol) && !Symbol_IsBinaryOp(OpSymbol);
+	ui8 SupportsLeftOperand = NeedsLeftOperand || Symbol_IsBinaryOp(OpSymbol);
+	if (!SupportsLeftOperand && Op->Val.Expression.Op.LeftOperand != NULL)
 	{
-		Parser_Error(Parser, Op->BufferLocation, "Invalid operands for operator.");
+		Parser_Error(Parser, Op->BufferLocation, "Unexpected left operand for operator.");
 		return NULL;
 	}
+	// Check error case: Unary right operator not given a left operand.
+	if (NeedsLeftOperand && Op->Val.Expression.Op.LeftOperand == NULL)
+	{
+		Parser_Error(Parser, Op->BufferLocation, "Left operand required for operator.");
+		return NULL;	}
 
-	ui8 NeedsRightOperand = Symbol_IsLeftUnaryOperator(OpSymbol) || Symbol_IsBinaryOperator(OpSymbol);
+	ui8 NeedsRightOperand = !Symbol_IsRightUnaryOp(OpSymbol);
+
+	// We can now deduce the exact kind of operator we're dealing with. Deambiguate as needed.
+	if (Op->Val.Expression.Op.LeftOperand != NULL && NeedsRightOperand)
+	{
+		OpSymbol = Symbol_DeambiguateBinaryOp(OpSymbol);
+	}
+	else if (NeedsRightOperand)
+	{
+		OpSymbol = Symbol_DeambiguateLeftUnaryOp(OpSymbol);
+	}
+	else 
+	{
+		OpSymbol = Symbol_DeambiguateRightUnaryOp(OpSymbol);
+	}
+
+	Op->Val.Expression.Op.OperatorSymbol = OpSymbol;
 
 	// Initialize parenthesis level to whatever the entry Operator has been assigned to.
 	ui8 ParenthesisLevel = Op->Val.Expression.ParenthesisLevel;
@@ -259,17 +322,20 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		// Check for closing parenthesis up until reaching back out of our own parenthesis level.
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
+			if (ParenthesisLevel == 0) break; // Can happen when closing parenthesis is to be used as end symbol.
 			if (ParenthesisLevel < Op->Val.Expression.ParenthesisLevel) break;
+
 			ParenthesisLevel--;
 
 			Parser_NextToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
 		}
 	}
 
 	// If a left operand is present, handle precedence between it and this operator expression.
-	if (NeedsLeftOperand)
+	if (Op->Val.Expression.Op.LeftOperand != NULL)
 	{
 		Op = HandleOperatorPrecedence(Op);
 	}
@@ -360,13 +426,13 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		// Check for closing parenthesis.
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
+			if (ParenthesisLevel == 0) break;
+
 			Parser_NextToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 			ParenthesisLevel--;
-
-			if (ParenthesisLevel == 0) break;
 		}
 	}
 

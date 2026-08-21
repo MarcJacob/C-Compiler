@@ -53,9 +53,14 @@ enum TOKEN_TYPE
 };
 
 // All possible values for a Symbol Token.
+// SYMBOL_OP_* values are used to indicate operators.
+// SYMBOL_OP_AMB_* values are ambiguous operator symbols that are disambiguated into their final value during parsing.
+// TODO: Consider using a completely different enumeration for "parsed operators" instead.
 enum TOKEN_SYMBOL
 {
-	// Statements & expression building
+	SYMBOL_NONE = 0,
+
+	// Statements & expression delimitors.
 	SYMBOL_SEMICOLON,				// ;
 	SYMBOL_COMMA,					// ,
 	SYMBOL_COLON,					// :
@@ -67,20 +72,28 @@ enum TOKEN_SYMBOL
 	SYMBOL_BRACE_CLOSE,				// }
 
 	// Operators
+	// TODO: Add ternary.
 	SYMBOL_OP_ARROW,				// ->
-	SYMBOL_OP_INCREMENT,			// ++
+	SYMBOL_OP_AMB_INCREMENT,		// ++
+	SYMBOL_OP_PRE_INCREMENT,		// ++ (De-ambiguated during the parsing process)
+	SYMBOL_OP_POST_INCREMENT,		// ++ (De-ambiguated during the parsing process)
 	SYMBOL_OP_ADD,					// +
-	SYMBOL_OP_DECREMENT,			// --
-	SYMBOL_OP_SUB,					// -
-	SYMBOL_STAR,					// * (Used for both MULT and DEREF. Thanks C Standard !)
-	SYMBOL_OP_DEREF = SYMBOL_STAR,				
-	SYMBOL_OP_MULT = SYMBOL_STAR, 
+	SYMBOL_OP_AMB_DECREMENT,		// --
+	SYMBOL_OP_PRE_DECREMENT,		// -- (De-ambiguated during the parsing process)
+	SYMBOL_OP_POST_DECREMENT,		// -- (De-ambiguated during the parsing process)
+	SYMBOL_OP_AMB_MINUS,			// -
+	SYMBOL_OP_SUB,					// - (De-ambiguated during the parsing process)
+	SYMBOL_OP_NEGATE,				// - (De-ambiguated during the parsing process)
+	SYMBOL_OP_AMB_STAR,				// * 
+	SYMBOL_OP_DEREF,				// * (De-ambiguated during the parsing process)
+	SYMBOL_OP_MULT,					// * (De-ambiguated during the parsing process)
 	SYMBOL_OP_DIV,					// /
-	SYMBOL_OP_MODULO,				// %
+	SYMBOL_OP_MOD,					// %
 
 	SYMBOL_OP_AND,					// &&
-	SYMBOL_OP_BITWISE_AND,			// & (Used for both bitwise AND and Address Of. Thanks again.)
-	SYMBOL_OP_ADDRESS_OF = SYMBOL_OP_BITWISE_AND,
+	SYMBOL_OP_AMB_AMP,				// &  
+	SYMBOL_OP_BITWISE_AND,			// & (De-ambiguated during the parsing process)
+	SYMBOL_OP_ADDRESS_OF,			// & (De-ambiguated during the parsing process)
 	SYMBOL_OP_OR,					// ||
 	SYMBOL_OP_BITWISE_OR,			// |
 	SYMBOL_OP_BITWISE_XOR,			// ^
@@ -101,7 +114,7 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_SUB_ASSIGN,			// -=
 	SYMBOL_OP_MULT_ASSIGN,			// *=
 	SYMBOL_OP_DIV_ASSIGN,			// /=
-	SYMBOL_OP_MODULO_ASSIGN,		// %=
+	SYMBOL_OP_MOD_ASSIGN,			// %=
 	SYMBOL_OP_BITWISE_AND_ASSIGN,	// &=
 	SYMBOL_OP_BITWISE_OR_ASSIGN,	// |=
 	SYMBOL_OP_BITWISE_XOR_ASSIGN,	// ^=
@@ -112,15 +125,23 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_STRUCT_READ,			// .
 };
 
-static inline ui8 Symbol_IsLeftUnaryOperator(enum TOKEN_SYMBOL Symbol)
+// Returns 1 if the passed symbol corresponds to a left-unary operator.
+// Note: Handles ambiguous operators. Don't forget to de-ambiguate them afterwards.
+static inline ui8 Symbol_IsLeftUnaryOp(enum TOKEN_SYMBOL Symbol)
 {
 	switch (Symbol)
 	{
-		case SYMBOL_OP_INCREMENT:	// As Pre-increment
-		case SYMBOL_OP_DECREMENT:	// As Pre-decrement
+		case SYMBOL_OP_AMB_INCREMENT:
+		case SYMBOL_OP_PRE_INCREMENT:
+		case SYMBOL_OP_AMB_DECREMENT:
+		case SYMBOL_OP_PRE_DECREMENT:
 		case SYMBOL_OP_NOT:
 		case SYMBOL_OP_BITWISE_REVERSE:
+		case SYMBOL_OP_AMB_MINUS:
+		case SYMBOL_OP_NEGATE:
+		case SYMBOL_OP_AMB_STAR:
 		case SYMBOL_OP_DEREF:
+		case SYMBOL_OP_AMB_AMP:
 		case SYMBOL_OP_ADDRESS_OF:
 			return 1;
 		default:
@@ -128,33 +149,40 @@ static inline ui8 Symbol_IsLeftUnaryOperator(enum TOKEN_SYMBOL Symbol)
 	}
 }
 
-static inline ui8 Symbol_IsRightUnaryOperator(enum TOKEN_SYMBOL Symbol)
+// Returns 1 if the passed symbol corresponds to a right-unary operator.
+// Note: Handles ambiguous operators. Don't forget to de-ambiguate them afterwards.
+static inline ui8 Symbol_IsRightUnaryOp(enum TOKEN_SYMBOL Symbol)
 {
 	switch (Symbol)
 	{
-		case SYMBOL_OP_INCREMENT: // As post-increment
-		case SYMBOL_OP_DECREMENT: // As post-decrement
+		case SYMBOL_OP_AMB_INCREMENT:
+		case SYMBOL_OP_POST_INCREMENT:
+		case SYMBOL_OP_AMB_DECREMENT:
+		case SYMBOL_OP_POST_DECREMENT:
 			return 1;
 		default:
 			return 0;
 	}
 }
 
-static inline ui8 Symbol_IsUnaryOperator(enum TOKEN_SYMBOL Symbol)
+static inline ui8 Symbol_IsUnaryOp(enum TOKEN_SYMBOL Symbol)
 {
-	return Symbol_IsLeftUnaryOperator(Symbol) || Symbol_IsRightUnaryOperator(Symbol);
+	return Symbol_IsLeftUnaryOp(Symbol) || Symbol_IsRightUnaryOp(Symbol);
 }
 
-static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
+static inline ui8 Symbol_IsBinaryOp(enum TOKEN_SYMBOL Symbol)
 {
 	switch (Symbol)
 	{
 		case SYMBOL_OP_ADD:
+		case SYMBOL_OP_AMB_MINUS:
 		case SYMBOL_OP_SUB:
+		case SYMBOL_OP_AMB_STAR:
 		case SYMBOL_OP_MULT:
 		case SYMBOL_OP_DIV:
-		case SYMBOL_OP_MODULO:
+		case SYMBOL_OP_MOD:
 		case SYMBOL_OP_AND:
+		case SYMBOL_OP_AMB_AMP:
 		case SYMBOL_OP_BITWISE_AND:
 		case SYMBOL_OP_OR:
 		case SYMBOL_OP_BITWISE_OR:
@@ -172,7 +200,7 @@ static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
 		case SYMBOL_OP_SUB_ASSIGN:
 		case SYMBOL_OP_MULT_ASSIGN:
 		case SYMBOL_OP_DIV_ASSIGN:
-		case SYMBOL_OP_MODULO_ASSIGN:
+		case SYMBOL_OP_MOD_ASSIGN:
 		case SYMBOL_OP_BITWISE_AND_ASSIGN:
 		case SYMBOL_OP_BITWISE_OR_ASSIGN:
 		case SYMBOL_OP_BITWISE_XOR_ASSIGN:
@@ -186,32 +214,224 @@ static inline ui8 Symbol_IsBinaryOperator(enum TOKEN_SYMBOL Symbol)
 	}
 }
 
-// Returns the Precedence Level of the given operator symbol.
-// A higher value means a higher precedence.
-inline ui8 Symbol_GetOpPrecedenceLevel(enum TOKEN_SYMBOL Op)
+static inline ui8 Symbol_IsOp(enum TOKEN_SYMBOL Symbol)
 {
-	// TODO: Complete with all operators...
+	return Symbol_IsBinaryOp(Symbol) || Symbol_IsUnaryOp(Symbol);
+}
+
+static inline enum TOKEN_SYMBOL Symbol_DeambiguateLeftUnaryOp(enum TOKEN_SYMBOL Op)
+{
+	ASSERT(Symbol_IsLeftUnaryOp(Op));
 	switch (Op)
 	{
-	case SYMBOL_OP_ADD:
-	case SYMBOL_OP_SUB:
-		return 0;
-	case SYMBOL_OP_MULT:
-	case SYMBOL_OP_DIV:
-	case SYMBOL_OP_MODULO:
-		return 1;
+	case SYMBOL_OP_AMB_AMP:
+		return SYMBOL_OP_ADDRESS_OF;
+	case SYMBOL_OP_AMB_INCREMENT:
+		return SYMBOL_OP_PRE_INCREMENT;
+	case SYMBOL_OP_AMB_DECREMENT:
+		return SYMBOL_OP_PRE_DECREMENT;
+	case SYMBOL_OP_AMB_MINUS:
+		return SYMBOL_OP_NEGATE;
 	default:
-		return 0;
+		return Op;
 	}
 }
 
-// Returns 0 if the operators are of the same precedence level, 1 if A > B, -1 if B < A.
-inline ui8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL OpB)
+static inline enum TOKEN_SYMBOL Symbol_DeambiguateRightUnaryOp(enum TOKEN_SYMBOL Op)
 {
-	ui8 APrec = Symbol_GetOpPrecedenceLevel(OpA);
-	ui8 BPrec = Symbol_GetOpPrecedenceLevel(OpB);
+	ASSERT(Symbol_IsRightUnaryOp(Op));
+	switch (Op)
+	{
+	case SYMBOL_OP_AMB_INCREMENT:
+		return SYMBOL_OP_POST_INCREMENT;
+	case SYMBOL_OP_AMB_DECREMENT:
+		return SYMBOL_OP_POST_DECREMENT;
+	default:
+		return Op;
+	}
+}
+
+static inline enum TOKEN_SYMBOL Symbol_DeambiguateBinaryOp(enum TOKEN_SYMBOL Op)
+{
+	ASSERT(Symbol_IsBinaryOp(Op));
+	switch (Op)
+	{
+	case SYMBOL_OP_AMB_AMP:
+		return SYMBOL_OP_BITWISE_AND;
+	case SYMBOL_OP_AMB_MINUS:
+		return SYMBOL_OP_SUB;
+	case SYMBOL_OP_AMB_STAR:
+		return SYMBOL_OP_MULT;
+	default:
+		return Op;
+	}
+}
+
+#define OPERATOR_PARSE_RULE_GROUP_MAX_SIZE (16)
+// Describes the associativity rule of a group of operators, and the fact that
+// the operators in the group have the same level of precedence.
+// Used in the Parse Rules Table, with groups coming first being of a higher precedence level
+// than those coming after.
+struct OperatorParseRulesGroup
+{
+	enum TOKEN_SYMBOL Op[OPERATOR_PARSE_RULE_GROUP_MAX_SIZE];
+	ui8 IsRightToLeftAssociative;
+};
+
+static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
+{
+	// Unaries
+	{
+		{
+			SYMBOL_OP_PRE_INCREMENT,
+			SYMBOL_OP_POST_INCREMENT,
+			SYMBOL_OP_NEGATE,
+			SYMBOL_OP_NOT,
+			SYMBOL_OP_BITWISE_REVERSE,
+			SYMBOL_OP_DEREF,
+			SYMBOL_OP_ADDRESS_OF,
+		}, 1
+	},
+
+	// Arithmetic groups
+	{
+		{
+			SYMBOL_OP_MULT,
+			SYMBOL_OP_DIV,
+			SYMBOL_OP_MOD,
+		}, 0
+	},
+	{
+		{
+			SYMBOL_OP_ADD,
+			SYMBOL_OP_SUB,
+		}, 0
+	},
+
+	// Shifts
+	{
+		{
+			SYMBOL_OP_LEFT_SHIFT,
+			SYMBOL_OP_RIGHT_SHIFT,
+		}, 0
+	},
+
+	// Inequalities
+	{
+		{
+			SYMBOL_OP_LOWER,
+			SYMBOL_OP_LOWER_EQUAL,
+			SYMBOL_OP_GREATER,
+			SYMBOL_OP_GREATER_EQUAL,
+		}, 0
+	},
+
+	// Equalities
+	{
+		{
+			SYMBOL_OP_EQUAL,
+			SYMBOL_OP_UNEQUAL,
+		}, 0
+	},
+
+	// Bitwise Ops
+	{
+		{
+			SYMBOL_OP_BITWISE_AND,
+		}, 0
+	},
+	{
+		{
+			SYMBOL_OP_BITWISE_XOR,
+		}, 0
+	},
+	{
+		{
+			SYMBOL_OP_BITWISE_OR,
+		}, 0
+	},
+
+	// Booleans
+	{
+		{
+			SYMBOL_OP_AND,
+		}, 0
+	},
+	{
+		{
+			SYMBOL_OP_OR,
+		}, 0
+	},
+
+	// Assignments
+	{
+		{
+			SYMBOL_OP_ASSIGN,
+			SYMBOL_OP_ADD_ASSIGN,
+			SYMBOL_OP_SUB_ASSIGN,
+			SYMBOL_OP_MULT_ASSIGN,
+			SYMBOL_OP_DIV_ASSIGN,
+			SYMBOL_OP_MOD_ASSIGN,
+			SYMBOL_OP_BITWISE_AND_ASSIGN,
+			SYMBOL_OP_BITWISE_OR_ASSIGN,
+			SYMBOL_OP_BITWISE_XOR_ASSIGN,
+			SYMBOL_OP_LEFT_SHIFT_ASSIGN,
+			SYMBOL_OP_RIGHT_SHIFT_ASSIGN,
+		}, 1
+	},
+
+	// The lonely Comma
+	{
+		{
+			SYMBOL_COMMA,
+		}, 0
+	},
+};
+
+static inline void Symbol_GetOpParseRules(enum TOKEN_SYMBOL Op, ui8* OutPrecedenceLevel, ui8* OutIsRightToLeft)
+{
+	ASSERT_MSG(Symbol_IsOp(Op), "Attempted to get operator parse rules for a non-operator symbol.");
+	ASSERT(OutPrecedenceLevel != NULL || OutIsRightToLeft != NULL);
+
+	// Find symbol in the rules table. Its precedence level corresponds to the index of its group.
+
+	static const ui8 RULES_TABLE_SIZE = sizeof(OPERATOR_PARSE_RULES_TABLE) / sizeof(struct OperatorParseRulesGroup);
+	for (ui8 GroupIndex = 0; GroupIndex < RULES_TABLE_SIZE; GroupIndex++)
+	{
+		for (ui8 OpIndex = 0; OpIndex < OPERATOR_PARSE_RULE_GROUP_MAX_SIZE; OpIndex++)
+		{
+			if (OPERATOR_PARSE_RULES_TABLE[GroupIndex].Op[OpIndex] == Op)
+			{
+				if (OutPrecedenceLevel != NULL) *OutPrecedenceLevel = GroupIndex;
+				if (OutIsRightToLeft != NULL) *OutIsRightToLeft = OPERATOR_PARSE_RULES_TABLE[GroupIndex].IsRightToLeftAssociative;
+				return;
+			}
+			if (OPERATOR_PARSE_RULES_TABLE[GroupIndex].Op[OpIndex] == SYMBOL_NONE)
+			{
+				break;
+			}
+		}
+	}
+
+	ASSERT_MSG(0, "Missing operator in rules table.");
+}
+
+// Returns 0 if the operators are of the same precedence level, 1 if A > B, -1 if B < A.
+static inline ui8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL OpB)
+{
+	ui8 APrec, BPrec;
+	Symbol_GetOpParseRules(OpA, &APrec, NULL);
+	Symbol_GetOpParseRules(OpB, &BPrec, NULL);
 
 	return APrec == BPrec ? 0 : (APrec > BPrec ? 1 : -1);
+}
+
+static inline ui8 Symbol_IsOpLeftToRightAssociative(enum TOKEN_SYMBOL Op)
+{
+	ui8 RightToLeft;
+	Symbol_GetOpParseRules(Op, NULL, &RightToLeft);
+
+	return !RightToLeft;
 }
 
 struct SymbolToStringPair
@@ -235,22 +455,32 @@ static const struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
 	{ SYMBOL_BRACE_CLOSE, "}" },
 
 	{ SYMBOL_OP_ARROW, "->" },
-	{ SYMBOL_OP_INCREMENT, "++" },
+	{ SYMBOL_OP_AMB_INCREMENT, "++" },
+	{ SYMBOL_OP_PRE_INCREMENT, "pre_inc" },
+	{ SYMBOL_OP_POST_INCREMENT, "post_inc" },
 	{ SYMBOL_OP_ADD_ASSIGN, "+=" },
 	{ SYMBOL_OP_ADD, "+" },
-	{ SYMBOL_OP_DECREMENT, "--" },
+	{ SYMBOL_OP_AMB_DECREMENT, "--" },
+	{ SYMBOL_OP_PRE_DECREMENT, "post_dec" },
+	{ SYMBOL_OP_POST_DECREMENT, "post_dec" },
 	{ SYMBOL_OP_SUB_ASSIGN, "-=" },
-	{ SYMBOL_OP_SUB, "-" },
+	{ SYMBOL_OP_AMB_MINUS, "-" },
+	{ SYMBOL_OP_NEGATE, "neg" },
+	{ SYMBOL_OP_SUB, "sub" },
 	{ SYMBOL_OP_MULT_ASSIGN, "*=" },
-	{ SYMBOL_STAR, "*" },
+	{ SYMBOL_OP_AMB_STAR, "*" },
+	{ SYMBOL_OP_MULT, "mult" },
+	{ SYMBOL_OP_DEREF, "deref" },
 	{ SYMBOL_OP_DIV_ASSIGN, "/=" },
 	{ SYMBOL_OP_DIV, "/" },
-	{ SYMBOL_OP_MODULO_ASSIGN, "%=" },
-	{ SYMBOL_OP_MODULO, "%" },
+	{ SYMBOL_OP_MOD_ASSIGN, "%=" },
+	{ SYMBOL_OP_MOD, "%" },
 
 	{ SYMBOL_OP_AND, "&&" },
 	{ SYMBOL_OP_BITWISE_AND_ASSIGN, "&=" },
-	{ SYMBOL_OP_BITWISE_AND, "&" },
+	{ SYMBOL_OP_AMB_AMP, "&" },
+	{ SYMBOL_OP_AND, "and" },
+	{ SYMBOL_OP_ADDRESS_OF, "address_of" },
 	{ SYMBOL_OP_OR, "||" },
 	{ SYMBOL_OP_BITWISE_OR_ASSIGN, "|=" },
 	{ SYMBOL_OP_BITWISE_OR, "|" },
@@ -436,7 +666,7 @@ enum EXPRESSION_TYPE
 	EXP_LITERAL_STRING, // Expression is a literal string.
 	EXP_LITERAL_CHAR, // Expression is a literal character.
 
-	EXP_VARIABLE, // Expression reads a variable value.
+	EXP_VARIABLE, // Expression accesses a variable value.
 
 	EXP_OP, // Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
 	EXP_FUNCTION_CALL, // Expression is a function call's return value.

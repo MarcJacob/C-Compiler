@@ -1,6 +1,12 @@
+# Structure
+
 This folder contains the full implementation of the Parser Process, which turns a vector of Tokens into a vector of root AST_Node pointers.
 
 The main entry point is Parser_Run in parser.c. Don't hesitate to split the implementation into multiple .c files, all included from parser.c directly.
+
+expression\_parsing.c contains all the expression parsing code, and has a single entrypoint with the ParseExpressionNode function.
+
+# Strategy & Guidelines
 
 Avoid static / global state. If some is genuinely needed, keep it inside the ParserProcess structure and pass that around to every function — this also gives every function access to error reporting via Parser_Error, which fills in HasError / Error.Location / Error.Message and is in turn surfaced by the Compiler process.
 
@@ -15,10 +21,12 @@ Every function prototype / definition (if short) exists at the top of the file. 
 
 Global symbol parsing functions (global variables, functions, structured type...) start with ParseGlobal_ prefix.
 
-The point is to prepare for separation into multiple files: ParseGlobal_ functions and some helpers will stay in parser.c while the rest go to their respective files.
+Some parsing sub-functions can return an error, which should be indicated in its comment. If that happens, the caller must return up the callstack and return 0 / NULL ASAP.
 
 On error, just call Parser_Error and provide the best buffer location possible. If an error is already present, it will NOT be overwritten.
 
-Check for errors whenever calling a sub-parsing function and return up the callstack ASAP if the HasError flag is set on the ParserProcess.
+# Intentions
 
-There is a strong possibility locations for errors and nodes themselves will be replaced by token pointers instead.
+It is likely the ParseGlobal\_ functions will be moved to their own files in the future as their get more complex.
+
+There is a strong possibility locations for errors and nodes themselves will be replaced by token pointers instead of direct source buffer location, so less information is lost. However the decision must then be made on whether they store a pointer to token (and trust the associated memory doesn't get freed) or whether they store a full deep copy.

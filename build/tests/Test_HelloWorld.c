@@ -5,7 +5,7 @@
 	Test multi-line comment.
 */
 
-int test = 5 + 4 + (3 + 2) * 1;
+int test = 5 + (a + b);
 
 int main(int argc, char** argv);
 
@@ -14,7 +14,7 @@ int b = 5;
 
 int main(int argc, char** argv)
 {
-	if (5 + ((a + b + c)))
+	if (5 + (a + b + c))
 	{
 
 	}

@@ -7,8 +7,6 @@
 
 int main(int argc, char** argv)
 {
-	printf("Hello, world !\n");
-
 	struct CharBuffer_ANSI SourceCodeBuffer = LoadFileToBuffer_ANSI("../tests/Test_HelloWorld.c");
 
 	struct CompilerProcess Compiler = { 0 };
