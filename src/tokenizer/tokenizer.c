@@ -106,8 +106,6 @@ struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 	{ KEYWORD_BREAK, "break" },
 	{ KEYWORD_CONTINUE, "continue" },
 	{ KEYWORD_RETURN, "return" },
-
-	{ KEYWORD_SIZEOF, "sizeof" },
 };
 
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader)

@@ -38,9 +38,9 @@
 - Grammar / parsing logic to actually build the AST from tokens. [WIP]
   - Datatype parsing (primitive types, specifiers, pointer levels). [DONE]
   - Top-level dispatch loop (function / struct / global variable) wired into Parser_Run. [DONE]
-  - Function parsing (identifier, parameters, body). [WIP]
-  - Statement parsing (block, if/while, for skeleton, switch stub, expressions / flow control / var dec & def stubs). [WIP]
-  - Global variable parsing.
+  - Function parsing (identifier, parameters, body). [DONE]
+  - Statement parsing (block, if/while, for, switch stub, expressions / flow control / var dec & def stubs). [WIP]
+  - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
   - Struct parsing.
   - Expression parsing. [WIP]
@@ -61,8 +61,8 @@
 - Tokenizer: Literal numbers — float and double parsing.
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
 - Compiler: Handle multiple input files.
-- Expression parsing: Complete `Symbol_GetOpPrecedenceLevel` for all operators and handle right-associativity (e.g. `=` and compound assignments) in `HandleOperatorPrecedence`, which currently assumes left-associativity on equal precedence.
-- Expression parsing: Support unary `+`/`-` (`SYMBOL_OP_SUB`/`SYMBOL_OP_ADD` are not in `Symbol_IsLeftUnaryOperator`, so e.g. `-a` currently fails to parse).
+- Expression parsing: Complete `Symbol_GetOpParseRules` for all operators and handle right-associativity (e.g. `=` and compound assignments) in `HandleOperatorPrecedence`. [DONE]
+- Expression parsing: Support unary `-` (now de-ambiguated from `SYMBOL_OP_AMB_MINUS` via `Symbol_IsLeftUnaryOp`, so `-a` parses correctly). [DONE]
 
 ---
 

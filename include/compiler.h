@@ -536,20 +536,20 @@ enum TOKEN_KEYWORD
 	KEYWORD_ENUM,
 	KEYWORD_UNION,
 
-	// Flow control & Block modifiers
+	// Special Statements 
 	KEYWORD_IF,
 	KEYWORD_ELSE,
 	KEYWORD_FOR,
 	KEYWORD_DO,
 	KEYWORD_WHILE,
 	KEYWORD_SWITCH,
+
+	// Control keywords
 	KEYWORD_CASE,
 	KEYWORD_BREAK,
 	KEYWORD_CONTINUE,
 	KEYWORD_RETURN,
-
-	// Primitive operators
-	KEYWORD_SIZEOF,
+	KEYWORD_GOTO,
 };
 
 inline ui8 Keyword_IsPrimitiveType(enum TOKEN_KEYWORD Keyword)
@@ -612,7 +612,6 @@ enum AST_NODE_TYPE
 	AST_NODE_FUNCTION,				// Function definition or declaration.
 	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
 	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
-	AST_NODE_STATEMENT_VAR,			// A single statement initializing a variable.
 	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
 	AST_NODE_STATEMENT_BLOCK,		// Container statement for other statements.
 	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
@@ -732,13 +731,17 @@ struct AST_Node
 					struct Vector Statements; // Sub-instructions contained in the block, in order of declaration.
 				} Block;
 				
-				// "Single statement" instruction types with no sub-instructions.
+				// "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
+				// Links a keyword to a sub-expression (if relevant).
+				struct
+				{
+					enum TOKEN_KEYWORD Keyword;
+					struct AST_Node* Expression;
+					struct AST_Node* TargetStatement; // Statement to jump back to when encountering the keyword. What exactly happens after that depends on the keyword itself.
+				} Control;
 
-				struct AST_Node* Expression; // Root expression node representing an operating instruction.
-				struct AST_Node* Variable; // Variable node representing a variable declaration / definition.
-				struct AST_Node* Control; // "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
+				struct AST_Node* Expression; // Free-standing expression to be executed.
 			};
-
 		} Statement;
 
 		struct

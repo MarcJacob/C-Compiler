@@ -114,6 +114,23 @@ void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
 	Vec->Size++;
 }
 
+// Adds all the content inside the Src vector into the Dest vector.
+// Both vectors must have the same item size.
+void Vector_Append(struct Vector* Dest, struct Vector* Src)
+{
+	ASSERT(Dest != NULL);
+	ASSERT(Src != NULL);
+
+	ui32 FreeSpace = Dest->_Capacity - Dest->Size;
+	if (Src->Size > FreeSpace)
+	{
+		Vector_SetCapacity(Dest, Dest->Size + Src->Size);
+	}
+
+	memcpy(Dest->_Mem + Dest->Size * Dest->_ItemSize, Src->_Mem, Src->Size * Src->_ItemSize);
+	Dest->Size += Src->Size;
+}
+
 // Removes the last element of the vector.
 void Vector_Pop(struct Vector* Vec)
 {

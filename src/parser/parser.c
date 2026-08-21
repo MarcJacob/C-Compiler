@@ -80,14 +80,12 @@ void FreeNode(struct AST_Node* Node)
 	case AST_NODE_STRUCT:
 		FreeNodeVector(&Node->Val.Struct.Members);
 		break;
-	case AST_NODE_STATEMENT_VAR:
-		FreeNode(Node->Val.Statement.Variable);
-		break;
 	case AST_NODE_STATEMENT_EXP:
 		FreeNode(Node->Val.Statement.Expression);
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
-		FreeNode(Node->Val.Statement.Control);
+		FreeNode(Node->Val.Statement.Control.Expression);
+		// Don't free the Target Statement since it's not "owned" by this node.
 		break;
 	case AST_NODE_STATEMENT_IF:
 		FreeNode(Node->Val.Statement.If.EntryCondition);
@@ -215,13 +213,9 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		printf("<STATEMENT_EXP>\n");
 		PrintNode(Node->Val.Statement.Expression, Depth + 1);
 		break;
-	case AST_NODE_STATEMENT_VAR:
-		printf("<STATEMENT_VAR>\n");
-		PrintNode(Node->Val.Statement.Variable, Depth + 1);
-		break;
 	case AST_NODE_STATEMENT_CONTROL:
 		printf("<STATEMENT_CONTROL>\n");
-		PrintNode(Node->Val.Statement.Control, Depth + 1);
+		PrintNode(Node->Val.Statement.Control.Expression, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
 		if (Node->Val.Statement.Block.Statements.Size > 0)
@@ -311,6 +305,9 @@ void Parser_Run(struct ParserProcess* Parser)
 
 void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...)
 {
+	// Temp: Assert on any parser error while the parser is in active development.
+	ASSERT(0);
+
 	if (Parser->HasError) return; // For now this means we follow a "most specific error only" model.
 	// Later we may want to bubble up the entire "Error hierarchy".
 
@@ -524,6 +521,95 @@ PARSE_SUCCESS:
 	return 1;
 }
 
+static struct Vector GetAllStatements(struct AST_Node* RootStatement);
+
+static struct Vector GetAllStatements_Block(struct AST_Node* BlockStatement)
+{
+	ASSERT(BlockStatement != NULL);
+	ASSERT(BlockStatement->Type == AST_NODE_STATEMENT_BLOCK);
+
+	struct Vector BlockStatements = Vector_Create(struct AST_Node*, 8);
+	Vector_Push(BlockStatements, struct AST_Node*, BlockStatement);
+
+	for (int i = 0; i < BlockStatement->Val.Statement.Block.Statements.Size; i++)
+	{
+		struct Vector Sub = GetAllStatements(Vector_GetValueAt(BlockStatement->Val.Statement.Block.Statements, struct AST_Node*, i));
+		Vector_Append(&BlockStatements, &Sub);
+	}
+
+	return BlockStatements;
+}
+
+static struct Vector GetAllStatements_Conditional(struct AST_Node* ConditionalStatement)
+{
+	ASSERT(ConditionalStatement != NULL);
+	ASSERT(ConditionalStatement->Type == AST_NODE_STATEMENT_IF
+	|| ConditionalStatement->Type == AST_NODE_STATEMENT_WHILE);
+
+	struct Vector CondStatements = Vector_Create(struct AST_Node*, 8);
+	Vector_Push(CondStatements, struct AST_Node*, ConditionalStatement);
+
+	if (ConditionalStatement->Type == AST_NODE_STATEMENT_IF)
+	{
+		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement);
+		struct Vector ElseExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement_Else);
+
+		Vector_Append(&CondStatements, &ExecStatements);
+		Vector_Append(&CondStatements, &ElseExecStatements);
+	}
+	else
+	{
+		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.While.ExecStatement);
+		Vector_Append(&CondStatements, &ExecStatements);
+	}
+
+	return CondStatements;
+}
+
+static struct Vector GetAllStatements_For(struct AST_Node* ForStatement)
+{
+	ASSERT(ForStatement != NULL);
+	ASSERT(ForStatement->Type == AST_NODE_STATEMENT_FOR);
+
+	struct Vector ForStatements = Vector_Create(struct AST_Node*, 8);
+	Vector_Push(ForStatements, struct AST_Node*, ForStatement);
+
+	struct Vector ExecStatements = GetAllStatements(ForStatement->Val.Statement.For.ExecStatement);
+
+	Vector_Append(&ForStatements, &ExecStatements);
+	
+	return ForStatements;
+ }
+
+// Recursively collects all sub-statements from a given statement.
+static struct Vector GetAllStatements(struct AST_Node* RootStatement)
+{
+	ASSERT(RootStatement != NULL);
+	struct Vector Statements = Vector_Create(struct AST_Node*, 8);
+
+	// Switch on the statement type to call the correct statements collection function.
+	struct Vector SubBlock = { 0 };
+	switch (RootStatement->Type)
+	{
+	case AST_NODE_STATEMENT_BLOCK:
+		SubBlock = GetAllStatements_Block(RootStatement);
+		break;
+	case AST_NODE_STATEMENT_IF:
+	case AST_NODE_STATEMENT_WHILE:
+		SubBlock = GetAllStatements_Conditional(RootStatement);
+		break;
+	case AST_NODE_STATEMENT_FOR:
+		SubBlock = GetAllStatements_For(RootStatement);
+		break;
+	default:
+		Vector_Push(Statements, struct AST_Node*, RootStatement);
+	}
+
+	Vector_Append(&Statements, &SubBlock);
+
+	return Statements;
+}
+
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
@@ -552,35 +638,34 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
-	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+		
+	// Check for empty block.
+	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
 	{
-		// Parse instructions on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
-
-		struct AST_Node* NextInstruction = ParseStatementNode(Parser);
-		while (NextInstruction != NULL)
-		{
-			Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextInstruction);
-
-			NextToken = Parser_PeekToken(Parser);
-			if (NextToken == NULL) goto PARSE_FAIL_EOF;
-			if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE)) break;
-
-			NextInstruction = ParseStatementNode(Parser);
-		}
-
-		if (Parser->HasError)
-		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing instructions block.");
-			goto PARSE_FAIL;
-		}
+		NextToken = Parser_NextToken(Parser);
+		return BlockNode;
 	}
 
-	NextToken = Parser_NextToken(Parser);
-
-	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+	// Parse statements on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
+	struct AST_Node* NextInstruction = ParseStatementNode(Parser);
+	while (NextInstruction != NULL)
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected '}' token");
+		Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextInstruction);
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+		{
+			Parser_NextToken(Parser);
+			break;
+		}
+
+		NextInstruction = ParseStatementNode(Parser);
+	}
+
+	if (Parser->HasError)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing instructions block.");
 		goto PARSE_FAIL;
 	}
 
@@ -590,7 +675,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
-	struct AST_Node* InstructionNode = NULL;
+	struct AST_Node* StatementNode = NULL;
 
 	struct Token* NextToken = Parser_NextToken(Parser);
 	if (NextToken == NULL)
@@ -599,7 +684,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing conditional instruction.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (InstructionNode != NULL) FreeNode(InstructionNode);
+		if (StatementNode != NULL) FreeNode(StatementNode);
 		return NULL;
 	}
 
@@ -611,8 +696,8 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode = AllocNewNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
-	InstructionNode->BufferLocation = NextToken->BufferLocation;
+	StatementNode = AllocNewNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
+	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse the condition expression, specifically placing it in a parenthesis scope.
 	NextToken = Parser_NextToken(Parser);
@@ -633,11 +718,11 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 
 	if (IsWhile)
 	{
-		InstructionNode->Val.Statement.While.LoopCondition = ConditionNode;
+		StatementNode->Val.Statement.While.LoopCondition = ConditionNode;
 	}
 	else
 	{
-		InstructionNode->Val.Statement.If.EntryCondition = ConditionNode;
+		StatementNode->Val.Statement.If.EntryCondition = ConditionNode;
 	}
 
 	struct AST_Node* ExecNode = ParseStatementNode(Parser);
@@ -649,19 +734,36 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 
 	if (IsWhile)
 	{
-		InstructionNode->Val.Statement.While.ExecStatement = ExecNode;
+		StatementNode->Val.Statement.While.ExecStatement = ExecNode;
+
+		// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
+		struct Vector Substatements = GetAllStatements(StatementNode->Val.Statement.While.ExecStatement);
+
+		for (int i = 0; i < Substatements.Size; i++)
+		{
+			struct AST_Node* Substatement = Vector_GetValueAt(Substatements, struct AST_Node*, i);
+			ASSERT(Substatement != NULL);
+
+			if (Substatement->Type != AST_NODE_STATEMENT_CONTROL) continue;
+			enum TOKEN_KEYWORD Kwd = Substatement->Val.Statement.Control.Keyword;
+
+			if (Kwd != KEYWORD_CONTINUE && Kwd != KEYWORD_BREAK) continue;
+			if (Substatement->Val.Statement.Control.TargetStatement != NULL) continue; // Already linked to a sub-loop.
+
+			Substatement->Val.Statement.Control.TargetStatement = StatementNode;
+		}
 	}
 	else
 	{
-		InstructionNode->Val.Statement.If.ExecStatement = ExecNode;
+		StatementNode->Val.Statement.If.ExecStatement = ExecNode;
 
 		// Check for an else instruction.
 		NextToken = Parser_PeekToken(Parser);
 		if (Token_IsKeyword(NextToken, KEYWORD_ELSE))
 		{
 			Parser_NextToken(Parser);
-			InstructionNode->Val.Statement.If.ExecStatement_Else = ParseStatementNode(Parser);
-			if (InstructionNode->Val.Statement.If.ExecStatement_Else == NULL)
+			StatementNode->Val.Statement.If.ExecStatement_Else = ParseStatementNode(Parser);
+			if (StatementNode->Val.Statement.If.ExecStatement_Else == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing else instruction.");
 				goto PARSE_FAIL;
@@ -669,13 +771,13 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		}
 	}
 
-	return InstructionNode;
+	return StatementNode;
 }
 
 struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
-	struct AST_Node* InstructionNode = NULL;
+	struct AST_Node* StatementNode = NULL;
 
 	struct Token* NextToken = Parser_NextToken(Parser);
 	if (!Token_IsKeyword(NextToken, KEYWORD_FOR))
@@ -686,7 +788,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing For instruction.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (InstructionNode != NULL) FreeNode(InstructionNode);
+		if (StatementNode != NULL) FreeNode(StatementNode);
 		return NULL;
 	}
 
@@ -699,24 +801,42 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	InstructionNode = AllocNewNode(AST_NODE_STATEMENT_FOR);
-	InstructionNode->BufferLocation = NextToken->BufferLocation;
+	StatementNode = AllocNewNode(AST_NODE_STATEMENT_FOR);
+	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse init, condition and post-loop expressions.
-	InstructionNode->Val.Statement.For.InitExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+	StatementNode->Val.Statement.For.InitExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
 	if (Parser->HasError) goto PARSE_FAIL;
-	InstructionNode->Val.Statement.For.LoopCondition = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);	
+	StatementNode->Val.Statement.For.LoopCondition = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);	
 	if (Parser->HasError) goto PARSE_FAIL;
-	InstructionNode->Val.Statement.For.PostLoopExpression = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
+	StatementNode->Val.Statement.For.PostLoopExpression = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
 	if (Parser->HasError) goto PARSE_FAIL;
 
-	InstructionNode->Val.Statement.For.ExecStatement = ParseStatementNode(Parser);
-	if (InstructionNode->Val.Statement.For.ExecStatement == NULL)
+	StatementNode->Val.Statement.For.ExecStatement = ParseStatementNode(Parser);
+	if (StatementNode->Val.Statement.For.ExecStatement == NULL)
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected instruction following FOR instruction.");
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected statement following for loop declaration.");
 		goto PARSE_FAIL;
 	}
-	return InstructionNode;
+
+	// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
+	struct Vector Substatements = GetAllStatements(StatementNode->Val.Statement.For.ExecStatement);
+
+	for (int i = 0; i < Substatements.Size; i++)
+	{
+		struct AST_Node* Substatement = Vector_GetValueAt(Substatements, struct AST_Node*, i);
+		ASSERT(Substatement != NULL);
+
+		if (Substatement->Type != AST_NODE_STATEMENT_CONTROL) continue;
+		enum TOKEN_KEYWORD Kwd = Substatement->Val.Statement.Control.Keyword;
+
+		if (Kwd != KEYWORD_CONTINUE && Kwd != KEYWORD_BREAK) continue;
+		if (Substatement->Val.Statement.Control.TargetStatement != NULL) continue; // Already linked to a sub-loop.
+
+		Substatement->Val.Statement.Control.TargetStatement = StatementNode;
+	}
+
+	return StatementNode;
 }
 
 struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser)
@@ -731,6 +851,65 @@ struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser)
 	return NULL;
 }
 
+struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
+{
+	// Parse a control keyword.
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct AST_Node* ControlStatementNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Control Statement.");
+	PARSE_FAIL:
+		if (ControlStatementNode != NULL) FreeNode(ControlStatementNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+
+	ControlStatementNode = AllocNewNode(AST_NODE_STATEMENT_CONTROL);
+	ControlStatementNode->BufferLocation = NextToken->BufferLocation;
+
+	switch (NextToken->Val.Keyword)
+	{
+	case KEYWORD_GOTO:
+		Parser_Error(Parser, NextToken->BufferLocation, "goto keyword parsing is unimplemented.");
+		goto PARSE_FAIL;
+	case KEYWORD_BREAK:
+	case KEYWORD_CONTINUE:
+	case KEYWORD_RETURN:
+		NextToken = Parser_NextToken(Parser);
+		break;
+	default:
+		goto PARSE_FAIL; // Not a control keyword.
+	}
+
+	ControlStatementNode->Val.Statement.Control.Keyword = NextToken->Val.Keyword;
+
+	// Parse following expression. No expression is expected for BREAK and CONTINUE. For RETURN, whatever is parsed gets assigned and will be checked by Symbolizer.
+	struct AST_Node* ExpressionNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+	if (Parser->HasError)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing control keyword expression.");
+		goto PARSE_FAIL;
+	}
+
+	if (NextToken->Val.Keyword == KEYWORD_RETURN)
+	{
+		ControlStatementNode->Val.Statement.Control.Expression = ExpressionNode;
+	}
+	else if (ExpressionNode != NULL)
+	{
+		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression following keyword.");
+		FreeNode(ExpressionNode);
+		goto PARSE_FAIL;
+	}
+
+	return ControlStatementNode;
+}
+
 struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
@@ -739,11 +918,7 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
-	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
-	PARSE_FAIL:
-		Parser->TokenIndex = StartTokenIndex;
-		if (InstructionNode != NULL) FreeNode(InstructionNode);
 		return NULL;
 	}
 
@@ -764,15 +939,18 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	{
 		InstructionNode = ParseSwitchStatementNode(Parser);
 	}
+	else if (
+		Token_IsKeyword(NextToken, KEYWORD_BREAK)
+		|| Token_IsKeyword(NextToken, KEYWORD_CONTINUE)
+		|| Token_IsKeyword(NextToken, KEYWORD_RETURN)
+		|| Token_IsKeyword(NextToken, KEYWORD_CASE)
+		|| Token_IsKeyword(NextToken, KEYWORD_GOTO))
+	{
+		InstructionNode = ParseControlStatementNode(Parser);
+	}
 	else
 	{
 		InstructionNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
-	}
-
-	if (InstructionNode == NULL)
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse Statement node.");
-		goto PARSE_FAIL;
 	}
 
 	return InstructionNode;
@@ -866,6 +1044,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	struct DatatypeDef ReturnType;
 	if (!ParseDatatypeDef(Parser, &ReturnType, 1))
 	{
+		goto PARSE_FAIL;
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function.");
 	PARSE_FAIL:

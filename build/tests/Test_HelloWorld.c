@@ -14,7 +14,7 @@ int b = 5;
 
 int main(int argc, char** argv)
 {
-	if (5 + (a + b + c))
+	if (argc == 0)
 	{
 
 	}
@@ -24,8 +24,9 @@ int main(int argc, char** argv)
 	}
 
 	for (;;)
-	{ }
+	{ 
+		break;
+	}
 
-	//printf("Hello, world !\n");
-	//return 0;
+	return 0;
 }

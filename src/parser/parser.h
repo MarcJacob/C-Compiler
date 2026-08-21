@@ -121,6 +121,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
+struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 
 #endif // PARSER_INCLUDED
