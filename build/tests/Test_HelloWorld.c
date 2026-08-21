@@ -3,6 +3,9 @@
 
 int main(int argc, char** argv)
 {
-	printf("Hello, World !\n");
+	if (foo(a, b))
+	{
+		printf("Hello, World !\n");
+	}
 	return 0;
 }

@@ -555,13 +555,15 @@ static struct Vector GetAllStatements_Conditional(struct AST_Node* ConditionalSt
 	if (ConditionalStatement->Type == AST_NODE_STATEMENT_IF)
 	{
 		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement);
-		struct Vector ElseExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement_Else);
-
 		Vector_Append(&CondStatements, &ExecStatements);
-		Vector_Append(&CondStatements, &ElseExecStatements);
-
 		Vector_Destroy(&ExecStatements);
-		Vector_Destroy(&ElseExecStatements);
+
+		if (ConditionalStatement->Val.Statement.If.ExecStatement_Else != NULL)
+		{
+			struct Vector ElseExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement_Else);
+			Vector_Append(&CondStatements, &ElseExecStatements);
+			Vector_Destroy(&ElseExecStatements);
+		}
 	}
 	else
 	{
