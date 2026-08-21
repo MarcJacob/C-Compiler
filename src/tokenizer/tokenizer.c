@@ -357,7 +357,7 @@ PARSE_FAIL:
 		}
 
 		// Write character to literal string. Resize the literal string here if necessary so we avoid constantly re-sizing it while pushing chars.
-		if (LiteralStr._Capacity - 1 == LiteralStr.Length)
+		if (LiteralStr._Capacity - 1 <= LiteralStr.Length)
 		{
 			if (LiteralStr._Capacity < STRING_MAX_LENGTH_ANSI / 2)
 			{
@@ -367,9 +367,8 @@ PARSE_FAIL:
 			{
 				String_Resize_ANSI(&LiteralStr, STRING_MAX_LENGTH_ANSI / 2, 0);
 			}
-
-			String_PushChar_ANSI(&LiteralStr, NextChar);
 		}
+		String_PushChar_ANSI(&LiteralStr, NextChar);
 	}
 
 	// Shrink literal string down to just the size it needs.

@@ -280,8 +280,6 @@ void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
 	// Handle special case of NewSize == 0, which is effectively just a request to free the string.
 	if (NewSize == 0)
 	{
-		ASSERT(CanShrink);
-
 		free(Str->Str);
 		Str->Length = 0;
 		Str->_Capacity = 0;

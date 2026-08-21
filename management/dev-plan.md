@@ -46,8 +46,8 @@
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
   - Struct parsing.
-  - Expression parsing. [WIP]
-    - Function call expressionables.
+  - Expression parsing. [DONE]
+    - Function call expressionables. [DONE]
 
 ## Step 6 — Symbolizer
 

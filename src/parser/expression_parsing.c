@@ -35,7 +35,7 @@ static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser
 		break;
 	case TOKEN_LITERAL_STRING:
 		LiteralNode->Val.Expression.Type = EXP_LITERAL_STRING;
-		LiteralNode->Val.Expression.Literal.String = NextToken->Val.LiteralString;
+		LiteralNode->Val.Expression.Literal.String = String_Copy_ANSI(NextToken->Val.LiteralString);
 		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_String();
 		break;
 	default:
@@ -54,9 +54,6 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) return NULL;
 
-	// For now we accept any encountered identifier as a variable read.
-	// When implementing function call parsing, make sure to check that there isn't
-	// an opening parenthesis right after the identifier.
 	if (NextToken->Type != TOKEN_IDENTIFIER)
 	{
 		return NULL;
@@ -102,10 +99,61 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 // for each parameter, delimited by commas (effectively overriding the standard nature of the comma operator).
 static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parser)
 {
-	// TODO...
-	// Don't forget to stop the function name being interpreted as a variable name
-	// in ParseExpressionable_Variable.
-	return NULL;
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct AST_Node* FunctionExpressionableNode = NULL;
+
+	struct Token* NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+	PARSE_FAIL:
+		if (FunctionExpressionableNode != NULL) FreeNode(FunctionExpressionableNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+	
+	// Look for an identifier, an opening parenthesis, comma-separated sub-expressions and a closing parenthesis.
+	if (NextToken->Type != TOKEN_IDENTIFIER)
+	{
+		goto PARSE_FAIL;
+	}
+
+	struct Token* IdentifierToken = NextToken;
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		goto PARSE_FAIL;
+	}
+
+	FunctionExpressionableNode = AllocNewNode(AST_NODE_EXPRESSION);
+	FunctionExpressionableNode->BufferLocation = IdentifierToken->BufferLocation;
+	FunctionExpressionableNode->Val.Expression.Type = EXP_FUNCTION_CALL;
+	FunctionExpressionableNode->Val.Expression.FunctionCall.FunctionName = IdentifierToken->Val.Identifier;
+
+	// Start parsing param expressions until a closing parenthesis is reached.
+	FunctionExpressionableNode->Val.Expression.FunctionCall.Params = Vector_Create(struct AST_Node*, 0);
+
+	for (NextToken = Parser_PeekToken(Parser);
+		!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE); NextToken = Parser_PeekToken(Parser))
+	{
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_COMMA);
+		if (NewExpr == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter expression.");
+			goto PARSE_FAIL;
+		}
+
+		Vector_Push(FunctionExpressionableNode->Val.Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
+	}
+
+	NextToken = Parser_NextToken(Parser);
+	return FunctionExpressionableNode;
 }
 
 // Parses a single "expression component" from the next tokens and the previously parsed expression.
@@ -117,11 +165,11 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 	// Handle all valid Expressionable types.
 	Expressionable = ParseExpressionable_Literal(Parser);
 	if (Expressionable == NULL)
-		Expressionable = ParseExpressionable_Variable(Parser);
+		Expressionable = ParseExpressionable_Function(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Operator(Parser);
 	if (Expressionable == NULL)
-		Expressionable = ParseExpressionable_Function(Parser);
+		Expressionable = ParseExpressionable_Variable(Parser);
 
 	if (Expressionable == NULL)
 		return NULL;
@@ -380,9 +428,15 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		NextToken = Parser_PeekToken(Parser);
 
 		// Check for End Symbol if outside a parenthesis scope.
+		// Temp: Also stop on a closing parenthesis regardless, but do not consume it if it's not set as the end symbol.
+		// TODO: Rework this function so that it can accept multiple end symbols cleanly.
 		if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, EndSymbol))
 		{
 			Parser_NextToken(Parser);
+			break;
+		}
+		else if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
 			break;
 		}
 
