@@ -45,7 +45,9 @@
   - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
-  - Struct parsing. [WIP]
+  - Struct parsing. [DONE]
+    - Named & anonymous struct declaration/definition via the shared datatype-prefix parser, including forward declarations. [DONE]
+    - Inline variable declaration(s) following a struct body, including pointer levels. [DONE]
   - Union parsing.
   - Enum parsing.
   - Typedef parsing.
