@@ -4,6 +4,6 @@ The project is made up of any number of files, but must always "collapse" into a
 
 main.c should only contain the "front end" of the program, launching the compiler stage(s) required from user input, and include all the other .c files.
 
-compiler.c contains core compiler orchestration, making use of all stages as appropriate, and implementing the error handling and other globally useable stuff for all stages.
+compiler.c contains core compiler orchestration, making use of all stages as appropriate, and implementing error routing: extracting each stage's error state and building the full compiler error state from it, ready to be logged to the user.
 
 The implementation files of each stage should live in their own folder.

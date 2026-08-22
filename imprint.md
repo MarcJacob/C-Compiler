@@ -7,6 +7,8 @@ Every folder in the project may contain an imprint.md file. This file will conta
 imprint.md files at a lower level of the folder hierarchy are to be considered HIGHER priority than higher levels.
 The contents of imprint.md files apply for their folder and sub-folders recursively, and NOWHERE ELSE.
 
+An imprint.md file should limit its own specificity to files and folders directly related to it. Where a child folder has (or should have) its own imprint.md file, defer detail about that folder's contents to it instead of describing it here.
+
 imprint.md files are mostly human-produced as a way to build and maintain human authorship \& understanding while going through the process of using an AI agent.
 
 imprint.md files may NOT be modified unless specified otherwise, whether in the original user prompt, or in the imprint.md file itself.
@@ -20,7 +22,7 @@ A general description of the project and its goals is available in README.md
 
 
 Top-level folder structure breakdown:
-*management* contains planning and work management data, such as the overall project dev plan, and further instructions for how a work session can be organized.
+*management* contains planning and work management data and further instructions for how a work session can be organized.
 
 *include* and *src* contain the project's *global headers* and *implementation* respectively.
 
