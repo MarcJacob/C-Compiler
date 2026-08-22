@@ -17,16 +17,21 @@
 - Collects/formats reported errors and surfaces them as a console message. DONE
 - Non-assert: distinct from `ASSERT` (which guards internal invariants) — this handles expected failure cases (bad input, invalid source).
 
-## Step 4 — Tokenizer (Complete) [DONE]
+## Step 4 — Tokenizer (Complete) [WIP]
 
 - Extend the tokenizer to cover the full C token set:
-  - All core C operators [DONE]
-  - All core C keywords [DONE]
-  - All C symbols / punctuators [DONE]
-  - Identifiers [DONE]
-  - Literal strings [DONE]
-  - Literal chars [DONE]
-  - Literal numbers (int) [DONE]
+  - All core C operators. [DONE]
+  - All core C keywords. [DONE]
+  - All C symbols / punctuators. [DONE]
+  - Identifiers. [DONE]
+  - Literal strings. [DONE]
+  - Literal chars. [DONE]
+  - Literal numbers (int). [DONE]
+  - Literal numbers (float and double).
+  - `extern` keyword (companion to multi-file input support in the backlog below).
+  - `typedef` keyword.
+  - `sizeof` keyword.
+  - `?` symbol (for the ternary operator).
 - Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [DONE]
 
 ## Step 5 — Parser [WIP]
@@ -39,38 +44,44 @@
   - Datatype parsing (primitive types, specifiers, pointer levels). [DONE]
   - Top-level dispatch loop (function / struct / global variable) wired into Parser_Run. [DONE]
   - Function parsing (identifier, parameters, body). [DONE]
-  - Statement parsing (block, if/while, for, expressions, return/break/continue with break/continue resolved to their enclosing loop and return resolved to its enclosing function). [DONE]
+  - Statement parsing (block, if/while, for, expressions, return/break/continue with break/continue resolved to their enclosing loop and return resolved to its enclosing function). [WIP]
+    - `do`/`while` loop parsing (`KEYWORD_DO` is tokenized but never dispatched).
   - Switch statement parsing.
   - Goto statement parsing.
   - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
-  - Struct parsing. [DONE]
+  - Struct parsing. [WIP]
     - Named & anonymous struct declaration/definition via the shared datatype-prefix parser, including forward declarations. [DONE]
     - Inline variable declaration(s) following a struct body, including pointer levels. [DONE]
+    - Bitfield members (e.g. `int x : 4;`).
   - Union parsing.
   - Enum parsing.
   - Typedef parsing.
-  - Expression parsing. [DONE]
+  - Expression parsing. [WIP]
     - Function call expressionables. [DONE]
+    - `sizeof` operator (needs a new `KEYWORD_SIZEOF` token).
+    - Cast expressions (`(type)expr`).
+    - Ternary operator `?:` (needs a new `?` symbol token - not yet in `TOKEN_SYMBOL`).
+  - Initializer lists for arrays/structs (e.g. `int a[3] = {1,2,3};`).
+  - Parenthesized/function-pointer declarators (e.g. `int (*fp)(int,int);`)
 
-## Step 6 — Symbolizer
+## Step 6 — Validator
 
 - Takes any syntax tree as input.
 - Resolves symbols to determine:
   - Memory size
   - Offsets
   - Validity of usage (scope, type compatibility, etc.)
+- Links together control statements with where they should end up (return, break, continue, goto...)
 
 ---
 
 ## Backlog
 
-- Tokenizer: Literal numbers — float and double parsing.
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
-- Compiler: Handle multiple input files.
-- Expression parsing: Complete `Symbol_GetOpParseRules` for all operators and handle right-associativity (e.g. `=` and compound assignments) in `HandleOperatorPrecedence`. [DONE]
-- Expression parsing: Support unary `-` (now de-ambiguated from `SYMBOL_OP_AMB_MINUS` via `Symbol_IsLeftUnaryOp`, so `-a` parses correctly). [DONE]
+- Handle multiple input files.
+- Preprocessor.
 
 ---
 

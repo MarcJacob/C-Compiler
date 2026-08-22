@@ -23,6 +23,8 @@ struct TestType
 	} Test;
 } *d;
 
+int *a, b;
+
 int main(int argc, char** argv)
 {
 	int a = 4, b = 2, c = 2;
