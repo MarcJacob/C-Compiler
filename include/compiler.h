@@ -73,7 +73,6 @@ enum TOKEN_SYMBOL
 	// Operators
 	// TODO: Add ternary.
 	SYMBOL_OP_COMMA,				// ,
-	SYMBOL_OP_ARROW,				// ->
 	SYMBOL_OP_AMB_INCREMENT,		// ++
 	SYMBOL_OP_PRE_INCREMENT,		// ++ (De-ambiguated during the parsing process)
 	SYMBOL_OP_POST_INCREMENT,		// ++ (De-ambiguated during the parsing process)
@@ -122,7 +121,7 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_RIGHT_SHIFT_ASSIGN,	// >>=
 
 	SYMBOL_OP_STRUCT_DEREF,			// ->
-	SYMBOL_OP_STRUCT_READ,			// .
+	SYMBOL_OP_STRUCT_ACCESS,			// .
 };
 
 // Returns 1 if the passed symbol corresponds to a left-unary operator.
@@ -207,7 +206,7 @@ static inline ui8 Symbol_IsBinaryOp(enum TOKEN_SYMBOL Symbol)
 		case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
 		case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
 		case SYMBOL_OP_STRUCT_DEREF:
-		case SYMBOL_OP_STRUCT_READ:
+		case SYMBOL_OP_STRUCT_ACCESS:
 		case SYMBOL_OP_COMMA:
 			return 1;
 		default:
@@ -291,6 +290,8 @@ static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
 			SYMBOL_OP_BITWISE_REVERSE,
 			SYMBOL_OP_DEREF,
 			SYMBOL_OP_ADDRESS_OF,
+			SYMBOL_OP_STRUCT_ACCESS,
+			SYMBOL_OP_STRUCT_DEREF,
 		}, 1
 	},
 
@@ -455,7 +456,8 @@ static const struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
 	{ SYMBOL_BRACE_OPEN, "{" },
 	{ SYMBOL_BRACE_CLOSE, "}" },
 
-	{ SYMBOL_OP_ARROW, "->" },
+	{ SYMBOL_OP_STRUCT_ACCESS, "." },
+	{ SYMBOL_OP_STRUCT_DEREF, "->" },
 	{ SYMBOL_OP_AMB_INCREMENT, "++" },
 	{ SYMBOL_OP_PRE_INCREMENT, "pre_inc" },
 	{ SYMBOL_OP_POST_INCREMENT, "post_inc" },

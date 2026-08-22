@@ -44,7 +44,7 @@ static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser
 	}
 
 	// Consume token and return node.
-	Parser_NextToken(Parser);
+	Parser_ConsumeToken(Parser);
 	return LiteralNode;
 }
 
@@ -66,7 +66,7 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 	VarNode->Val.Expression.Variable.Name = NextToken->Val.LiteralString;
 
 	// Consume token and return.
-	Parser_NextToken(Parser);
+	Parser_ConsumeToken(Parser);
 	return VarNode;
 }
 
@@ -91,7 +91,7 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 	OpExpression->Val.Expression.Op.OperatorSymbol = NextToken->Val.Symbol;
 
 	// Consume token and return.
-	Parser_NextToken(Parser);
+	Parser_ConsumeToken(Parser);
 	return OpExpression;
 }
 
@@ -103,7 +103,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 
 	struct AST_Node* FunctionExpressionableNode = NULL;
 
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
@@ -121,7 +121,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	}
 
 	struct Token* IdentifierToken = NextToken;
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
@@ -152,7 +152,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 		Vector_Push(FunctionExpressionableNode->Val.Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
 	}
 
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	return FunctionExpressionableNode;
 }
 
@@ -223,14 +223,12 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 	// It must avoid crossing a right-to-left / left-to-right boundary, parenthesis levels and
 	// left operand must have LOWER precedence if the two have the same associativity, or it must be right-to-left and root left-to-right.
 	while (
-		// Check that we're not crossing a right-to-left / left-to-right boundary.
-		!(!Symbol_IsOpLeftToRightAssociative(EntryNodeOp) && Symbol_IsOpLeftToRightAssociative(LeftOp))
 		// Check parenthesis level (Is entry at a deeper or similar level along with the left operand's right operand ?)
-		&& (EntryNodeParenthesisLevel >= Left_Right_ParenthesisLevel)
-		// If not at a deeper parenthesis level then left operand, Check operator precedence or associativity rules.
+		(EntryNodeParenthesisLevel >= Left_Right_ParenthesisLevel)
+		// Are we strictly deeper in parenthesis than the left operand OR do the rules of associativity and precedence mean we should capture the left_right operand ?
 		&& (EntryNodeParenthesisLevel > Left_ParenthesisLevel
-			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) > 0 && ((Symbol_IsOpLeftToRightAssociative(LeftOp) == Symbol_IsOpLeftToRightAssociative(EntryNodeOp))))
-			|| !Symbol_IsOpLeftToRightAssociative(LeftOp) && Symbol_IsOpLeftToRightAssociative(EntryNodeOp))
+			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) > 0)
+			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) == 0 && !Symbol_IsOpLeftToRightAssociative(LeftOp)))
 		)
 	{
 		// Perform swap.
@@ -328,7 +326,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		// Look for opening parenthesis.
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 		{
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
@@ -375,7 +373,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 
 			ParenthesisLevel--;
 
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
@@ -415,7 +413,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 	// After that, it can only increase while parsing the right operand of an operator.
 	while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{
-		Parser_NextToken(Parser);
+		Parser_ConsumeToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
@@ -432,7 +430,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		// TODO: Rework this function so that it can accept multiple end symbols cleanly.
 		if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, EndSymbol))
 		{
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			break;
 		}
 		else if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
@@ -482,7 +480,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		{
 			if (ParenthesisLevel == 0) break;
 
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 

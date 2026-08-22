@@ -28,7 +28,7 @@ struct ParserProcess
 void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* MsgFormat, ...);
 
 struct Token* Parser_PeekToken(struct ParserProcess* Parser);
-struct Token* Parser_NextToken(struct ParserProcess* Parser);
+struct Token* Parser_ConsumeToken(struct ParserProcess* Parser);
 ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser);
 
 struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType);

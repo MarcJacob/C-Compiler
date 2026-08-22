@@ -4,7 +4,7 @@
 
 // Helpers
 
-// Returns the next Token to be read without advancing the internal reading cursor.
+// Returns the next Token without advancing the internal reading cursor.
 // Returns NULL when out of tokens.
 struct Token* Parser_PeekToken(struct ParserProcess* Parser)
 {
@@ -13,9 +13,9 @@ struct Token* Parser_PeekToken(struct ParserProcess* Parser)
 	return Vector_GetPtr(Parser->SourceTokens, Parser->TokenIndex);
 }
 
-// Returns the next Token to be read and advances the internal reading cursor.
+// Returns the next token and advances the internal reading cursor past it.
 // Returns NULL when out of tokens.
-struct Token* Parser_NextToken(struct ParserProcess* Parser)
+struct Token* Parser_ConsumeToken(struct ParserProcess* Parser)
 {
 	if (Parser->SourceTokens->Size <= Parser->TokenIndex) return NULL;
 
@@ -78,6 +78,7 @@ void FreeNode(struct AST_Node* Node)
 		FreeNode(Node->Val.Function.Statements);
 		break;
 	case AST_NODE_STRUCT:
+		String_Free_ANSI(&Node->Val.Struct.Type.TypeName);
 		FreeNodeVector(&Node->Val.Struct.Members);
 		break;
 	case AST_NODE_STATEMENT_EXP:
@@ -193,7 +194,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		PrintNode(Node->Val.Variable.Value, Depth + 1);
 		break;
 	case AST_NODE_STRUCT:
-		printf("<STRUCT>\n");
+		printf("<STRUCT: '%s'>\n", Node->Val.Struct.Type.TypeName.Str);
 		for (int i = 0; i < Node->Val.Struct.Members.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Val.Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;
@@ -326,7 +327,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Zero out output immediately.
 	memset(OutDatatypeDef, 0, sizeof(*OutDatatypeDef));
 
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
 		goto PARSE_FAIL_EOF;
@@ -357,7 +358,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	if (NextToken->Val.Keyword == KEYWORD_STATIC)
 	{
 		Flags |= DATATYPE_IS_STATIC;
-		NextToken = Parser_NextToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "static"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
@@ -365,7 +366,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	if (NextToken->Val.Keyword == KEYWORD_CONST)
 	{
 		Flags |= DATATYPE_IS_CONST;
-		NextToken = Parser_NextToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "const"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
@@ -373,7 +374,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	if (NextToken->Val.Keyword == KEYWORD_VOLATILE)
 	{
 		Flags |= DATATYPE_IS_VOLATILE;
-		NextToken = Parser_NextToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "volatile"
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -385,7 +386,8 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	{
 		Flags |= DATATYPE_IS_STRUCT;
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
-		NextToken = Parser_NextToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 	if (NextToken->Val.Keyword == KEYWORD_UNION)
 	{
@@ -411,7 +413,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		}
 
 		SignKeywordPresent = 1;
-		NextToken = Parser_NextToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume signed / unsigned.
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -424,7 +426,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		}
 	}
 
-	// Next determine size and broad type, if the next token is another keyword.
+	// Next determine size and broad type.
 	if (NextToken->Type == TOKEN_KEYWORD)
 	{
 		if (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
@@ -477,7 +479,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			goto PARSE_FAIL;
 		}
 
-		NextToken = Parser_PeekToken(Parser);
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume type keyword.
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -493,15 +495,14 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			}
 			else
 			{
-				// Otherwise skip over the second long token.
-				NextToken = Parser_NextToken(Parser);
+				NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume second "long".
 			}
 		}
 	}
-	else if (NextToken->Type == TOKEN_IDENTIFIER
-		&& Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
+	else if (NextToken->Type == TOKEN_IDENTIFIER && (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM)))
 	{
 		OutDatatypeDef->TypeName = String_Copy_ANSI(NextToken->Val.Identifier);
+		NextToken = Parser_ConsumeToken(Parser), Parser_PeekToken(Parser); // Consume user defined type identifier.
 	}
 	else if (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
 	{
@@ -514,12 +515,13 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 
 	// Parse pointer levels, unless this is an anonymous struct.
-	// (Since the token is consumed and the symbol information is discarded, no need for deambiguation...
+	// (Since the token is consumed and the symbol information is discarded, no need for deambiguation...)
+	// TODO: This was the wrong approach because it doesn't work with compound variable declarations or inline variable declarations after a structure definition.
+	// Instead the DEREF operator should be read from the variable expression and used to increment the variable's underlying type's pointer level.
 	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR)
 		|| Token_IsSymbol(NextToken, SYMBOL_OP_DEREF)) // ... but still support using DEREF in case the token source was not built from text).
 	{
-		Parser_NextToken(Parser);
-		NextToken = Parser_PeekToken(Parser);
+		NextToken = Parser_ConsumeToken(Parser), Parser_PeekToken(Parser); // Consume "*"
 		if (NextToken == NULL)
 		{
 			goto PARSE_FAIL_EOF;
@@ -633,6 +635,7 @@ struct Vector ParseVariableDeclarationNodes(struct ParserProcess* Parser, enum T
 
 	// Parse main declaration expression.
 	struct AST_Node* VarExpression = ParseExpressionNode(Parser, EndSymbol);
+	if (VarExpression == NULL) goto PARSE_FAIL; // Failed because of error or because there was no expression to parse at all (struct declaration ?)
 
 	if (VarExpression->Val.Expression.Type == EXP_FUNCTION_CALL)
 	{
@@ -727,7 +730,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* BlockNode = NULL;
 
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
@@ -754,7 +757,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 	// Check for empty block.
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
 	{
-		NextToken = Parser_NextToken(Parser);
+		NextToken = Parser_ConsumeToken(Parser);
 		return BlockNode;
 	}
 
@@ -769,7 +772,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 		if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
 		{
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			break;
 		}
 
@@ -821,7 +824,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* StatementNode = NULL;
 
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
@@ -844,7 +847,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse the condition expression, specifically placing it in a parenthesis scope.
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{
@@ -909,7 +912,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		NextToken = Parser_PeekToken(Parser);
 		if (Token_IsKeyword(NextToken, KEYWORD_ELSE))
 		{
-			Parser_NextToken(Parser);
+			Parser_ConsumeToken(Parser);
 			StatementNode->Val.Statement.If.ExecStatement_Else = ParseDependentStatementNode(Parser);
 
 			if (StatementNode->Val.Statement.If.ExecStatement_Else == NULL)
@@ -928,7 +931,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	int StartTokenIndex = Parser->TokenIndex;
 	struct AST_Node* StatementNode = NULL;
 
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (!Token_IsKeyword(NextToken, KEYWORD_FOR))
 	{
 		// Not a for instruction.
@@ -942,7 +945,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	}
 
 	// Enclose the three expressions into a parenthesis scope. The first two are parsed up until encountering a semicolon, the third the closing parenthesis.
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{
@@ -1034,7 +1037,7 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	case KEYWORD_BREAK:
 	case KEYWORD_CONTINUE:
 	case KEYWORD_RETURN:
-		NextToken = Parser_NextToken(Parser);
+		NextToken = Parser_ConsumeToken(Parser);
 		break;
 	default:
 		goto PARSE_FAIL; // Not a control keyword.
@@ -1169,7 +1172,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 		if (FunctionNode != NULL) FreeNode(FunctionNode);
 		return 0;
 	}
-	struct Token* NextToken = Parser_NextToken(Parser);
+	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	struct Token* IdentifierToken = NextToken;
@@ -1178,7 +1181,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
@@ -1229,7 +1232,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	Vector_Destroy(&OutVars);
 
 	// Expect a closing parenthesis.
-	NextToken = Parser_NextToken(Parser);
+	NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 	{
@@ -1242,7 +1245,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
 	{
 		// Parse as declaration. Nothing else to be done other than consuming the token.
-		NextToken = Parser_NextToken(Parser);
+		NextToken = Parser_ConsumeToken(Parser);
 	}
 	else if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 	{
@@ -1281,8 +1284,185 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	return 1;
 }
 
+// Attempts to parse a struct type declaration/definition (named or anonymous), optionally followed by inline
+// variable declaration(s) of that type. Fills OutInlineVars with any inline variable nodes produced.
+// Returns NULL, if this isn't a struct declaration or definition at all.
+// Check Parser->HasError after a NULL return to tell a real parse error apart from a simple non-match.
+static struct AST_Node* ParseStructNode(struct ParserProcess* Parser, struct Vector* OutInlineVars)
+{
+	ASSERT(OutInlineVars != NULL);
+
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* StructNode = NULL;
+
+	struct Token* StartToken = Parser_PeekToken(Parser);
+
+	// Let the generic datatype parser handle the "struct Name" / "struct" (anonymous) prefix
+	struct DatatypeDef StructType;
+	if (!ParseDatatypeDef(Parser, &StructType, 0))
+	{
+		goto PARSE_FAIL;
+	}
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing struct.");
+	PARSE_FAIL:
+		Parser->TokenIndex = StartTokenIndex;
+		if (StructNode != NULL) FreeNode(StructNode);
+		else String_Free_ANSI(&StructType.TypeName);
+		FreeNodeVector(OutInlineVars);
+		return NULL;
+	}
+
+	if (!(StructType.Flags & DATATYPE_IS_STRUCT))
+	{
+		// Not a struct type.
+		goto PARSE_FAIL;
+	}
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN) && !Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		// Neither a body nor a bare declaration follows, so this is probably a variable declaration.
+		goto PARSE_FAIL;
+	}
+
+	// From here on this is unambiguously a struct declaration/definition, so any weirdness is a hard error.
+	if (StructType.Flags & DATATYPE_IS_VOLATILE)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "A struct declaration cannot be marked volatile.");
+		goto PARSE_FAIL;
+	}
+	if (StructType.PointerLevel != 0)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Unexpected pointer level in struct declaration.");
+		goto PARSE_FAIL;
+	}
+
+	StructNode = AllocNewNode(AST_NODE_STRUCT);
+	StructNode->BufferLocation = StartToken->BufferLocation;
+	StructNode->Val.Struct.Type = StructType;
+	StructNode->Val.Struct.Members = Vector_Create(struct AST_Node*, 0);
+
+	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		if (StructType.Flags & DATATYPE_IS_ANONYMOUS)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Anonymous struct requires a body.");
+			goto PARSE_FAIL;
+		}
+
+		Parser_ConsumeToken(Parser); // Consume ';'.
+		return StructNode;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume '{'.
+
+	// Parse members until the closing brace is reached. Each member slot may itself be a nested sub-structure.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	while (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+	{
+		// First try parsing a substructure, then a variable.
+		struct Vector SubInlineVars = Vector_Create(struct AST_Node*, 0);
+		struct AST_Node* SubStructNode = ParseStructNode(Parser, &SubInlineVars);
+		if (Parser->HasError)
+		{
+			Vector_Destroy(&SubInlineVars);
+			goto PARSE_FAIL;
+		}
+
+		if (SubStructNode != NULL) // Member is a substructure.
+		{
+			Vector_PushPtr(&StructNode->Val.Struct.Members, &SubStructNode);	
+			if (SubInlineVars.Size > 0)
+			{
+				Vector_Append(&StructNode->Val.Struct.Members, &SubInlineVars);	
+			}	
+		}
+		else // Member is a variable.
+		{
+			struct Vector MemberVars = ParseVariableDeclarationNodes(Parser, SYMBOL_SEMICOLON);
+			if (MemberVars.Size == 0)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Expected member declaration when parsing struct.");
+				Vector_Destroy(&MemberVars);
+				goto PARSE_FAIL;
+			}
+
+			for (int i = 0; i < MemberVars.Size; i++)
+			{
+				struct AST_Node* MemberNode = Vector_GetValueAt(MemberVars, struct AST_Node*, i);
+				ASSERT(MemberNode != NULL);
+
+				// Struct members are bare declarations only, no initializer value expression.
+				if (MemberNode->Val.Variable.Value != NULL)
+				{
+					Parser_Error(Parser, MemberNode->BufferLocation, "Unexpected initializer expression in struct member declaration.");
+					FreeNodeVector(&MemberVars);
+					goto PARSE_FAIL;
+				}
+			}
+
+			Vector_Append(&StructNode->Val.Struct.Members, &MemberVars);
+			Vector_Destroy(&MemberVars);
+		}
+
+		Vector_Destroy(&SubInlineVars);
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume '}'.
+
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// Inline variable declaration(s).
+	struct DatatypeDef InlineVarType = StructNode->Val.Struct.Type;
+
+	struct AST_Node* InlineVarExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+	if (Parser->HasError)
+	{
+		goto PARSE_FAIL;
+	}
+
+	if (InlineVarExpression != NULL)
+	{
+		ParseVariableDeclarationNodes_FromExp(Parser, &InlineVarType, InlineVarExpression, OutInlineVars);
+		if (Parser->HasError)
+		{
+			goto PARSE_FAIL;
+		}
+	}
+
+	return StructNode;
+}
+
 ui8 ParseGlobal_Struct(struct ParserProcess* Parser)
 {
-	// UNIMPLEMENTED.
-	return 0;
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct Vector InlineVars = Vector_Create(struct AST_Node*, 0);
+	struct AST_Node* StructNode = ParseStructNode(Parser, &InlineVars);
+	if (StructNode == NULL)
+	{
+		Vector_Destroy(&InlineVars);
+		return 0;
+	}
+
+	if (StructNode->Val.Struct.Type.Flags & DATATYPE_IS_ANONYMOUS && InlineVars.Size == 0)
+	{
+		Parser_Error(Parser, StructNode->BufferLocation, "Invalid anonymous struct declaration. Add a type name, or inline variable declarations using it.");
+		Parser->TokenIndex = StartTokenIndex;
+		return 0;
+	}
+
+	Vector_Push(*Parser->RootNodes, struct AST_Node*, StructNode);
+	Vector_Append(Parser->RootNodes, &InlineVars);
+	return 1;
 }
