@@ -644,103 +644,79 @@ struct Vector ParseVariableDeclarationNodes(struct ParserProcess* Parser, enum T
 	return VarNodes;
 }
 
-static struct Vector GetAllStatements(struct AST_Node* RootStatement);
+static void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
 
-static struct Vector GetAllStatements_Block(struct AST_Node* BlockStatement)
+static void GetAllStatements_Block(struct AST_Node* BlockStatement, struct Vector* Out)
 {
 	ASSERT(BlockStatement != NULL);
 	ASSERT(BlockStatement->Type == AST_NODE_STATEMENT_BLOCK);
+	ASSERT(Out != NULL);
 
-	struct Vector BlockStatements = Vector_Create(struct AST_Node*, 8);
-	Vector_Push(BlockStatements, struct AST_Node*, BlockStatement);
+	Vector_Push(*Out, struct AST_Node*, BlockStatement);
 
 	for (int i = 0; i < BlockStatement->Val.Statement.Block.Statements.Size; i++)
 	{
-		struct Vector Sub = GetAllStatements(Vector_GetValueAt(BlockStatement->Val.Statement.Block.Statements, struct AST_Node*, i));
-		Vector_Append(&BlockStatements, &Sub);
-		Vector_Destroy(&Sub);
+		GetAllStatements(Vector_GetValueAt(BlockStatement->Val.Statement.Block.Statements, struct AST_Node*, i), Out);
 	}
-
-	return BlockStatements;
 }
 
-static struct Vector GetAllStatements_Conditional(struct AST_Node* ConditionalStatement)
+static void GetAllStatements_Conditional(struct AST_Node* ConditionalStatement, struct Vector* Out)
 {
 	ASSERT(ConditionalStatement != NULL);
 	ASSERT(ConditionalStatement->Type == AST_NODE_STATEMENT_IF
 	|| ConditionalStatement->Type == AST_NODE_STATEMENT_WHILE);
+	ASSERT(Out != NULL);
 
-	struct Vector CondStatements = Vector_Create(struct AST_Node*, 8);
-	Vector_Push(CondStatements, struct AST_Node*, ConditionalStatement);
+	Vector_Push(*Out, struct AST_Node*, ConditionalStatement);
 
 	if (ConditionalStatement->Type == AST_NODE_STATEMENT_IF)
 	{
-		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement);
-		Vector_Append(&CondStatements, &ExecStatements);
-		Vector_Destroy(&ExecStatements);
+		GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement, Out);
 
 		if (ConditionalStatement->Val.Statement.If.ExecStatement_Else != NULL)
 		{
-			struct Vector ElseExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement_Else);
-			Vector_Append(&CondStatements, &ElseExecStatements);
-			Vector_Destroy(&ElseExecStatements);
+			GetAllStatements(ConditionalStatement->Val.Statement.If.ExecStatement_Else, Out);
 		}
 	}
 	else
 	{
-		struct Vector ExecStatements = GetAllStatements(ConditionalStatement->Val.Statement.While.ExecStatement);
-		Vector_Append(&CondStatements, &ExecStatements);
-
-		Vector_Destroy(&ExecStatements);
+		GetAllStatements(ConditionalStatement->Val.Statement.While.ExecStatement, Out);
 	}
-
-	return CondStatements;
 }
 
-static struct Vector GetAllStatements_For(struct AST_Node* ForStatement)
+static void GetAllStatements_For(struct AST_Node* ForStatement, struct Vector* Out)
 {
 	ASSERT(ForStatement != NULL);
 	ASSERT(ForStatement->Type == AST_NODE_STATEMENT_FOR);
+	ASSERT(Out != NULL);
 
-	struct Vector ForStatements = Vector_Create(struct AST_Node*, 8);
-	Vector_Push(ForStatements, struct AST_Node*, ForStatement);
+	Vector_Push(*Out, struct AST_Node*, ForStatement);
 
-	struct Vector ExecStatements = GetAllStatements(ForStatement->Val.Statement.For.ExecStatement);
-
-	Vector_Append(&ForStatements, &ExecStatements);
-	Vector_Destroy(&ExecStatements);
-
-	return ForStatements;
+	GetAllStatements(ForStatement->Val.Statement.For.ExecStatement, Out);
  }
 
-// Recursively collects all sub-statements from a given statement.
-static struct Vector GetAllStatements(struct AST_Node* RootStatement)
+// Recursively collects all sub-statements from a given statement into Out.
+static void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out)
 {
 	ASSERT(RootStatement != NULL);
-	struct Vector Statements = Vector_Create(struct AST_Node*, 8);
+	ASSERT(Out != NULL);
 
 	// Switch on the statement type to call the correct statements collection function.
-	struct Vector SubBlock = { 0 };
 	switch (RootStatement->Type)
 	{
 	case AST_NODE_STATEMENT_BLOCK:
-		SubBlock = GetAllStatements_Block(RootStatement);
+		GetAllStatements_Block(RootStatement, Out);
 		break;
 	case AST_NODE_STATEMENT_IF:
 	case AST_NODE_STATEMENT_WHILE:
-		SubBlock = GetAllStatements_Conditional(RootStatement);
+		GetAllStatements_Conditional(RootStatement, Out);
 		break;
 	case AST_NODE_STATEMENT_FOR:
-		SubBlock = GetAllStatements_For(RootStatement);
+		GetAllStatements_For(RootStatement, Out);
 		break;
 	default:
-		Vector_Push(Statements, struct AST_Node*, RootStatement);
+		Vector_Push(*Out, struct AST_Node*, RootStatement);
 	}
-
-	Vector_Append(&Statements, &SubBlock);
-	Vector_Destroy(&SubBlock);
-
-	return Statements;
 }
 
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
@@ -903,7 +879,8 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		StatementNode->Val.Statement.While.ExecStatement = ExecNode;
 
 		// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
-		struct Vector Substatements = GetAllStatements(StatementNode->Val.Statement.While.ExecStatement);
+		struct Vector Substatements = Vector_Create(struct AST_Node*, 8);
+		GetAllStatements(StatementNode->Val.Statement.While.ExecStatement, &Substatements);
 
 		for (int i = 0; i < Substatements.Size; i++)
 		{
@@ -989,7 +966,8 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	}
 
 	// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
-	struct Vector Substatements = GetAllStatements(StatementNode->Val.Statement.For.ExecStatement);
+	struct Vector Substatements = Vector_Create(struct AST_Node*, 8);
+	GetAllStatements(StatementNode->Val.Statement.For.ExecStatement, &Substatements);
 
 	for (int i = 0; i < Substatements.Size; i++)
 	{
@@ -1270,7 +1248,8 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 		FunctionNode->Val.Function.Statements = ParseBlockStatementNode(Parser);
 
 		// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
-		struct Vector Substatements = GetAllStatements(FunctionNode->Val.Function.Statements);
+		struct Vector Substatements = Vector_Create(struct AST_Node*, 8);
+		GetAllStatements(FunctionNode->Val.Function.Statements, &Substatements);
 
 		for (int i = 0; i < Substatements.Size; i++)
 		{

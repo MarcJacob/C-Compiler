@@ -45,7 +45,8 @@
   - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
-  - Struct & Union parsing.
+  - Struct parsing. [WIP]
+  - Union parsing.
   - Enum parsing.
   - Typedef parsing.
   - Expression parsing. [DONE]
