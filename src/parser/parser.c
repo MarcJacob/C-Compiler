@@ -164,7 +164,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		printf("<LITERAL_CHAR: '%c'>\n", Node->Val.Expression.Literal.Character);
 		break;
 	case EXP_VAR_ACCESS:
-		printf("<VAR_ACCESS: '%s'>\n", Node->Val.Expression.Variable.Name.Str);
+		printf("<VAR_ACCESS: '%s' : %s>\n", Node->Val.Expression.Variable.Name.Str, Datatype_GetName(&Node->Val.Expression.ResultType));
 		break;
 	case EXP_OP:
 		printf("<OP: '%s'>\n", Symbol_ToString(Node->Val.Expression.Op.OperatorSymbol));
@@ -172,7 +172,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		PrintNode(Node->Val.Expression.Op.RightOperand, Depth + 1);
 		break;
 	case EXP_FUNCTION_CALL:
-		printf("<FUNCTION_CALL: '%s'>\n", Node->Val.Expression.FunctionCall.FunctionName.Str);
+		printf("<FUNCTION_CALL: '%s' : %s>\n", Node->Val.Expression.FunctionCall.FunctionName.Str, Datatype_GetName(&Node->Val.Expression.ResultType));
 		for (int i = 0; i < Node->Val.Expression.FunctionCall.Params.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Val.Expression.FunctionCall.Params, struct AST_Node*, i), Depth + 1);
 		break;

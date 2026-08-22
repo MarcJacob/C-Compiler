@@ -6,4 +6,5 @@ string_ansi.h is a simple header-only ANSI / ASCII string and buffer library, al
 
 vector.h is another header-only mini-library implementing a vector data structure for the purpose of easily working with dynamic-sized arrays of any type.
 
-In the future, the intention is to add a main compiler.h file containing the basic in / out symbols for all stages of the compiler and non-assert error handling, and corresponding .h files for each stage to isolate their symbols from one another.
+compiler.h contains data type and helper function definitions for the various in / out products of the compiler stages.
+	It may be broken down into its constituent types later (token.h, ast_node.h...).

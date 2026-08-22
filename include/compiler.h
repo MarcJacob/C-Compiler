@@ -674,6 +674,7 @@ enum AST_NODE_TYPE
 // Values for primitive data types + an extra value indicating the type is user-defined. 
 enum DATATYPE
 {
+	DATATYPE_UNKNOWN,
 	DATATYPE_VOID,
 	DATATYPE_CHAR,
 	DATATYPE_SHORT,
@@ -722,6 +723,8 @@ static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
 
 	switch (Datatype->Type)
 	{
+	default:
+	case DATATYPE_UNKNOWN: return "?";
 	case DATATYPE_VOID: return "void";
 	case DATATYPE_CHAR: return "char";
 	case DATATYPE_SHORT: return "short";
@@ -729,7 +732,6 @@ static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
 	case DATATYPE_INT64: return "long";
 	case DATATYPE_FLOAT: return "float";
 	case DATATYPE_DOUBLE: return "double";
-	default: return "<unknown>";
 	}
 }
 
