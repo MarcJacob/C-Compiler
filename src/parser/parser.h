@@ -24,6 +24,7 @@ struct ParserProcess
 };
 
 // Sets the HasError flag on the Parser process and fills in the error message.
+// From there on the Parser Process should finish as soon as possible.
 void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* MsgFormat, ...);
 
 struct Token* Parser_PeekToken(struct ParserProcess* Parser);
@@ -122,6 +123,6 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
+ui8 ParseStatementNodes(struct ParserProcess* Parser, struct Vector* OutStatementNodes);
 
 #endif // PARSER_INCLUDED

@@ -62,7 +62,7 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 	struct AST_Node* VarNode = AllocNewNode(AST_NODE_EXPRESSION);
 	VarNode->BufferLocation = NextToken->BufferLocation;
 
-	VarNode->Val.Expression.Type = EXP_VARIABLE;
+	VarNode->Val.Expression.Type = EXP_VAR_ACCESS;
 	VarNode->Val.Expression.Variable.Name = NextToken->Val.LiteralString;
 
 	// Consume token and return.
@@ -142,7 +142,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	{
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_COMMA);
+		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_OP_COMMA);
 		if (NewExpr == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter expression.");
@@ -229,7 +229,7 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 		&& (EntryNodeParenthesisLevel >= Left_Right_ParenthesisLevel)
 		// If not at a deeper parenthesis level then left operand, Check operator precedence or associativity rules.
 		&& (EntryNodeParenthesisLevel > Left_ParenthesisLevel
-			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) && ((Symbol_IsOpLeftToRightAssociative(LeftOp) == Symbol_IsOpLeftToRightAssociative(EntryNodeOp))))
+			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) > 0 && ((Symbol_IsOpLeftToRightAssociative(LeftOp) == Symbol_IsOpLeftToRightAssociative(EntryNodeOp))))
 			|| !Symbol_IsOpLeftToRightAssociative(LeftOp) && Symbol_IsOpLeftToRightAssociative(EntryNodeOp))
 		)
 	{

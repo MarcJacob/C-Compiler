@@ -62,7 +62,6 @@ enum TOKEN_SYMBOL
 
 	// Statements & expression delimitors.
 	SYMBOL_SEMICOLON,				// ;
-	SYMBOL_COMMA,					// ,
 	SYMBOL_COLON,					// :
 	SYMBOL_PARENTHESIS_OPEN,		// (
 	SYMBOL_PARENTHESIS_CLOSE,		// )
@@ -73,6 +72,7 @@ enum TOKEN_SYMBOL
 
 	// Operators
 	// TODO: Add ternary.
+	SYMBOL_OP_COMMA,				// ,
 	SYMBOL_OP_ARROW,				// ->
 	SYMBOL_OP_AMB_INCREMENT,		// ++
 	SYMBOL_OP_PRE_INCREMENT,		// ++ (De-ambiguated during the parsing process)
@@ -208,6 +208,7 @@ static inline ui8 Symbol_IsBinaryOp(enum TOKEN_SYMBOL Symbol)
 		case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
 		case SYMBOL_OP_STRUCT_DEREF:
 		case SYMBOL_OP_STRUCT_READ:
+		case SYMBOL_OP_COMMA:
 			return 1;
 		default:
 			return 0;
@@ -380,11 +381,11 @@ static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
 		}, 1
 	},
 
-	// The lonely Comma
+	// The lonely Comma, the Great Separator, the Eternal Splitter.
 	{
 		{
-			SYMBOL_COMMA,
-		}, 0
+			SYMBOL_OP_COMMA,
+		}, 1
 	},
 };
 
@@ -417,13 +418,13 @@ static inline void Symbol_GetOpParseRules(enum TOKEN_SYMBOL Op, ui8* OutPreceden
 }
 
 // Returns 0 if the operators are of the same precedence level, 1 if A > B, -1 if B < A.
-static inline ui8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL OpB)
+static inline i8 Symbol_CompareOpPrecedence(enum TOKEN_SYMBOL OpA, enum TOKEN_SYMBOL OpB)
 {
 	ui8 APrec, BPrec;
 	Symbol_GetOpParseRules(OpA, &APrec, NULL);
 	Symbol_GetOpParseRules(OpB, &BPrec, NULL);
 
-	return APrec == BPrec ? 0 : (APrec > BPrec ? 1 : -1);
+	return APrec == BPrec ? 0 : (APrec < BPrec ? 1 : -1);
 }
 
 static inline ui8 Symbol_IsOpLeftToRightAssociative(enum TOKEN_SYMBOL Op)
@@ -445,7 +446,7 @@ struct SymbolToStringPair
 static const struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
 {
 	{ SYMBOL_SEMICOLON, ";" },
-	{ SYMBOL_COMMA, "," },
+	{ SYMBOL_OP_COMMA, "," },
 	{ SYMBOL_COLON, ":" },
 	{ SYMBOL_PARENTHESIS_OPEN, "(" },
 	{ SYMBOL_PARENTHESIS_CLOSE, ")" },
@@ -716,7 +717,7 @@ enum EXPRESSION_TYPE
 	EXP_LITERAL_STRING, // Expression is a literal string.
 	EXP_LITERAL_CHAR, // Expression is a literal character.
 
-	EXP_VARIABLE, // Expression accesses a variable value.
+	EXP_VAR_ACCESS, // Expression accesses a variable value (for reading or writing).
 
 	EXP_OP, // Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
 	EXP_FUNCTION_CALL, // Expression is a function call's return value.

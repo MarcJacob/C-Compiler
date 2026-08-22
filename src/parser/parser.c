@@ -54,7 +54,7 @@ void FreeNode(struct AST_Node* Node)
 			FreeNode(Node->Val.Expression.Op.LeftOperand);
 			FreeNode(Node->Val.Expression.Op.RightOperand);
 		}
-		else if (Node->Val.Expression.Type == EXP_VARIABLE)
+		else if (Node->Val.Expression.Type == EXP_VAR_ACCESS)
 		{
 			String_Free_ANSI(&Node->Val.Expression.Variable.Name);
 		}
@@ -163,7 +163,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 	case EXP_LITERAL_CHAR:
 		printf("<LITERAL_CHAR: '%c'>\n", Node->Val.Expression.Literal.Character);
 		break;
-	case EXP_VARIABLE:
+	case EXP_VAR_ACCESS:
 		printf("<VAR_ACCESS: '%s'>\n", Node->Val.Expression.Variable.Name.Str);
 		break;
 	case EXP_OP:
@@ -189,7 +189,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	switch (Node->Type)
 	{
 	case AST_NODE_VARIABLE:
-		printf("<VARIABLE: '%s'>\n", Node->Val.Variable.Name.Str);
+		printf("<VAR_DEC: '%s'>\n", Node->Val.Variable.Name.Str);
 		PrintNode(Node->Val.Variable.Value, Depth + 1);
 		break;
 	case AST_NODE_STRUCT:
@@ -269,18 +269,13 @@ void Parser_PrintTree(struct ParserProcess* Parser)
 // Root Parser functions
 
 // Attempts to parse a new AST, covering a Global Variable symbol declaration and optionally its definition.
-ui8 ParseGlobal_Variable(struct ParserProcess* Parser);
+ui8 ParseGlobal_Variables(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Function symbol declaration and optionally its definition.
 ui8 ParseGlobal_Function(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Struct declaration and optionally its definition.
 ui8 ParseGlobal_Struct(struct ParserProcess* Parser);
-
-// Error Handling
-
-// Emits an Error into the ParserProcess structure. From there on the Parser Process should finish as soon as possible.
-void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...);
 
 // Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
 // in the RootNodes vector in the Process.
@@ -294,7 +289,7 @@ void Parser_Run(struct ParserProcess* Parser)
 		// Attempt to parse AST Node trees in an arbitrary order.
 		if (	ParseGlobal_Function(Parser)
 			||	ParseGlobal_Struct(Parser)
-			||	ParseGlobal_Variable(Parser))
+			||	ParseGlobal_Variables(Parser))
 		{
 			// Successfully parsed node tree.
 		}
@@ -523,6 +518,107 @@ PARSE_SUCCESS:
 	return 1;
 }
 
+// Recursively parses variable declaration nodes from a passed expression, so the "top level" comma operators
+// may be interpreted as separators between multiple declarations instead of their standard in-expression role.
+// If successful the entry Expression Node will either be freed or part of a variable node, so consider it discarded !
+void ParseVariableDeclarationNodes_FromExp(struct ParserProcess* Parser, 
+	struct AST_Node* ExpressionNode, struct Vector* OutVarNodes)
+{
+	ASSERT(OutVarNodes != NULL);
+	ASSERT(ExpressionNode != NULL);
+
+	// Recursive case.
+	if (ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_COMMA)
+	{
+		ParseVariableDeclarationNodes_FromExp(Parser, ExpressionNode->Val.Expression.Op.LeftOperand, OutVarNodes);
+		if (Parser->HasError) return;
+		ParseVariableDeclarationNodes_FromExp(Parser, ExpressionNode->Val.Expression.Op.RightOperand, OutVarNodes);
+		if (Parser->HasError) return;
+
+		// ... Then get rid of the entry node (after detaching it from its operands).
+		ExpressionNode->Val.Expression.Op.LeftOperand = NULL;
+		ExpressionNode->Val.Expression.Op.RightOperand = NULL;
+		FreeNode(ExpressionNode);
+		return;
+	}
+
+	// Base cases.
+	struct AST_Node* VarNode = AllocNewNode(AST_NODE_VARIABLE);
+	VarNode->BufferLocation = ExpressionNode->BufferLocation;
+	if (ExpressionNode->Val.Expression.Type == EXP_VAR_ACCESS)
+	{
+		// Variable declaration. Copy the name into the variable node itself.
+		VarNode->Val.Variable.Name = String_Copy_ANSI(ExpressionNode->Val.Expression.Variable.Name);
+		// Get rid of the node.
+		FreeNode(ExpressionNode);
+	}
+	else if (ExpressionNode->Val.Expression.Type == EXP_OP
+		&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ASSIGN
+		&& ExpressionNode->Val.Expression.Op.LeftOperand->Val.Expression.Type == EXP_VAR_ACCESS)
+	{
+		// Variable definition.
+		// Copy the name from the expression but leave the full expression in as the variable node's value node.
+		VarNode->Val.Variable.Name = String_Copy_ANSI(ExpressionNode->Val.Expression.Op.LeftOperand->Val.Expression.Variable.Name);
+		VarNode->Val.Variable.Value = ExpressionNode;
+	}
+	else if (0 /* && ExpressionNode->Val.Expression.Type == EXP_OP
+		&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS */)
+	{
+		// ... TODO Array definition.
+	}
+	else
+	{
+		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression format in var declaration.");
+		return;
+	}
+
+	Vector_PushPtr(OutVarNodes, &VarNode);
+}
+
+// Attempts to parse a vector of variable declaration nodes along with a possible value expression,
+// bound by the passed end symbol.
+// Check for parser errors after calling.
+struct Vector ParseVariableDeclarationNodes(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
+{
+	int TokenStartIndex = Parser->TokenIndex;
+
+	struct Vector VarNodes = Vector_Create(struct AST_Node*, 1);
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
+	PARSE_FAIL:
+		FreeNodeVector(&VarNodes);
+		return VarNodes;
+	}
+
+	// Get the data type to assign to the returned variable declaration nodes.
+	// If it fails, then we know we're not dealing with a variable, but it could be something else
+	// hence no error is output.
+	struct DatatypeDef VarType;
+	if (!ParseDatatypeDef(Parser, &VarType, 0))
+	{
+		goto PARSE_FAIL;
+	}
+
+	// Parse main declaration expression.
+	struct AST_Node* VarExpression = ParseExpressionNode(Parser, EndSymbol);
+
+	if (VarExpression->Val.Expression.Type == EXP_FUNCTION_CALL)
+	{
+		// This is a function declaration !
+		// Abandon now without emitting an error and let the Function Parsing process take over.
+		goto PARSE_FAIL;
+	}
+
+	// Now take the expression and start parsing declarations from it.
+	ParseVariableDeclarationNodes_FromExp(Parser, VarExpression, &VarNodes);
+
+	return VarNodes;
+}
+
 static struct Vector GetAllStatements(struct AST_Node* RootStatement);
 
 static struct Vector GetAllStatements_Block(struct AST_Node* BlockStatement)
@@ -659,10 +755,11 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 	}
 
 	// Parse statements on loop. Any instruction other than sub-blocks should be separated by ';' tokens.
-	struct AST_Node* NextStatement = ParseStatementNode(Parser);
-	while (NextStatement != NULL)
+	struct Vector OutStatements = Vector_New(1, sizeof(struct AST_Node*));
+	ParseStatementNodes(Parser, &OutStatements);
+	while (!Parser->HasError && OutStatements.Size > 0)
 	{
-		Vector_Push(BlockNode->Val.Statement.Block.Statements, struct AST_Node*, NextStatement);
+		Vector_Append(&BlockNode->Val.Statement.Block.Statements, &OutStatements);
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -672,7 +769,8 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 			break;
 		}
 
-		NextStatement = ParseStatementNode(Parser);
+		OutStatements.Size = 0; // Empty vector. TODO: Add a "Move" version of "Append" to formalize the fact we're emptying a vector into another.
+		ParseStatementNodes(Parser, &OutStatements);
 	}
 
 	if (Parser->HasError)
@@ -682,6 +780,36 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 	}
 
 	return BlockNode;
+}
+
+// Special variant of the Statements parsing function that only accepts a single, non-var-declaration node
+// at a time.
+struct AST_Node* ParseDependentStatementNode(struct ParserProcess* Parser)
+{
+	// TODO: Doing it this way feels wrong. The ONLY way multiple nodes are returned from a single ParseStatementNodes
+	// call is if it's a multi-declaration. Maybe it should go back to always returning one node, and the "var_dec" node should just
+	// contain pre-checked expressions instead of a single variable's name and value.
+
+	struct Vector Statements = Vector_New(0, sizeof(struct AST_Node*));
+	ParseStatementNodes(Parser, &Statements);
+
+	// Only accept a single statement (or a block).
+	if (Statements.Size > 1)
+	{
+		Parser_Error(Parser, Vector_GetValueAt(Statements, struct AST_Node*, 0)->BufferLocation, "Compound statement disallowed when dependent.");
+		Vector_Destroy(&Statements);
+		return NULL;
+	}
+	else if (Statements.Size == 0)
+	{
+		Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Error while parsing dependent statement.");
+		return NULL;
+	}
+
+	struct AST_Node* StatementNode = Vector_GetValueAt(Statements, struct AST_Node*, 0);
+	Vector_Destroy(&Statements);
+
+	return StatementNode;
 }
 
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
@@ -737,7 +865,8 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		StatementNode->Val.Statement.If.EntryCondition = ConditionNode;
 	}
 
-	struct AST_Node* ExecNode = ParseStatementNode(Parser);
+	struct AST_Node* ExecNode = ParseDependentStatementNode(Parser);
+
 	if (ExecNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional instruction.");
@@ -776,10 +905,11 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		if (Token_IsKeyword(NextToken, KEYWORD_ELSE))
 		{
 			Parser_NextToken(Parser);
-			StatementNode->Val.Statement.If.ExecStatement_Else = ParseStatementNode(Parser);
+			StatementNode->Val.Statement.If.ExecStatement_Else = ParseDependentStatementNode(Parser);
+
 			if (StatementNode->Val.Statement.If.ExecStatement_Else == NULL)
 			{
-				Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing else instruction.");
+				Parser_Error(Parser, NextToken->BufferLocation, "Error parsing else dependent statement");
 				goto PARSE_FAIL;
 			}
 		}
@@ -826,7 +956,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	StatementNode->Val.Statement.For.PostLoopExpression = ParseExpressionNode(Parser, SYMBOL_PARENTHESIS_CLOSE);
 	if (Parser->HasError) goto PARSE_FAIL;
 
-	StatementNode->Val.Statement.For.ExecStatement = ParseStatementNode(Parser);
+	StatementNode->Val.Statement.For.ExecStatement = ParseDependentStatementNode(Parser);
 	if (StatementNode->Val.Statement.For.ExecStatement == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected statement following for loop declaration.");
@@ -851,7 +981,6 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 	}
 
 	Vector_Destroy(&Substatements);
-
 	return StatementNode;
 }
 
@@ -929,34 +1058,38 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	return ControlStatementNode;
 }
 
-struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
+// Parses the next full statement which may be made up of multiple nodes.
+// Returns the number of parsed statement nodes. If 0, check for errors on parser.
+ui8 ParseStatementNodes(struct ParserProcess* Parser, struct Vector* OutStatements)
 {
+	ASSERT(OutStatements);
+
 	int StartTokenIndex = Parser->TokenIndex;
-	struct AST_Node* InstructionNode = NULL;
+	struct AST_Node* StatementNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
-		return NULL;
+		return 0;
 	}
 
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 	{
-		InstructionNode = ParseBlockStatementNode(Parser);
+		StatementNode = ParseBlockStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_IF)
 		|| Token_IsKeyword(NextToken, KEYWORD_WHILE))
 	{
-		InstructionNode = ParseConditionalStatementNode(Parser);
+		StatementNode = ParseConditionalStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_FOR))
 	{
-		InstructionNode = ParseForStatementNode(Parser);
+		StatementNode = ParseForStatementNode(Parser);
 	}
 	else if (Token_IsKeyword(NextToken, KEYWORD_SWITCH))
 	{
-		InstructionNode = ParseSwitchStatementNode(Parser);
+		StatementNode = ParseSwitchStatementNode(Parser);
 	}
 	else if (
 		Token_IsKeyword(NextToken, KEYWORD_BREAK)
@@ -965,85 +1098,45 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 		|| Token_IsKeyword(NextToken, KEYWORD_CASE)
 		|| Token_IsKeyword(NextToken, KEYWORD_GOTO))
 	{
-		InstructionNode = ParseControlStatementNode(Parser);
+		StatementNode = ParseControlStatementNode(Parser);
 	}
 	else
 	{
-		InstructionNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+		// Special case: since variable declarations are allowed among statements, support it here.
+		// This means that whatever calls this function has to check that the return result is in fact a statement
+		// if they mean to access statement-only data.
+		struct Vector VarNodes = ParseVariableDeclarationNodes(Parser, SYMBOL_SEMICOLON);
+		if (VarNodes.Size > 0)
+		{
+			Vector_Append(OutStatements, &VarNodes);
+			ui8 VarCount = VarNodes.Size;
+			Vector_Destroy(&VarNodes);
+			return VarCount;
+		}
+		else if (!Parser->HasError)
+		{
+			// ... Otherwise continue on to parsing a free-standing expression.
+			StatementNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
+		}
 	}
 
-	return InstructionNode;
+	if (Parser->HasError || StatementNode == NULL) return 0;
+
+	// Add parsed single statement to out vector.
+	Vector_PushPtr(OutStatements, &StatementNode);
+	return 1;
 }
 
-ui8 ParseGlobal_Variable(struct ParserProcess* Parser)
+ui8 ParseGlobal_Variables(struct ParserProcess* Parser)
 {
-	int TokenStartIndex = Parser->TokenIndex;
-
-	struct AST_Node* VarNode = NULL;
-
-	struct Token* NextToken = Parser_PeekToken(Parser);
-	if (NextToken == NULL)
+	struct Vector VarNodes = ParseVariableDeclarationNodes(Parser, SYMBOL_SEMICOLON);
+	if (VarNodes.Size == 0)
 	{
-	PARSE_FAIL_EOF:
-		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
-	PARSE_FAIL:
-		if (VarNode != NULL) FreeNode(VarNode);
+		Vector_Destroy(&VarNodes);
 		return 0;
 	}
 
-	VarNode = AllocNewNode(AST_NODE_VARIABLE);
-	VarNode->BufferLocation = NextToken->BufferLocation;
-
-	// Attempt to parse a data type directly into the node.
-	// If it fails, then we know we're not dealing with a variable, but it could be something else
-	// hence no error is output.
-	if (!ParseDatatypeDef(Parser, &VarNode->Val.Variable.Type, 0))
-	{
-		goto PARSE_FAIL;
-	}
-
-	// Attempt to parse an expression.
-	// If successful, then we know we're dealing with a variable or an error case.
-	// Otherwise, we're probably dealing with a function or structure.
-
-	struct AST_Node* VarExpression = ParseExpressionNode(Parser, SYMBOL_SEMICOLON);
-	if (VarExpression == NULL)
-	{
-		goto PARSE_FAIL;
-	}
-
-	// If the expression is just a variable node, then we have a declaration.
-	// If the expression is an assignment node with a variable left operand, then we have a definition.
-	// If the expression is an array access node with a variable left operand, then we have an array definition (TODO).
-
-	if (VarExpression->Val.Expression.Type == EXP_VARIABLE)
-	{
-		// Variable declaration.
-		// Consume the expression node to get the variable name and leave the variable node without a value node.
-		VarNode->Val.Variable.Name = String_Copy_ANSI(VarExpression->Val.Expression.Variable.Name);
-		FreeNode(VarExpression);
-	}
-	else if (VarExpression->Val.Expression.Type == EXP_OP
-		&& VarExpression->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ASSIGN
-		&& VarExpression->Val.Expression.Op.LeftOperand->Val.Expression.Type == EXP_VARIABLE)
-	{
-		// Variable definition.
-		// Copy the name from the expression but leave the full expression in as the variable node's value node.
-		VarNode->Val.Variable.Name = String_Copy_ANSI(VarExpression->Val.Expression.Op.LeftOperand->Val.Expression.Variable.Name);
-		VarNode->Val.Variable.Value = VarExpression;
-	}
-	else if (0 /* && VarExpression->Val.Expression.Type == EXP_OP
-		&& VarExpression->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS */)
-	{
-		// ... TODO Array definition.
-	}
-	else
-	{
-		Parser_Error(Parser, VarExpression->BufferLocation, "Unexpected expression format in declaration.");
-		goto PARSE_FAIL;
-	}
-
-	Vector_Push(*Parser->RootNodes, struct AST_Node*, VarNode);
+	Vector_Append(Parser->RootNodes, &VarNodes);
 	return 1;
 }
 
@@ -1056,8 +1149,7 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	// - A return type
 	// - An identifier
 	// - Open parenthesis symbol
-	// - 0 or more comma-separated variable declarations
-	// - Closing parenthesis symbol
+	// - Variable declarations nodes up until a closing parenthesis is reached
 	// - Either a semicolon or a block
 
 	struct DatatypeDef ReturnType;
@@ -1096,45 +1188,46 @@ ui8 ParseGlobal_Function(struct ParserProcess* Parser)
 	FunctionNode->Val.Function.ReturnType = ReturnType;
 	FunctionNode->Val.Function.Params = Vector_Create(struct AST_Node*, 0);
 
-
 	// Look for parameters.
+	struct Vector OutVars = ParseVariableDeclarationNodes(Parser, SYMBOL_OP_COMMA);
+	ASSERT(OutVars.Size < 2); // Because COMMA is set as the end symbol, we should never get more than 1 node at a time.
 
-	struct DatatypeDef ParamType;
-	while (ParseDatatypeDef(Parser, &ParamType, 0))
+	while (OutVars.Size > 0)
 	{
-		NextToken = Parser_NextToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-		if (NextToken->Type != TOKEN_IDENTIFIER)
+		struct AST_Node* ParamVarNode = Vector_GetValueAt(OutVars, struct AST_Node*, 0);
+		ASSERT(ParamVarNode != NULL);
+
+		// Ensure that this is a declaration (no value expression).
+		if (ParamVarNode->Val.Variable.Value != NULL)
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing function parameter.");
+			Parser_Error(Parser, ParamVarNode->BufferLocation, "Unexpected expression while parsing function parameter.");
 			goto PARSE_FAIL;
 		}
 
-		struct AST_Node* ParamNode = AllocNewNode(AST_NODE_VARIABLE);
-		ParamNode->BufferLocation = NextToken->BufferLocation;
-		ParamNode->Val.Variable.Name = String_Copy_ANSI(NextToken->Val.Identifier);
-		ParamNode->Val.Variable.Type = ParamType;
-
-		Vector_Push(FunctionNode->Val.Function.Params, struct AST_Node*, ParamNode);
-		
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-		if (Token_IsSymbol(NextToken, SYMBOL_COMMA))
+		// Ensure that this is not an array
+		if (ParamVarNode->Val.Variable.IsArray)
 		{
-			// Parse next param...
-			NextToken = Parser_NextToken(Parser);
-			continue;
+			Parser_Error(Parser, ParamVarNode->BufferLocation, "Cannot declare an array as a function parameter.");
+			goto PARSE_FAIL;
 		}
 
-		// Done parsing params.
-		break;
+		// Add to function's parameters collection.
+		Vector_Push(FunctionNode->Val.Function.Params, struct AST_Node*, ParamVarNode);
+
+		// Parse next parameter.
+		Vector_Destroy(&OutVars);
+		OutVars = ParseVariableDeclarationNodes(Parser, SYMBOL_OP_COMMA);
+		ASSERT(OutVars.Size < 2); // Because COMMA is set as the end symbol, we should never get more than 1 node at a time.
 	}
 
-	NextToken = Parser_NextToken(Parser);
+	Vector_Destroy(&OutVars);
 
+	// Expect a closing parenthesis.
+	NextToken = Parser_NextToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected closing parenthesis when parsing function prototype.");
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected closing parenthesis in function declaration.");
 		goto PARSE_FAIL;
 	}
 
