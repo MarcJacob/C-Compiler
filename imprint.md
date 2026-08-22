@@ -30,3 +30,7 @@ Top-level folder structure breakdown:
 
 Greater detail about each folder's content can be found in their respective imprint.md files.
 
+
+
+When starting a work session on any subject, make sure to check out the management folder to know what is to be done next.
+
