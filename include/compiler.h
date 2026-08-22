@@ -710,6 +710,29 @@ struct DatatypeDef
 	ui8 PointerLevel; // How many pointer indirection layers this has, meaning if > 0, this is a pointer.
 };
 
+// Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
+static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
+{
+	ASSERT(Datatype != NULL);
+
+	if (Datatype->Type == DATATYPE_USER_DEFINED)
+	{
+		return Datatype->TypeName.Length == 0 ? "<anonymous>" : Datatype->TypeName.Str;
+	}
+
+	switch (Datatype->Type)
+	{
+	case DATATYPE_VOID: return "void";
+	case DATATYPE_CHAR: return "char";
+	case DATATYPE_SHORT: return "short";
+	case DATATYPE_INT32: return "int";
+	case DATATYPE_INT64: return "long";
+	case DATATYPE_FLOAT: return "float";
+	case DATATYPE_DOUBLE: return "double";
+	default: return "<unknown>";
+	}
+}
+
 enum EXPRESSION_TYPE
 {
 	EXP_LITERAL_INT, // Expression is a literal whole number.

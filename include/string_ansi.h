@@ -41,7 +41,7 @@ struct String_ANSI
 	char* Str;
 	ui16 _Capacity;
 
-	ui16 Length;
+	ui16 Length; // Number of characters WITHOUT THE NULL TERMINATOR !
 };
 
 struct String_ANSI String_Create_ANSI(const char* InitChars);
@@ -272,7 +272,7 @@ i32 CharBufferReader_ReadNextWord(struct CharBufferReader_ANSI* Reader, struct S
 	return WordLen;
 }
 
-// Changes the (minimum) capacity of the string so it has room for a useable string of length NewSize.
+// Changes the (minimum) capacity of the string so it has room for a useable string of LENGTH NewSize.
 void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
 {
 	ASSERT(Str != NULL);
@@ -288,8 +288,8 @@ void String_Resize_ANSI(struct String_ANSI* Str, ui16 NewSize, ui8 CanShrink)
 		return;
 	}
 
-	// Allocate by groups of 8 bytes at the lowest granularity.
-	ui16 NewCapacity = (NewSize + 7) / 8 * 8;
+	// Allocate by groups of 8 bytes at the lowest granularity (And add an extra byte for the null terminator).
+	ui16 NewCapacity = ((NewSize + 7) / 8 + 1) * 8;
 
 	if ((Str->_Capacity > NewCapacity && CanShrink) || (Str->_Capacity < NewCapacity))
 	{

@@ -189,7 +189,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	switch (Node->Type)
 	{
 	case AST_NODE_VARIABLE:
-		printf("<VAR_DEC: '%s'>\n", Node->Val.Variable.Name.Str);
+		printf("<VAR_DEC: '%s' : %s>\n", Node->Val.Variable.Name.Str, Datatype_GetName(&Node->Val.Variable.Type));
 		PrintNode(Node->Val.Variable.Value, Depth + 1);
 		break;
 	case AST_NODE_STRUCT:
@@ -201,7 +201,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		printf("<ENUM>\n");
 		break;
 	case AST_NODE_FUNCTION:
-		printf("<FUNCTION: '%s'>\n", Node->Val.Function.Name.Str);
+		printf("<FUNCTION: '%s' : %s>\n", Node->Val.Function.Name.Str, Datatype_GetName(&Node->Val.Function.ReturnType));
 		for (int i = 0; i < Node->Val.Function.Params.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Val.Function.Params, struct AST_Node*, i), Depth + 1);
 		PrintNode(Node->Val.Function.Statements, Depth + 1);
@@ -547,17 +547,18 @@ PARSE_SUCCESS:
 // may be interpreted as separators between multiple declarations instead of their standard in-expression role.
 // If successful the entry Expression Node will either be freed or part of a variable node, so consider it discarded !
 void ParseVariableDeclarationNodes_FromExp(struct ParserProcess* Parser, 
-	struct AST_Node* ExpressionNode, struct Vector* OutVarNodes)
+	struct DatatypeDef* Datatype, struct AST_Node* ExpressionNode, struct Vector* OutVarNodes)
 {
-	ASSERT(OutVarNodes != NULL);
+	ASSERT(Datatype != NULL);
 	ASSERT(ExpressionNode != NULL);
+	ASSERT(OutVarNodes != NULL);
 
 	// Recursive case.
 	if (ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_COMMA)
 	{
-		ParseVariableDeclarationNodes_FromExp(Parser, ExpressionNode->Val.Expression.Op.LeftOperand, OutVarNodes);
+		ParseVariableDeclarationNodes_FromExp(Parser, Datatype, ExpressionNode->Val.Expression.Op.LeftOperand, OutVarNodes);
 		if (Parser->HasError) return;
-		ParseVariableDeclarationNodes_FromExp(Parser, ExpressionNode->Val.Expression.Op.RightOperand, OutVarNodes);
+		ParseVariableDeclarationNodes_FromExp(Parser, Datatype, ExpressionNode->Val.Expression.Op.RightOperand, OutVarNodes);
 		if (Parser->HasError) return;
 
 		// ... Then get rid of the entry node (after detaching it from its operands).
@@ -596,6 +597,8 @@ void ParseVariableDeclarationNodes_FromExp(struct ParserProcess* Parser,
 		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression format in var declaration.");
 		return;
 	}
+
+	VarNode->Val.Variable.Type = *Datatype;
 
 	Vector_PushPtr(OutVarNodes, &VarNode);
 }
@@ -639,7 +642,7 @@ struct Vector ParseVariableDeclarationNodes(struct ParserProcess* Parser, enum T
 	}
 
 	// Now take the expression and start parsing declarations from it.
-	ParseVariableDeclarationNodes_FromExp(Parser, VarExpression, &VarNodes);
+	ParseVariableDeclarationNodes_FromExp(Parser, &VarType, VarExpression, &VarNodes);
 
 	return VarNodes;
 }
