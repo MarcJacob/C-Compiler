@@ -133,6 +133,13 @@ static void PrintIndent(ui32 Depth)
 	for (ui32 i = 0; i < Depth; i++) printf("  ");
 }
 
+// Prints a datatype's name followed by one '*' character per pointer level (eg. "int**" for a pointer to pointer to int).
+static void PrintDatatypeName(const struct DatatypeDef* Datatype)
+{
+	printf("%s", Datatype_GetName(Datatype));
+	for (ui8 i = 0; i < Datatype->PointerLevel; i++) printf("*");
+}
+
 // Prints a named header for a sub-node of a complex statement (e.g. an IF's CONDITION / THEN / ELSE) before printing the node itself one level deeper.
 // Skipped entirely if Node is NULL, so optional sub-nodes don't leave a dangling, empty-looking header.
 static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Depth)
@@ -165,7 +172,9 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		printf("<LITERAL_CHAR: '%c'>\n", Node->Val.Expression.Literal.Character);
 		break;
 	case EXP_VAR_ACCESS:
-		printf("<VAR_ACCESS: '%s' : %s>\n", Node->Val.Expression.Variable.Name.Str, Datatype_GetName(&Node->Val.Expression.ResultType));
+		printf("<VAR_ACCESS: '%s' : ", Node->Val.Expression.Variable.Name.Str);
+		PrintDatatypeName(&Node->Val.Expression.ResultType);
+		printf(">\n");
 		break;
 	case EXP_OP:
 		printf("<OP: '%s'>\n", Symbol_ToString(Node->Val.Expression.Op.OperatorSymbol));
@@ -173,7 +182,9 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		PrintNode(Node->Val.Expression.Op.RightOperand, Depth + 1);
 		break;
 	case EXP_FUNCTION_CALL:
-		printf("<FUNCTION_CALL: '%s' : %s>\n", Node->Val.Expression.FunctionCall.FunctionName.Str, Datatype_GetName(&Node->Val.Expression.ResultType));
+		printf("<FUNCTION_CALL: '%s' : ", Node->Val.Expression.FunctionCall.FunctionName.Str);
+		PrintDatatypeName(&Node->Val.Expression.ResultType);
+		printf(">\n");
 		for (int i = 0; i < Node->Val.Expression.FunctionCall.Params.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Val.Expression.FunctionCall.Params, struct AST_Node*, i), Depth + 1);
 		break;
@@ -190,7 +201,9 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	switch (Node->Type)
 	{
 	case AST_NODE_VARIABLE:
-		printf("<VAR_DEC: '%s' : %s>\n", Node->Val.Variable.Name.Str, Datatype_GetName(&Node->Val.Variable.Type));
+		printf("<VAR_DEC: '%s' : ", Node->Val.Variable.Name.Str);
+		PrintDatatypeName(&Node->Val.Variable.Type);
+		printf(">\n");
 		PrintNode(Node->Val.Variable.Value, Depth + 1);
 		break;
 	case AST_NODE_STRUCT:
@@ -202,7 +215,9 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		printf("<ENUM>\n");
 		break;
 	case AST_NODE_FUNCTION:
-		printf("<FUNCTION: '%s' : %s>\n", Node->Val.Function.Name.Str, Datatype_GetName(&Node->Val.Function.ReturnType));
+		printf("<FUNCTION: '%s' : ", Node->Val.Function.Name.Str);
+		PrintDatatypeName(&Node->Val.Function.ReturnType);
+		printf(">\n");
 		for (int i = 0; i < Node->Val.Function.Params.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Val.Function.Params, struct AST_Node*, i), Depth + 1);
 		PrintNode(Node->Val.Function.Statements, Depth + 1);
@@ -514,23 +529,6 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		goto PARSE_FAIL;
 	}
 
-	// Parse pointer levels, unless this is an anonymous struct.
-	// (Since the token is consumed and the symbol information is discarded, no need for deambiguation...)
-	// TODO: This was the wrong approach because it doesn't work with compound variable declarations or inline variable declarations after a structure definition.
-	// Instead the DEREF operator should be read from the variable expression and used to increment the variable's underlying type's pointer level.
-	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR)
-		|| Token_IsSymbol(NextToken, SYMBOL_OP_DEREF)) // ... but still support using DEREF in case the token source was not built from text).
-	{
-		NextToken = Parser_ConsumeToken(Parser), Parser_PeekToken(Parser); // Consume "*"
-		if (NextToken == NULL)
-		{
-			goto PARSE_FAIL_EOF;
-		}
-
-		OutDatatypeDef->PointerLevel++;
-		OutDatatypeDef->Size = POINTER_SIZE;
-	}
-
 	// Check specific error case - non-pointer VOID type, unless it's explicitly allowed.
 	if (!AllowVoid && OutDatatypeDef->Type == DATATYPE_VOID && OutDatatypeDef->PointerLevel == 0)
 	{
@@ -571,36 +569,72 @@ void ParseVariableDeclarationNodes_FromExp(struct ParserProcess* Parser,
 	}
 
 	// Base cases.
+
+	struct DatatypeDef VarType = *Datatype;
+
 	struct AST_Node* VarNode = AllocNewNode(AST_NODE_VARIABLE);
 	VarNode->BufferLocation = ExpressionNode->BufferLocation;
-	if (ExpressionNode->Val.Expression.Type == EXP_VAR_ACCESS)
-	{
+
+	if (ExpressionNode->Val.Expression.Type == EXP_OP
+		&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ASSIGN)
+	{	
+		// We expect the left operand of an assignment here to be 0 to many deref operators followed by an identifier.
+		// Handle deref operators.
+		struct AST_Node* Identifier = ExpressionNode->Val.Expression.Op.LeftOperand;
+		struct Vector DerefNodes = Vector_Create(struct AST_Node*, 0);
+		while (Identifier->Val.Expression.Type == EXP_OP
+			&& Identifier->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_DEREF)
+		{
+			VarType.PointerLevel++;
+			Vector_Push(DerefNodes, struct AST_Node*, Identifier);
+			Identifier = Identifier->Val.Expression.Op.RightOperand;
+			ExpressionNode->Val.Expression.Op.LeftOperand = Identifier;
+		}
+
+		// Get rid of the deref expression nodes.
+		FreeNodeVector(&DerefNodes);
+
+		if (Identifier->Val.Expression.Type != EXP_VAR_ACCESS)
+		{
+			Parser_Error(Parser, Identifier->BufferLocation, "Expected variable identifier.");
+			return;
+		}
+
+		// Variable definition.
+		// Copy the name from the expression but leave the full expression in as the variable node's value node.
+		VarNode->Val.Variable.Name = String_Copy_ANSI(Identifier->Val.Expression.Variable.Name);
+		VarNode->Val.Variable.Type = VarType;
+		VarNode->Val.Variable.Value = ExpressionNode;
+	}
+	else if ((ExpressionNode->Val.Expression.Type == EXP_OP
+			&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_DEREF)
+			|| ExpressionNode->Val.Expression.Type == EXP_VAR_ACCESS)
+	{	
+		// Handle deref operators.
+		while (ExpressionNode->Val.Expression.Type == EXP_OP
+			&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_DEREF)
+		{
+			VarType.PointerLevel++;
+			ExpressionNode = ExpressionNode->Val.Expression.Op.RightOperand;
+		}
+
+		if (ExpressionNode->Val.Expression.Type != EXP_VAR_ACCESS)
+		{
+			Parser_Error(Parser, ExpressionNode->BufferLocation, "Expected variable identifier.");
+			return;
+		}
+
 		// Variable declaration. Copy the name into the variable node itself.
 		VarNode->Val.Variable.Name = String_Copy_ANSI(ExpressionNode->Val.Expression.Variable.Name);
 		// Get rid of the node.
 		FreeNode(ExpressionNode);
 	}
-	else if (ExpressionNode->Val.Expression.Type == EXP_OP
-		&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ASSIGN
-		&& ExpressionNode->Val.Expression.Op.LeftOperand->Val.Expression.Type == EXP_VAR_ACCESS)
-	{
-		// Variable definition.
-		// Copy the name from the expression but leave the full expression in as the variable node's value node.
-		VarNode->Val.Variable.Name = String_Copy_ANSI(ExpressionNode->Val.Expression.Op.LeftOperand->Val.Expression.Variable.Name);
-		VarNode->Val.Variable.Value = ExpressionNode;
-	}
-	else if (0 /* && ExpressionNode->Val.Expression.Type == EXP_OP
-		&& ExpressionNode->Val.Expression.Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS */)
-	{
-		// ... TODO Array definition.
-	}
 	else
 	{
-		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression format in var declaration.");
+		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected variable declaration expression format.");
 		return;
 	}
-
-	VarNode->Val.Variable.Type = *Datatype;
+	VarNode->Val.Variable.Type = VarType;
 
 	Vector_PushPtr(OutVarNodes, &VarNode);
 }
@@ -1452,6 +1486,7 @@ ui8 ParseGlobal_Struct(struct ParserProcess* Parser)
 	if (StructNode == NULL)
 	{
 		Vector_Destroy(&InlineVars);
+				
 		return 0;
 	}
 

@@ -226,6 +226,8 @@ static inline enum TOKEN_SYMBOL Symbol_DeambiguateLeftUnaryOp(enum TOKEN_SYMBOL 
 	{
 	case SYMBOL_OP_AMB_AMP:
 		return SYMBOL_OP_ADDRESS_OF;
+	case SYMBOL_OP_AMB_STAR:
+		return SYMBOL_OP_DEREF;
 	case SYMBOL_OP_AMB_INCREMENT:
 		return SYMBOL_OP_PRE_INCREMENT;
 	case SYMBOL_OP_AMB_DECREMENT:
