@@ -361,32 +361,13 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
-	// Check for const-ness. (TODO: Check in any order with static, volatile and other specifiers...)
+	// Check for const-ness.
 	if (NextToken->Val.Keyword == KEYWORD_CONST)
 	{
 		Flags |= DATATYPE_IS_CONST;
 		NextToken = Parser_NextToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
-
-	// Handle structured / enumerated types...
-	if (NextToken->Val.Keyword == KEYWORD_STRUCT)
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Struct parsing is unimplemented.");
-		goto PARSE_FAIL;
-	}
-	if (NextToken->Val.Keyword == KEYWORD_UNION)
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Union parsing is unimplemented.");
-		goto PARSE_FAIL;
-	}
-	if (NextToken->Val.Keyword == KEYWORD_ENUM)
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Enum parsing is unimplemented.");
-		goto PARSE_FAIL;
-	}
-
-	// ... Otherwise we are parsing a primitive type.
 
 	// Determine volatility.
 	if (NextToken->Val.Keyword == KEYWORD_VOLATILE)
@@ -399,12 +380,36 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		}
 	}
 
+	// Handle structured / enumerated types...
+	if (NextToken->Val.Keyword == KEYWORD_STRUCT)
+	{
+		Flags |= DATATYPE_IS_STRUCT;
+		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
+		NextToken = Parser_NextToken(Parser);
+	}
+	if (NextToken->Val.Keyword == KEYWORD_UNION)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Union parsing is unimplemented.");
+		goto PARSE_FAIL;
+	}
+	if (NextToken->Val.Keyword == KEYWORD_ENUM)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Enum parsing is unimplemented.");
+		goto PARSE_FAIL;
+	}
+
 	// Determine signage.
 	Flags |= DATATYPE_IS_UNSIGNED * (NextToken->Val.Keyword == KEYWORD_UNSIGNED);
 	ui8 SignKeywordPresent = 0;
 	if (NextToken->Val.Keyword == KEYWORD_SIGNED
 		|| NextToken->Val.Keyword == KEYWORD_UNSIGNED)
 	{
+		if (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
+			goto PARSE_FAIL;
+		}
+
 		SignKeywordPresent = 1;
 		NextToken = Parser_NextToken(Parser);
 		if (NextToken == NULL)
@@ -422,6 +427,12 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Next determine size and broad type, if the next token is another keyword.
 	if (NextToken->Type == TOKEN_KEYWORD)
 	{
+		if (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
+			goto PARSE_FAIL;
+		}
+
 		switch (NextToken->Val.Keyword)
 		{
 		case KEYWORD_VOID:
@@ -430,7 +441,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-			
+
 			*OutDatatypeDef = GetPrimitiveDatatypeDef_Void();
 			break;
 		case KEYWORD_CHAR:
@@ -487,8 +498,22 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			}
 		}
 	}
+	else if (NextToken->Type == TOKEN_IDENTIFIER
+		&& Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
+	{
+		OutDatatypeDef->TypeName = String_Copy_ANSI(NextToken->Val.Identifier);
+	}
+	else if (Flags & (DATATYPE_IS_STRUCT | DATATYPE_IS_UNION | DATATYPE_IS_ENUM))
+	{
+		Flags |= DATATYPE_IS_ANONYMOUS;
+	}
+	else
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Missing type specifier.");
+		goto PARSE_FAIL;
+	}
 
-	// Parse pointer levels.
+	// Parse pointer levels, unless this is an anonymous struct.
 	// (Since the token is consumed and the symbol information is discarded, no need for deambiguation...
 	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR)
 		|| Token_IsSymbol(NextToken, SYMBOL_OP_DEREF)) // ... but still support using DEREF in case the token source was not built from text).
@@ -504,7 +529,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		OutDatatypeDef->Size = POINTER_SIZE;
 	}
 
-	// Check specific error case - non-pointer VOID type.
+	// Check specific error case - non-pointer VOID type, unless it's explicitly allowed.
 	if (!AllowVoid && OutDatatypeDef->Type == DATATYPE_VOID && OutDatatypeDef->PointerLevel == 0)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");

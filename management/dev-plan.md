@@ -42,7 +42,7 @@
   - Statement parsing (block, if/while, for, expressions, return/break/continue with break/continue resolved to their enclosing loop and return resolved to its enclosing function). [DONE]
   - Switch statement parsing.
   - Goto statement parsing.
-  - Local variable declaration parsing (inside statement blocks).
+  - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing.
   - Struct & Union parsing.

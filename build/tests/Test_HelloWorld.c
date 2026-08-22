@@ -8,6 +8,7 @@ int foo(int a, int b)
 
 int main(int argc, char** argv)
 {
+	struct TestType d;
 	int a = 4, b = 2, c = 2;
 
 	if (foo(a, b))

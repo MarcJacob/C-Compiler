@@ -695,6 +695,7 @@ enum DATATYPE_FLAGS
 	DATATYPE_IS_STRUCT = 1 << 4,
 	DATATYPE_IS_UNION = 1 << 5,
 	DATATYPE_IS_ENUM = 1 << 6,
+	DATATYPE_IS_ANONYMOUS = 1 << 7, // Valid only for struct, union and enum types. The type will receive an auto-generated name during Symbolization.
 };
 
 // Definition for a value type associated to a variable or a function.
