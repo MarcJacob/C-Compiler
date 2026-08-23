@@ -1,6 +1,8 @@
 // Single file test.
 // Hello world program.
 
+int (*a)(int, float, int(float));
+
 int main(int argc, char** argv)
 {
 	int a = 4, b = 2, c = 2;

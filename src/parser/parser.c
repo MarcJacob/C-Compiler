@@ -431,12 +431,14 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 			Parser_ConsumeToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
-		}
-
-		if (ObjNode->Obj.FuncPointerLevel < 1)
+		}	
+		
+		// Handle special case - pre-check for identifier if no stars were found. If no identifier is found either, then skip straight to parsing parameters.
+		if (ObjNode->Obj.FuncPointerLevel == 0
+			&& NextToken->Type != TOKEN_IDENTIFIER)
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Expected '*' token.");
-			goto PARSE_FAIL;
+			// No star characters and no identifier = skip to parameters.
+			goto FUNC_PARAMS_PARSING;
 		}
 	}
 
@@ -484,15 +486,16 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	else
 	{
 		Parser_ConsumeToken(Parser);
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 		// ObjNode is a function or function pointer.
 		// Start recursively parsing datatype + declarator pairs as parameters.
 
+FUNC_PARAMS_PARSING:
 		ObjNode->Obj.Func_Params = Vector_Create(struct ObjDeclarator, 0);
 		ObjNode->Type = ObjNode->Obj.FuncPointerLevel > 0 ? AST_NODE_OBJ_VAR : AST_NODE_OBJ_FUNC;
 
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 		while (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
 			struct DatatypeDef ParamDatatype = { 0 };
