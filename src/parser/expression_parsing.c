@@ -131,7 +131,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 
 	FunctionExpressionableNode = AllocNewNode(AST_NODE_EXPRESSION);
 	FunctionExpressionableNode->BufferLocation = IdentifierToken->BufferLocation;
-	FunctionExpressionableNode->Val.Expression.Type = EXP_FUNCTION_CALL;
+	FunctionExpressionableNode->Val.Expression.Type = EXP_FUNC_CALL;
 	FunctionExpressionableNode->Val.Expression.FunctionCall.FunctionName = IdentifierToken->Val.Identifier;
 
 	// Start parsing param expressions until a closing parenthesis is reached.
@@ -267,7 +267,9 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 // The expressionable must have its parenthesis level and left operand assigned.
 // OutParenthesisLevel allows keeping track of current parenthesis level after the function returns.
 // Returns the root of the resulting expression tree.
-static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel)
+// End Symbol is used so in the case of parsing the next expressionable as a right operator, we can determine when
+// to use an empty NOP node instead.
+static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel, enum TOKEN_SYMBOL EndSymbol)
 {
 	ASSERT(Op != NULL);
 	ASSERT(Op->Val.Expression.Type == EXP_OP);
@@ -337,8 +339,19 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		RightOperand = ParseExpressionableNode(Parser);
 		if (RightOperand == NULL)
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
-			goto PARSE_FAIL;
+			// Check that the token we tried to parse into an expressionable isn't the end symbol, in which case provided we are at root parenthesis level
+			// we can use a NOP expression as right operand instead.
+			if (Token_IsSymbol(NextToken, EndSymbol) && ParenthesisLevel == 0)
+			{
+				RightOperand = AllocNewNode(AST_NODE_EXPRESSION);
+				RightOperand->BufferLocation = NextToken->BufferLocation;
+				RightOperand->Val.Expression.Type = EXP_NOP;
+			}
+			else
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
+				goto PARSE_FAIL;
+			}
 		}
 
 		RightOperand->Val.Expression.ParenthesisLevel = ParenthesisLevel;
@@ -350,7 +363,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		if (RightOperand->Val.Expression.Type == EXP_OP)
 		{
 			// The right operand is parsed without a left operand for itself meaning it will only work with left unary operators.
-			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
+			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel, EndSymbol);
 			if (Op->Val.Expression.Op.RightOperand == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse right operand operator expression.");
@@ -390,14 +403,15 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	return Op;
 }
 
-// Entry point of expression parsing. Parses a "root expression" until reaching an end character (closing parenthesis or semicolon).
+// Entry point of expression parsing. Parses a "root expression" until reaching the given end symbol (or a closing parenthesis that doesn't
+// internally match an opening parenthesis).
+// Returns an NOP expression if no expression could be parsed at all, or NULL if there was a parser error.
 struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 
 	struct AST_Node* ExpressionRootNode = NULL;
-
-	struct Token* NextToken = Parser_PeekToken(Parser);
+		struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
@@ -455,7 +469,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 			NextNode->Val.Expression.Op.LeftOperand = ExpressionRootNode;
 
 			// Continue parsing to obtain the right operand of this operator.
-			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel);
+			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel, EndSymbol);
 			if (ExpressionRootNode == NULL)
 			{
 				if (Parser->HasError) goto PARSE_FAIL;
@@ -486,6 +500,14 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 
 			ParenthesisLevel--;
 		}
+	}
+
+	// If parsing was valid but failed to turn up any expression, return a NOP expression.
+	if (ExpressionRootNode == NULL)
+	{
+		ExpressionRootNode = AllocNewNode(AST_NODE_EXPRESSION);
+		ExpressionRootNode->BufferLocation = NextToken->BufferLocation;
+		ExpressionRootNode->Val.Expression.Type = EXP_NOP;
 	}
 
 	return ExpressionRootNode;

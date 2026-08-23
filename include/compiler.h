@@ -673,6 +673,7 @@ enum AST_NODE_TYPE
 	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
 	AST_NODE_STATEMENT_WHILE,		// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
 	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
+	AST_NODE_STATEMENT_VAR_DEC,		// Declares one or more variable symbols associated with a specific base type.
 };
 
 // Values for primitive data types + an extra value indicating the type is user-defined. 
@@ -688,6 +689,7 @@ enum DATATYPE
 	DATATYPE_DOUBLE,
 
 	DATATYPE_USER_DEFINED, // Indicates an Identifier should be read to ascertain the exact type.
+	DATATYPE_FUNC_PTR, // Indicates this type holds a pointer to a function with specific return and parameter sub-types.
 };
 
 // Flags modifying the behavior / definition of a datatype.
@@ -697,23 +699,36 @@ enum DATATYPE_FLAGS
 	DATATYPE_IS_STATIC = 1 << 1,
 	DATATYPE_IS_CONST = 1 << 2,
 	DATATYPE_IS_VOLATILE = 1 << 3,
-	DATATYPE_IS_STRUCT = 1 << 4,
-	DATATYPE_IS_UNION = 1 << 5,
-	DATATYPE_IS_ENUM = 1 << 6,
-	DATATYPE_IS_ANONYMOUS = 1 << 7, // Valid only for struct, union and enum types. The type will receive an auto-generated name during Symbolization.
+	DATATYPE_IS_STRUCTURED = 1 << 4, // Used for structs and unions.
+	DATATYPE_IS_ENUM = 1 << 5,
+	DATATYPE_IS_TYPEDEF = 1 << 6,  // Indicates the type is an alias to something else to be resolved during Validation.
 };
 
-// Definition for a value type associated to a variable or a function.
-// Non-unique, can be equal to / compatible with other defs.
+// Data Type information for a variable or function return value.
 struct DatatypeDef
 {
 	enum DATATYPE Type;
 	enum DATATYPE_FLAGS Flags;
-	ui16 Size; // Total size of the type in bytes.
 
-	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED type.
-	ui8 PointerLevel; // How many pointer indirection layers this has, meaning if > 0, this is a pointer.
+	ui16 Size; // Total size of the type in bytes. If checking the size of a value / symbol, don't forget to check for pointer levels and array size for true size.
+	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED types.
+
+	ui8 PointerLevel; // Number of pointer indirections before reaching base data associated with this specific datatype structure.
+
+	struct
+	{
+		struct Vector TypeParams; // Vector type: DatatypeDef. First item is return type, further items are parameter types.
+	} FuncPtr;
 };
+
+static inline void FreeDatatypeDef(struct DatatypeDef* Datatype)
+{
+	ASSERT(Datatype != NULL);
+	if (Datatype->Type == DATATYPE_FUNC_PTR)
+	{
+		Vector_Destroy(&Datatype->FuncPtr.TypeParams);
+	}
+}
 
 // Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
 static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
@@ -741,16 +756,18 @@ static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
 
 enum EXPRESSION_TYPE
 {
-	EXP_LITERAL_INT, // Expression is a literal whole number.
-	EXP_LITERAL_FLOAT, // Expression is a literal floating-point number.
+	EXP_NOP,			// Expression is uninitialized or just does nothing and is only here as a "flagged spot" in execution.
+
+	EXP_LITERAL_INT,	// Expression is a literal whole number.
+	EXP_LITERAL_FLOAT,	// Expression is a literal floating-point number.
 	EXP_LITERAL_DOUBLE, // Expression is a literal double-precision floating-point number.
 	EXP_LITERAL_STRING, // Expression is a literal string.
-	EXP_LITERAL_CHAR, // Expression is a literal character.
+	EXP_LITERAL_CHAR,	// Expression is a literal character.
 
-	EXP_VAR_ACCESS, // Expression accesses a variable value (for reading or writing).
+	EXP_VAR_ACCESS,		// Expression accesses a variable value (for reading or writing).
 
-	EXP_OP, // Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
-	EXP_FUNCTION_CALL, // Expression is a function call's return value.
+	EXP_OP,				// Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
+	EXP_FUNC_CALL,	// Expression is a function call's return value.
 };
 
 // Returns whether the passed type of expression is supposed to have sub-expressions.
@@ -777,9 +794,10 @@ struct AST_Node
 			struct AST_Node* Statements; // Root instruction block if this is the function definition.
 		} Function;
 
-		// Root type for any executable instruction, located inside a block.
+		// Root type for any statement, used to define symbols.
 		struct
 		{
+			struct AST_Node* Parent; // Parent node / "scoping" node. NULL = Global scope.
 			union
 			{
 				struct
@@ -789,7 +807,7 @@ struct AST_Node
 					struct AST_Node* ExecStatement; // Statement to be executed on successful entry.
 					struct AST_Node* ExecStatement_Else;	// Statement to be executed on entry failure.
 				} If;
-				
+
 				struct
 				{
 					struct AST_Node* EntryCondition; // If non-NULL, expression node that should resolve to > 0 for initial entry into the block.
@@ -812,7 +830,7 @@ struct AST_Node
 				{
 					struct Vector Statements; // Sub-instructions contained in the block, in order of declaration.
 				} Block;
-				
+
 				// "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
 				// Links a keyword to a sub-expression (if relevant).
 				struct
@@ -822,17 +840,37 @@ struct AST_Node
 					struct AST_Node* TargetStatement; // Statement to jump back to when encountering the keyword. What exactly happens after that depends on the keyword itself.
 				} Control;
 
+				// Variable(s) declaration, the association of a data type and a set of expressions.
+				// The expressions are used to create new variable symbols associated with the data type at validation stage,
+				// decomposing this statement node into a set of variable nodes and expression statement nodes.
+				struct
+				{
+					struct DatatypeDef Type; // Base type to assign to all variable declarations.
+					// Vector type = struct AST_Node*. Expression nodes, one per variable declaration.
+					// The expressions must start with 0 to N DEREF operators (pointer level) followed by an var access, or an assignment operator with left operand being the var access
+					// and the right operand being the initial value to assign to the variable.
+					struct Vector VarExpressions;
+				} VarDeclaration;
+
 				struct AST_Node* Expression; // Free-standing expression to be executed.
 			};
 		} Statement;
 
+		// Declaration of a single variable symbol, built during Validation from a variable declaration statement.
 		struct
-		{
+		{ 
+			// Expression Statement node tied to this variable's declaration.
+			// Used to determine scope and position in scope to check validity of usage in any given expression.
+			// Effectively the first expression that is "allowed" to use this variable, in scope order.
+			struct AST_Node* DecExpression;
+
+			// Type tied to this variable, 
 			struct DatatypeDef Type;
 			struct String_ANSI Name;
-			ui8 IsArray;
 
-			struct AST_Node* Value; // For variable definitions, specifies the value expression to use for initialization. For arrays, the value expression for array size.
+			ui64 ArraySize; // If 0, not an array. If > 0, is size of the array.
+
+			ui8 BitSizeOverride; // Number of bits this variable is set to use as a struct member. 0 = default data size.
 
 		} Variable;
 

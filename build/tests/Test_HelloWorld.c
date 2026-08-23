@@ -3,6 +3,8 @@
 
 int* test;
 
+
+int foo(int, int);
 int foo(int a, int b)
 {
 	return a + b;

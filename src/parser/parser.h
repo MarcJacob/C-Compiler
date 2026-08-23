@@ -123,6 +123,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser);
-ui8 ParseStatementNodes(struct ParserProcess* Parser, struct Vector* OutStatementNodes);
+struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
+struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 
 #endif // PARSER_INCLUDED
