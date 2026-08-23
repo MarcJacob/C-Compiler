@@ -64,7 +64,7 @@
     - Cast expressions (`(type)expr`).
     - Ternary operator `?:` (needs a new `?` symbol token - not yet in `TOKEN_SYMBOL`).
   - Initializer lists for arrays/structs (e.g. `int a[3] = {1,2,3};`).
-  - Parenthesized/function-pointer declarators (e.g. `int (*fp)(int,int);`)
+  - Parenthesized/function-pointer declarators (e.g. `int (*fp)(int,int);`), unified with function/variable declarator parsing via a shared `ParseDeclarator`/`ParseDeclarators` mechanism. [DONE]
 
 ## Step 6 — Validator
 
