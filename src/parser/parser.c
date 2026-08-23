@@ -491,7 +491,7 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 		// Start recursively parsing datatype + declarator pairs as parameters.
 
 FUNC_PARAMS_PARSING:
-		ObjNode->Obj.Func_Params = Vector_Create(struct ObjDeclarator, 0);
+		ObjNode->Obj.Func_Params = Vector_Create(struct AST_Node*, 0);
 		ObjNode->Type = ObjNode->Obj.FuncPointerLevel > 0 ? AST_NODE_OBJ_VAR : AST_NODE_OBJ_FUNC;
 
 		NextToken = Parser_PeekToken(Parser);
@@ -639,6 +639,8 @@ ui8 ParseGlobal_Object(struct ParserProcess* Parser)
 
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// TODO: Check validity of top-level objects.
 
 	// If the token reached after parsing the declarators is an opening bracket, it must constitute the function definition for the last declarator that was parsed.
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
