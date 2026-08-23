@@ -101,7 +101,7 @@ ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANS
 			struct Token NewToken = { 0 };
 			NewToken.Type = TOKEN_KEYWORD;
 			NewToken.BufferLocation = KeywordLoc;
-			NewToken.Val.Keyword = Pair->Keyword;
+			NewToken.Keyword = Pair->Keyword;
 
 			Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -139,7 +139,7 @@ PARSE_FAIL:
 		struct Token NewToken = { 0 };
 		NewToken.Type = TOKEN_IDENTIFIER;
 		NewToken.BufferLocation = BufferLocation;
-		NewToken.Val.Identifier = IdentifierStr;
+		NewToken.Identifier = IdentifierStr;
 		
 		Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -174,7 +174,7 @@ ui8 ParseSymbol(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI
 			struct Token NewToken = { 0 };
 			NewToken.Type = TOKEN_SYMBOL;
 			NewToken.BufferLocation = SymbolLoc;
-			NewToken.Val.Symbol = Pair->Symbol;
+			NewToken.Symbol = Pair->Symbol;
 
 			Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -278,7 +278,7 @@ PARSE_FAIL:
 	struct Token NewToken = { 0 };
 	NewToken.Type = TOKEN_LITERAL_NUMBER_INT;
 	NewToken.BufferLocation = TokenLoc;
-	NewToken.Val.LiteralNumber.Integer = ParsedNumber;
+	NewToken.LiteralNumber.Integer = ParsedNumber;
 
 	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -379,7 +379,7 @@ PARSE_FAIL:
 	struct Token NewToken = { 0 };
 	NewToken.Type = TOKEN_LITERAL_STRING;
 	NewToken.BufferLocation = StringLoc;
-	NewToken.Val.LiteralString = LiteralStr;
+	NewToken.LiteralString = LiteralStr;
 
 	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -432,7 +432,7 @@ ui8 ParseLiteralChar(struct TokenizerProcess* Tokenizer, struct CharBufferReader
 	struct Token NewToken = { 0 };
 	NewToken.BufferLocation = CharLoc;
 	NewToken.Type = TOKEN_LITERAL_CHAR;
-	NewToken.Val.LiteralCharacter = NextChar;
+	NewToken.LiteralCharacter = NextChar;
 
 	Vector_PushPtr(Tokenizer->Tokens, &NewToken);
 
@@ -506,28 +506,28 @@ void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer)
 			printf("<COMMENT>\n");
 			break;
 		case TOKEN_IDENTIFIER:
-			printf("<IDENTIFIER: '%s'>\n", Tok->Val.Identifier.Str);
+			printf("<IDENTIFIER: '%s'>\n", Tok->Identifier.Str);
 			break;
 		case TOKEN_KEYWORD:
-			printf("<KEYWORD: '%s'>\n", Keyword_ToString(Tok->Val.Keyword));
+			printf("<KEYWORD: '%s'>\n", Keyword_ToString(Tok->Keyword));
 			break;
 		case TOKEN_SYMBOL:
-			printf("<SYMBOL: '%s'>\n", Symbol_ToString(Tok->Val.Symbol));
+			printf("<SYMBOL: '%s'>\n", Symbol_ToString(Tok->Symbol));
 			break;
 		case TOKEN_LITERAL_STRING:
-			printf("<LITERAL_STRING: \"%s\">\n", Tok->Val.LiteralString.Str);
+			printf("<LITERAL_STRING: \"%s\">\n", Tok->LiteralString.Str);
 			break;
 		case TOKEN_LITERAL_CHAR:
-			printf("<LITERAL_CHAR: '%c'>\n", Tok->Val.LiteralCharacter);
+			printf("<LITERAL_CHAR: '%c'>\n", Tok->LiteralCharacter);
 			break;
 		case TOKEN_LITERAL_NUMBER_INT:
-			printf("<LITERAL_NUMBER_INT: %lld>\n", Tok->Val.LiteralNumber.Integer);
+			printf("<LITERAL_NUMBER_INT: %lld>\n", Tok->LiteralNumber.Integer);
 			break;
 		case TOKEN_LITERAL_NUMBER_FLOAT:
-			printf("<LITERAL_NUMBER_FLOAT: %f>\n", Tok->Val.LiteralNumber.Float);
+			printf("<LITERAL_NUMBER_FLOAT: %f>\n", Tok->LiteralNumber.Float);
 			break;
 		case TOKEN_LITERAL_NUMBER_DOUBLE:
-			printf("<LITERAL_NUMBER_DOUBLE: %lf>\n", Tok->Val.LiteralNumber.Double);
+			printf("<LITERAL_NUMBER_DOUBLE: %lf>\n", Tok->LiteralNumber.Double);
 			break;
 		}
 	}

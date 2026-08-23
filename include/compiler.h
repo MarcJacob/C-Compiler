@@ -626,6 +626,7 @@ struct Token
 	enum TOKEN_TYPE Type; // Type of token this is.
 	ui32 BufferLocation; // Location of token in character index.
 
+	// Main Value union, giving type-specific information about the token.
 	union
 	{
 		enum TOKEN_SYMBOL Symbol;
@@ -641,20 +642,19 @@ struct Token
 			double Double;
 			float Float;
 		} LiteralNumber;
-
-	} Val; // Main Value union, giving type-specific information about the token.
+	};
 };
 
 static inline ui8 Token_IsSymbol(struct Token* Token, enum TOKEN_SYMBOL SymbolMatch)
 {
 	ASSERT(Token != NULL);
-	return Token->Type == TOKEN_SYMBOL && Token->Val.Symbol == SymbolMatch;
+	return Token->Type == TOKEN_SYMBOL && Token->Symbol == SymbolMatch;
 }
 
 static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD KeywordMatch)
 {
 	ASSERT(Token != NULL);
-	return Token->Type == TOKEN_KEYWORD && Token->Val.Keyword == KeywordMatch;
+	return Token->Type == TOKEN_KEYWORD && Token->Keyword == KeywordMatch;
 }
 
 // Parser Stage
@@ -662,10 +662,10 @@ static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD Keywor
 // All possible values for the type of an AST Node.
 enum AST_NODE_TYPE
 {
-	AST_NODE_VARIABLE,				// Global, Local, Structure or Param Variable.
-	AST_NODE_STRUCT,				// Structure definition or declaration.
+	AST_NODE_OBJ_VAR,					// Global, Local, Structure or Param Variable. Covers values, pointers and function pointers.
+	AST_NODE_OBJ_FUNC,					// Function definition or declaration.
+	AST_NODE_STRUCT,				// Structure / Union definition or declaration.
 	AST_NODE_ENUM,					// Enumeration definition or declaration.
-	AST_NODE_FUNCTION,				// Function definition or declaration.
 	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
 	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
 	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
@@ -689,7 +689,6 @@ enum DATATYPE
 	DATATYPE_DOUBLE,
 
 	DATATYPE_USER_DEFINED, // Indicates an Identifier should be read to ascertain the exact type.
-	DATATYPE_FUNC_PTR, // Indicates this type holds a pointer to a function with specific return and parameter sub-types.
 };
 
 // Flags modifying the behavior / definition of a datatype.
@@ -710,25 +709,11 @@ struct DatatypeDef
 	enum DATATYPE Type;
 	enum DATATYPE_FLAGS Flags;
 
-	ui16 Size; // Total size of the type in bytes. If checking the size of a value / symbol, don't forget to check for pointer levels and array size for true size.
+	ui16 Size; // Total size of the BASE type in bytes. If checking the size of a value / symbol, don't forget to check for pointer levels and array size for true size.
 	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED types.
 
-	ui8 PointerLevel; // Number of pointer indirections before reaching base data associated with this specific datatype structure.
-
-	struct
-	{
-		struct Vector TypeParams; // Vector type: DatatypeDef. First item is return type, further items are parameter types.
-	} FuncPtr;
+	ui8 PointerLevel; // How many dereferences are required to reach the base data ? 
 };
-
-static inline void FreeDatatypeDef(struct DatatypeDef* Datatype)
-{
-	ASSERT(Datatype != NULL);
-	if (Datatype->Type == DATATYPE_FUNC_PTR)
-	{
-		Vector_Destroy(&Datatype->FuncPtr.TypeParams);
-	}
-}
 
 // Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
 static inline const char* Datatype_GetName(const struct DatatypeDef* Datatype)
@@ -776,6 +761,47 @@ static inline ui8 Expression_IsLeafType(enum EXPRESSION_TYPE Type)
 	return Type < EXP_OP;
 }
 
+// Expression tree structure combining operators and operands until reaching "leaf expressions".
+// First parsed during Parsing, then retained within validated trees to emit instructions from.
+struct Expression
+{
+	struct DatatypeDef ResultType; // Expected return type for this expression.
+	enum EXPRESSION_TYPE Type; // Type of expression.
+
+	ui8 ParenthesisLevel; // How "deep" inside parenthesis this expression is located. 
+
+	union
+	{
+		struct
+		{
+			struct AST_Node* LeftOperand; // Expression sub-node.
+			struct AST_Node* RightOperand; // Expression sub-node.
+			enum TOKEN_SYMBOL OperatorSymbol;
+		} Op;
+
+		struct
+		{
+			i64 Integer;
+			float Float;
+			double Double;
+			char Character;
+			struct String_ANSI String;
+		} Literal;
+
+		struct
+		{
+			struct String_ANSI Name;
+		} Variable;
+
+		struct
+		{
+			struct String_ANSI FunctionName;
+			struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
+		} FunctionCall;
+	};
+
+};
+
 // Node composing an Abstract Syntax Tree.
 struct AST_Node
 {
@@ -786,15 +812,42 @@ struct AST_Node
 
 	union
 	{
-		struct
-		{
+		// Declarator structure for Object types (variables, pointers, functions & function pointers).
+		// Can be contained independently inside Var Declaration statements.
+		struct ObjDeclarator
+		{	
 			struct DatatypeDef ReturnType;
 			struct String_ANSI Name;
-			struct Vector Params; // Vector type = AST_Node* (Parameter variables in order of declaration)
-			struct AST_Node* Statements; // Root instruction block if this is the function definition.
-		} Function;
 
-		// Root type for any statement, used to define symbols.
+			i8 FuncPointerLevel; // If > 0, this is a function pointer. How many dereferences are required to reach actual function.
+
+			union 
+			{
+				struct AST_Node* Func_Block; // Root instruction block if this is a function definition.
+				struct AST_Node* Var_InitExpression; // Initialization expression node.
+			};
+
+			// Vector of sub-declarators, representing param variable / function pointers.
+			struct Vector Func_Params; // Vector type = ObjDeclarator.
+		} Obj;
+
+		// Struct declaration / definition.
+		struct
+		{
+			struct DatatypeDef Type;	// Datatype def for this structure. Also contains the structure's name.
+			struct Vector Members;		// Vector type = AST_Node*. Sub-structures and variable / function pointer ObjDeclarators.
+
+			ui8 IsUnion : 1;			// Whether this structure acts as a union or collection of its members.
+		} Struct;
+
+		// Typedef declaration.
+		struct
+		{
+			struct DatatypeDef Type;	// Aliased type.
+			struct String_ANSI Alias;	// Alias name.
+		} Typedef;
+
+		// Root type for any statement found inside functions.
 		struct
 		{
 			struct AST_Node* Parent; // Parent node / "scoping" node. NULL = Global scope.
@@ -840,87 +893,19 @@ struct AST_Node
 					struct AST_Node* TargetStatement; // Statement to jump back to when encountering the keyword. What exactly happens after that depends on the keyword itself.
 				} Control;
 
-				// Variable(s) declaration, the association of a data type and a set of expressions.
-				// The expressions are used to create new variable symbols associated with the data type at validation stage,
-				// decomposing this statement node into a set of variable nodes and expression statement nodes.
+				// Variable(s) declaration, just a container for a set of declarators to be broken down into a variable declaration and an initialization expression.	
 				struct
 				{
-					struct DatatypeDef Type; // Base type to assign to all variable declarations.
-					// Vector type = struct AST_Node*. Expression nodes, one per variable declaration.
-					// The expressions must start with 0 to N DEREF operators (pointer level) followed by an var access, or an assignment operator with left operand being the var access
-					// and the right operand being the initial value to assign to the variable.
-					struct Vector VarExpressions;
+					struct Vector Declarators; // Vector type AST_Node*. Collection of Declarator nodes.
 				} VarDeclaration;
 
 				struct AST_Node* Expression; // Free-standing expression to be executed.
 			};
 		} Statement;
 
-		// Declaration of a single variable symbol, built during Validation from a variable declaration statement.
-		struct
-		{ 
-			// Expression Statement node tied to this variable's declaration.
-			// Used to determine scope and position in scope to check validity of usage in any given expression.
-			// Effectively the first expression that is "allowed" to use this variable, in scope order.
-			struct AST_Node* DecExpression;
+		struct Expression Expression;
 
-			// Type tied to this variable, 
-			struct DatatypeDef Type;
-			struct String_ANSI Name;
-
-			ui64 ArraySize; // If 0, not an array. If > 0, is size of the array.
-
-			ui8 BitSizeOverride; // Number of bits this variable is set to use as a struct member. 0 = default data size.
-
-		} Variable;
-
-		struct
-		{
-			struct DatatypeDef Type; // "Final" Datatype def for this structure. Also contains the structure's name.
-			struct Vector Members; // Vector type = AST_Node*
-		} Struct;
-
-		struct
-		{
-			struct DatatypeDef ResultType; // Expected return type for this expression.
-			enum EXPRESSION_TYPE Type; // Type of expression.
-
-			ui8 CompileTimeResolvable; // Whether this expression has a compile-time-resolvable value (required for array sizes and such). Determined by Symbolizer.
-			ui8 ParenthesisLevel; // How "deep" inside parenthesis this expression is located. 
-
-			union
-			{
-				struct
-				{
-					struct AST_Node* LeftOperand; // Expression sub-node.
-					struct AST_Node* RightOperand; // Expression sub-node.
-					enum TOKEN_SYMBOL OperatorSymbol;
-				} Op;
-
-				struct
-				{
-					i64 Integer;
-					float Float;
-					double Double;
-					char Character;
-					struct String_ANSI String;
-				} Literal;
-
-				struct
-				{
-					struct String_ANSI Name;
-				} Variable;
-
-				struct
-				{
-					struct String_ANSI FunctionName;
-					struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
-				} FunctionCall;
-			};
-
-		} Expression;
-
-	} Val;
+	};
 };
 
 #endif // COMPILER_INCLUDED

@@ -14,29 +14,29 @@ static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser
 	switch (NextToken->Type)
 	{
 	case TOKEN_LITERAL_CHAR:
-		LiteralNode->Val.Expression.Type = EXP_LITERAL_CHAR;
-		LiteralNode->Val.Expression.Literal.Character = NextToken->Val.LiteralCharacter;
-		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Char();
+		LiteralNode->Expression.Type = EXP_LITERAL_CHAR;
+		LiteralNode->Expression.Literal.Character = NextToken->LiteralCharacter;
+		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Char();
 		break;
 	case TOKEN_LITERAL_NUMBER_INT:
-		LiteralNode->Val.Expression.Type = EXP_LITERAL_INT;
-		LiteralNode->Val.Expression.Literal.Integer = NextToken->Val.LiteralNumber.Integer;
-		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+		LiteralNode->Expression.Type = EXP_LITERAL_INT;
+		LiteralNode->Expression.Literal.Integer = NextToken->LiteralNumber.Integer;
+		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
 		break;
 	case TOKEN_LITERAL_NUMBER_FLOAT:
-		LiteralNode->Val.Expression.Type = EXP_LITERAL_FLOAT;
-		LiteralNode->Val.Expression.Literal.Float = NextToken->Val.LiteralNumber.Float;
-		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Float();
+		LiteralNode->Expression.Type = EXP_LITERAL_FLOAT;
+		LiteralNode->Expression.Literal.Float = NextToken->LiteralNumber.Float;
+		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Float();
 		break;
 	case TOKEN_LITERAL_NUMBER_DOUBLE:
-		LiteralNode->Val.Expression.Type = EXP_LITERAL_DOUBLE;
-		LiteralNode->Val.Expression.Literal.Double = NextToken->Val.LiteralNumber.Double;
-		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_Double();
+		LiteralNode->Expression.Type = EXP_LITERAL_DOUBLE;
+		LiteralNode->Expression.Literal.Double = NextToken->LiteralNumber.Double;
+		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Double();
 		break;
 	case TOKEN_LITERAL_STRING:
-		LiteralNode->Val.Expression.Type = EXP_LITERAL_STRING;
-		LiteralNode->Val.Expression.Literal.String = String_Copy_ANSI(NextToken->Val.LiteralString);
-		LiteralNode->Val.Expression.ResultType = GetPrimitiveDatatypeDef_String();
+		LiteralNode->Expression.Type = EXP_LITERAL_STRING;
+		LiteralNode->Expression.Literal.String = String_Copy_ANSI(NextToken->LiteralString);
+		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_String();
 		break;
 	default:
 		FreeNode(LiteralNode);
@@ -62,8 +62,8 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 	struct AST_Node* VarNode = AllocNewNode(AST_NODE_EXPRESSION);
 	VarNode->BufferLocation = NextToken->BufferLocation;
 
-	VarNode->Val.Expression.Type = EXP_VAR_ACCESS;
-	VarNode->Val.Expression.Variable.Name = NextToken->Val.LiteralString;
+	VarNode->Expression.Type = EXP_VAR_ACCESS;
+	VarNode->Expression.Variable.Name = NextToken->LiteralString;
 
 	// Consume token and return.
 	Parser_ConsumeToken(Parser);
@@ -78,8 +78,8 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 	if (NextToken == NULL) return NULL;
 
 	if (NextToken->Type != TOKEN_SYMBOL 
-		|| (!Symbol_IsBinaryOp(NextToken->Val.Symbol) 
-			&& !Symbol_IsUnaryOp(NextToken->Val.Symbol)))
+		|| (!Symbol_IsBinaryOp(NextToken->Symbol) 
+			&& !Symbol_IsUnaryOp(NextToken->Symbol)))
 	{
 		return NULL;
 	}
@@ -87,8 +87,8 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 	// Parse next token as an operator node.
 	struct AST_Node* OpExpression = AllocNewNode(AST_NODE_EXPRESSION);
 	OpExpression->BufferLocation = NextToken->BufferLocation;
-	OpExpression->Val.Expression.Type = EXP_OP;
-	OpExpression->Val.Expression.Op.OperatorSymbol = NextToken->Val.Symbol;
+	OpExpression->Expression.Type = EXP_OP;
+	OpExpression->Expression.Op.OperatorSymbol = NextToken->Symbol;
 
 	// Consume token and return.
 	Parser_ConsumeToken(Parser);
@@ -131,11 +131,11 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 
 	FunctionExpressionableNode = AllocNewNode(AST_NODE_EXPRESSION);
 	FunctionExpressionableNode->BufferLocation = IdentifierToken->BufferLocation;
-	FunctionExpressionableNode->Val.Expression.Type = EXP_FUNC_CALL;
-	FunctionExpressionableNode->Val.Expression.FunctionCall.FunctionName = IdentifierToken->Val.Identifier;
+	FunctionExpressionableNode->Expression.Type = EXP_FUNC_CALL;
+	FunctionExpressionableNode->Expression.FunctionCall.FunctionName = IdentifierToken->Identifier;
 
 	// Start parsing param expressions until a closing parenthesis is reached.
-	FunctionExpressionableNode->Val.Expression.FunctionCall.Params = Vector_Create(struct AST_Node*, 0);
+	FunctionExpressionableNode->Expression.FunctionCall.Params = Vector_Create(struct AST_Node*, 0);
 
 	for (NextToken = Parser_PeekToken(Parser);
 		!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE); NextToken = Parser_PeekToken(Parser))
@@ -149,7 +149,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 			goto PARSE_FAIL;
 		}
 
-		Vector_Push(FunctionExpressionableNode->Val.Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
+		Vector_Push(FunctionExpressionableNode->Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
 	}
 
 	NextToken = Parser_ConsumeToken(Parser);
@@ -184,22 +184,22 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 {
 	ASSERT(RootExpression != NULL);
 
-	struct AST_Node* LeftOperand = RootExpression->Val.Expression.Op.LeftOperand;
+	struct AST_Node* LeftOperand = RootExpression->Expression.Op.LeftOperand;
 	ASSERT(LeftOperand != NULL);
 
-	if (LeftOperand->Val.Expression.Type != EXP_OP)
+	if (LeftOperand->Expression.Type != EXP_OP)
 	{
 		// Left operand is not an operator itself.
 		return RootExpression;
 	}
 
-	if (LeftOperand->Val.Expression.Op.RightOperand == NULL)
+	if (LeftOperand->Expression.Op.RightOperand == NULL)
 	{
 		// Left operand has no right operand - no precedence can apply.
 		return RootExpression;
 	}
 
-	if (RootExpression->Val.Expression.ParenthesisLevel < LeftOperand->Val.Expression.ParenthesisLevel)
+	if (RootExpression->Expression.ParenthesisLevel < LeftOperand->Expression.ParenthesisLevel)
 	{
 		// Left operand is inside an extra parenthesis scope.
 		return RootExpression;
@@ -209,13 +209,13 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 	// RootExpression will be set to the first left operand that was promoted to be the root. 
 	struct AST_Node* EntryNode = RootExpression;
 
-	struct AST_Node* Left_Right_Operand = LeftOperand->Val.Expression.Op.RightOperand;
-	enum TOKEN_SYMBOL LeftOp = LeftOperand->Val.Expression.Op.OperatorSymbol;
-	enum TOKEN_SYMBOL EntryNodeOp = EntryNode->Val.Expression.Op.OperatorSymbol;
+	struct AST_Node* Left_Right_Operand = LeftOperand->Expression.Op.RightOperand;
+	enum TOKEN_SYMBOL LeftOp = LeftOperand->Expression.Op.OperatorSymbol;
+	enum TOKEN_SYMBOL EntryNodeOp = EntryNode->Expression.Op.OperatorSymbol;
 
-	ui8 Left_ParenthesisLevel = LeftOperand->Val.Expression.ParenthesisLevel;
-	ui8 Left_Right_ParenthesisLevel = LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel;
-	ui8 EntryNodeParenthesisLevel = EntryNode->Val.Expression.ParenthesisLevel;
+	ui8 Left_ParenthesisLevel = LeftOperand->Expression.ParenthesisLevel;
+	ui8 Left_Right_ParenthesisLevel = LeftOperand->Expression.Op.RightOperand->Expression.ParenthesisLevel;
+	ui8 EntryNodeParenthesisLevel = EntryNode->Expression.ParenthesisLevel;
 
 	struct AST_Node* ParentNode = NULL;
 
@@ -232,15 +232,15 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 		)
 	{
 		// Perform swap.
-		LeftOperand->Val.Expression.Op.RightOperand = EntryNode;
-		EntryNode->Val.Expression.Op.LeftOperand = Left_Right_Operand;
+		LeftOperand->Expression.Op.RightOperand = EntryNode;
+		EntryNode->Expression.Op.LeftOperand = Left_Right_Operand;
 
 		// If this is the first swap, assign Left Operand as the new Root Expression before we lose track of it.
 		if (RootExpression == EntryNode) RootExpression = LeftOperand;
 
 		if (ParentNode != NULL)
 		{
-			ParentNode->Val.Expression.Op.RightOperand = LeftOperand;
+			ParentNode->Expression.Op.RightOperand = LeftOperand;
 		}
 		ParentNode = LeftOperand;
 
@@ -248,16 +248,16 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 
 		// Check break conditions.
 		if (LeftOperand == NULL) break; // The Left Operand lacked its own right operand.
-		if (LeftOperand->Val.Expression.Type != EXP_OP) break; // The new left operand is not an operator.
-		if (EntryNode->Val.Expression.ParenthesisLevel < LeftOperand->Val.Expression.ParenthesisLevel) break; // The new left operand is on a deeper parenthesis level.
+		if (LeftOperand->Expression.Type != EXP_OP) break; // The new left operand is not an operator.
+		if (EntryNode->Expression.ParenthesisLevel < LeftOperand->Expression.ParenthesisLevel) break; // The new left operand is on a deeper parenthesis level.
 
-		Left_Right_Operand = LeftOperand->Val.Expression.Op.RightOperand;
+		Left_Right_Operand = LeftOperand->Expression.Op.RightOperand;
 		if (Left_Right_Operand == NULL) break; // The new left operand does not have a right operand.
 
 		// Update check / cached values.
-		LeftOp = LeftOperand->Val.Expression.Op.OperatorSymbol;
-		Left_ParenthesisLevel = LeftOperand->Val.Expression.ParenthesisLevel;
-		Left_Right_ParenthesisLevel = LeftOperand->Val.Expression.Op.RightOperand->Val.Expression.ParenthesisLevel;
+		LeftOp = LeftOperand->Expression.Op.OperatorSymbol;
+		Left_ParenthesisLevel = LeftOperand->Expression.ParenthesisLevel;
+		Left_Right_ParenthesisLevel = LeftOperand->Expression.Op.RightOperand->Expression.ParenthesisLevel;
 	}
 
 	return RootExpression;
@@ -272,20 +272,20 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel)
 {
 	ASSERT(Op != NULL);
-	ASSERT(Op->Val.Expression.Type == EXP_OP);
+	ASSERT(Op->Expression.Type == EXP_OP);
 
-	enum TOKEN_SYMBOL OpSymbol = Op->Val.Expression.Op.OperatorSymbol;
+	enum TOKEN_SYMBOL OpSymbol = Op->Expression.Op.OperatorSymbol;
 
 	// Check error case: Unary left operator given a left operand or unary right / binary operator NOT given a left operand.
 	ui8 NeedsLeftOperand = Symbol_IsRightUnaryOp(OpSymbol) && !Symbol_IsBinaryOp(OpSymbol);
 	ui8 SupportsLeftOperand = NeedsLeftOperand || Symbol_IsBinaryOp(OpSymbol);
-	if (!SupportsLeftOperand && Op->Val.Expression.Op.LeftOperand != NULL)
+	if (!SupportsLeftOperand && Op->Expression.Op.LeftOperand != NULL)
 	{
 		Parser_Error(Parser, Op->BufferLocation, "Unexpected left operand for operator.");
 		return NULL;
 	}
 	// Check error case: Unary right operator not given a left operand.
-	if (NeedsLeftOperand && Op->Val.Expression.Op.LeftOperand == NULL)
+	if (NeedsLeftOperand && Op->Expression.Op.LeftOperand == NULL)
 	{
 		Parser_Error(Parser, Op->BufferLocation, "Left operand required for operator.");
 		return NULL;	}
@@ -293,7 +293,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	ui8 NeedsRightOperand = !Symbol_IsRightUnaryOp(OpSymbol);
 
 	// We can now deduce the exact kind of operator we're dealing with. Deambiguate as needed.
-	if (Op->Val.Expression.Op.LeftOperand != NULL && NeedsRightOperand)
+	if (Op->Expression.Op.LeftOperand != NULL && NeedsRightOperand)
 	{
 		OpSymbol = Symbol_DeambiguateBinaryOp(OpSymbol);
 	}
@@ -306,10 +306,10 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		OpSymbol = Symbol_DeambiguateRightUnaryOp(OpSymbol);
 	}
 
-	Op->Val.Expression.Op.OperatorSymbol = OpSymbol;
+	Op->Expression.Op.OperatorSymbol = OpSymbol;
 
 	// Initialize parenthesis level to whatever the entry Operator has been assigned to.
-	ui8 ParenthesisLevel = Op->Val.Expression.ParenthesisLevel;
+	ui8 ParenthesisLevel = Op->Expression.ParenthesisLevel;
 	if (NeedsRightOperand)
 	{
 		// New operator requires a right operand.
@@ -343,17 +343,17 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 			goto PARSE_FAIL;
 		}
 
-		RightOperand->Val.Expression.ParenthesisLevel = ParenthesisLevel;
+		RightOperand->Expression.ParenthesisLevel = ParenthesisLevel;
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 		// If right operand expressionable is itself an operator, recursively call this function on it.
-		if (RightOperand->Val.Expression.Type == EXP_OP)
+		if (RightOperand->Expression.Type == EXP_OP)
 		{
 			// The right operand is parsed without a left operand for itself meaning it will only work with left unary operators.
-			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
-			if (Op->Val.Expression.Op.RightOperand == NULL)
+			Op->Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
+			if (Op->Expression.Op.RightOperand == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse right operand operator expression.");
 				goto PARSE_FAIL;
@@ -361,7 +361,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		}
 		else
 		{
-			Op->Val.Expression.Op.RightOperand = RightOperand;
+			Op->Expression.Op.RightOperand = RightOperand;
 		}
 
 		NextToken = Parser_PeekToken(Parser);
@@ -371,7 +371,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
 			if (ParenthesisLevel == 0) break; // Can happen when closing parenthesis is to be used as end symbol.
-			if (ParenthesisLevel < Op->Val.Expression.ParenthesisLevel) break;
+			if (ParenthesisLevel < Op->Expression.ParenthesisLevel) break;
 
 			ParenthesisLevel--;
 
@@ -383,7 +383,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	}
 
 	// If a left operand is present, handle precedence between it and this operator expression.
-	if (Op->Val.Expression.Op.LeftOperand != NULL)
+	if (Op->Expression.Op.LeftOperand != NULL)
 	{
 		Op = HandleOperatorPrecedence(Op);
 	}
@@ -392,10 +392,10 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	return Op;
 }
 
-// Entry point of expression parsing. Parses a "root expression" until reaching the given end symbol (or a closing parenthesis that doesn't
-// internally match an opening parenthesis).
+// Entry point of expression parsing. Parses a "root expression" until reaching an end symbol (';' or ',' if specified) or a closing parenthesis
+// that does not match an opening parenthesis inside the expression itself.
 // Returns an NOP expression if no expression could be parsed at all, or NULL if there was a parser error.
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
+struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 
@@ -431,9 +431,12 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 		// Check for End Symbol if outside a parenthesis scope.
 		// Temp: Also stop on a closing parenthesis regardless, but do not consume it if it's not set as the end symbol.
 		// TODO: Rework this function so that it can accept multiple end symbols cleanly.
-		if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, EndSymbol))
+		if (ParenthesisLevel == 0 && (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) || (StopAtComma && Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))))
 		{
-			Parser_ConsumeToken(Parser);
+			if (ConsumeStopChar)
+			{
+				Parser_ConsumeToken(Parser);
+			}
 			break;
 		}
 		else if (ParenthesisLevel == 0 && Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
@@ -449,16 +452,16 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 			goto PARSE_FAIL;
 		}
 		NextNode->BufferLocation = NextToken->BufferLocation;
-		NextNode->Val.Expression.ParenthesisLevel = ParenthesisLevel;
+		NextNode->Expression.ParenthesisLevel = ParenthesisLevel;
 
-		if (NextNode->Val.Expression.Type == EXP_OP)
+		if (NextNode->Expression.Type == EXP_OP)
 		{
 			// If we're here then it means parsing has just started or that the previous node can be operated on (as opposed
 			// to an incomplete operator node which can't yet), so it can be put into the new node's left operand slot right away.
-			NextNode->Val.Expression.Op.LeftOperand = ExpressionRootNode;
+			NextNode->Expression.Op.LeftOperand = ExpressionRootNode;
 
 			// Continue parsing to obtain the right operand of this operator.
-			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel, EndSymbol);
+			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel);
 			if (ExpressionRootNode == NULL)
 			{
 				if (Parser->HasError) goto PARSE_FAIL;
@@ -496,7 +499,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SY
 	{
 		ExpressionRootNode = AllocNewNode(AST_NODE_EXPRESSION);
 		ExpressionRootNode->BufferLocation = NextToken->BufferLocation;
-		ExpressionRootNode->Val.Expression.Type = EXP_NOP;
+		ExpressionRootNode->Expression.Type = EXP_NOP;
 	}
 
 	return ExpressionRootNode;

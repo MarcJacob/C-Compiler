@@ -81,6 +81,7 @@ static inline struct DatatypeDef GetPrimitiveDatatypeDef_Int64()
 }
 
 static inline struct DatatypeDef GetPrimitiveDatatypeDef_Float() 
+
 {
 	struct DatatypeDef Def = { 0 };
 	Def.Size = 4;
@@ -111,12 +112,10 @@ static inline struct DatatypeDef GetPrimitiveDatatypeDef_String()
 static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
 	ui8 AllowVoid);
 
-// Statement & Expression Parsing functions.
-
 // Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
 // If NULL is returned, then the parser has encountered an error or failed to read any expressionable tokens.
 // The end symbol token is consumed.
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
+struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma);
 
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
@@ -125,5 +124,19 @@ struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
 struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
+
+// Gathers all statement nodes directly or indirectly contained inside the given root statement node into the provided Out vector.
+void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
+
+// Parses a set of declarators / obj nodes of the given type into the OutObjNodes vector. 
+ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, struct Vector* OutObjNodes);
+
+// Root Parser functions
+
+// Attempts to parse a new AST, covering an Object (Variable or Function) declaration and definition if available.
+ui8 ParseGlobal_Object(struct ParserProcess* Parser);
+
+// Attempts to parse a new AST, covering a Struct declaration and its definition if available.
+ui8 ParseGlobal_Structs(struct ParserProcess* Parser);
 
 #endif // PARSER_INCLUDED
