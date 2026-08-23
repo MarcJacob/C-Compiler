@@ -269,7 +269,7 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 // Returns the root of the resulting expression tree.
 // End Symbol is used so in the case of parsing the next expressionable as a right operator, we can determine when
 // to use an empty NOP node instead.
-static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel, enum TOKEN_SYMBOL EndSymbol)
+static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel)
 {
 	ASSERT(Op != NULL);
 	ASSERT(Op->Val.Expression.Type == EXP_OP);
@@ -339,19 +339,8 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		RightOperand = ParseExpressionableNode(Parser);
 		if (RightOperand == NULL)
 		{
-			// Check that the token we tried to parse into an expressionable isn't the end symbol, in which case provided we are at root parenthesis level
-			// we can use a NOP expression as right operand instead.
-			if (Token_IsSymbol(NextToken, EndSymbol) && ParenthesisLevel == 0)
-			{
-				RightOperand = AllocNewNode(AST_NODE_EXPRESSION);
-				RightOperand->BufferLocation = NextToken->BufferLocation;
-				RightOperand->Val.Expression.Type = EXP_NOP;
-			}
-			else
-			{
-				Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
-				goto PARSE_FAIL;
-			}
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
+			goto PARSE_FAIL;
 		}
 
 		RightOperand->Val.Expression.ParenthesisLevel = ParenthesisLevel;
@@ -363,7 +352,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		if (RightOperand->Val.Expression.Type == EXP_OP)
 		{
 			// The right operand is parsed without a left operand for itself meaning it will only work with left unary operators.
-			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel, EndSymbol);
+			Op->Val.Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
 			if (Op->Val.Expression.Op.RightOperand == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse right operand operator expression.");
