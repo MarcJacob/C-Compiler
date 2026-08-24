@@ -182,14 +182,14 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		goto PARSE_FAIL_EOF;
 	}
 
-	// Check value of first token. It needs to be a primitive type or one of the user defined type keywords (struct, union, enum).
-	// TODO: Support using identifiers for typedef'd types.
-	if (NextToken->Type != TOKEN_KEYWORD
+	// Check that the first token can parse either into a standard type specifier or is a typedef alias identifier.
+	if ((NextToken->Type != TOKEN_KEYWORD
 		|| (!Keyword_IsPrimitiveType(NextToken->Keyword)
 			&& !Keyword_IsTypeSpecifier(NextToken->Keyword)
 			&& NextToken->Keyword != KEYWORD_STRUCT
 			&& NextToken->Keyword != KEYWORD_UNION
 			&& NextToken->Keyword != KEYWORD_ENUM))
+		&& NextToken->Type != TOKEN_IDENTIFIER)
 	{
 		// Not a type. Can be interpreted as default type (int32) instead from the call site.
 		goto PARSE_FAIL;
@@ -228,6 +228,18 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		{
 			goto PARSE_FAIL_EOF;
 		}
+	}
+
+	// Handle type aliases (must bind to a typedef at Validation time).
+	if (NextToken->Type == TOKEN_IDENTIFIER)
+	{
+		Flags |= DATATYPE_IS_TYPEDEF;
+		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
+		OutDatatypeDef->Flags = Flags;
+		OutDatatypeDef->TypeName = String_Copy_ANSI(NextToken->Identifier);
+
+		Parser_ConsumeToken(Parser); // Consume identifier.
+		return 1;
 	}
 
 	// Handle structured / enumerated types...
@@ -502,7 +514,7 @@ FUNC_PARAMS_PARSING:
 			struct DatatypeDef ParamDatatype = { 0 };
 			if (!ParseDatatypeDef(Parser, &ParamDatatype, 0))
 			{
-				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter type.");
+				// This isn't a function / function ptr declarator. It may be a function call so do not error out.
 				goto PARSE_FAIL;
 			}
 

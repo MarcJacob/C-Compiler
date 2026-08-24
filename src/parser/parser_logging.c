@@ -30,29 +30,64 @@ static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Dept
 	PrintNode(Node, Depth + 1);
 }
 
+// Prints a function / function pointer's parameter list inline, comma-separated and wrapped in
+// parentheses (eg. "(int a, void (*callback)(int x))"). Always emits parens, even when Params is empty,
+// so the declarator still reads as callable rather than looking like a simple pointer.
+static void PrintParamList(struct Vector* Params)
+{
+	printf("(");
+	for (int i = 0; i < Params->Size; i++)
+	{
+		if (i > 0) printf(", ");
+
+		struct ObjDeclarator* Param = &Vector_GetValueAt(*Params, struct AST_Node*, i)->Obj;
+		PrintDatatypeName(&Param->ReturnType);
+		if (Param->FuncPointerLevel > 0)
+		{
+			printf(" (");
+			for (i8 j = 0; j < Param->FuncPointerLevel; j++) printf("*");
+			if (Param->Name.Length > 0) printf("%s", Param->Name.Str);
+			printf(")");
+			PrintParamList(&Param->Func_Params);
+		}
+		else if (Param->Name.Length > 0)
+		{
+			printf(" %s", Param->Name.Str);
+		}
+	}
+	printf(")");
+}
+
+// Prints an ObjDeclarator's name and type (datatype name, pointer stars, function pointer
+// dereference parens if FuncPointerLevel > 0, and an inline parameter list if IsFuncLike).
+// Shared by Obj nodes (which wrap this with a VARIABLE/FUNCTION/FUNC_POINTER label and a body /
+// initializer) and Typedef nodes (which wrap it with a plain TYPEDEF label and nothing else).
+static void PrintObjDeclarator(struct ObjDeclarator* Declarator, ui8 IsFuncLike)
+{
+	printf("'%s' : ", Declarator->Name.Str);
+	PrintDatatypeName(&Declarator->ReturnType);
+	if (Declarator->FuncPointerLevel > 0)
+	{
+		printf(" (");
+		for (i8 i = 0; i < Declarator->FuncPointerLevel; i++) printf("*");
+		printf(")");
+	}
+
+	if (IsFuncLike) PrintParamList(&Declarator->Func_Params);
+
+	printf(">\n");
+}
+
 // Prints an Obj declarator node (AST_NODE_OBJ_VAR / AST_NODE_OBJ_FUNC), covering plain variables,
-// function pointers (FuncPointerLevel > 0) and functions, then recurses into its parameters and
-// its body (function) or initializer expression (variable / function pointer).
+// function pointers (FuncPointerLevel > 0) and functions, then recurses into its
+// body (function) or initializer expression (variable / function pointer).
 static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 {
 	ui8 IsFunc = Node->Type == AST_NODE_OBJ_FUNC;
 	ui8 IsFuncPointer = Node->Obj.FuncPointerLevel > 0;
 
-	printf("<%s: '%s' : ", IsFunc ? "FUNCTION" : (IsFuncPointer ? "FUNC_POINTER" : "VARIABLE"), Node->Obj.Name.Str);
-	PrintDatatypeName(&Node->Obj.ReturnType);
-	if (IsFuncPointer)
-	{
-		printf(" (");
-		for (i8 i = 0; i < Node->Obj.FuncPointerLevel; i++) printf("*");
-		printf(")");
-	}
-	printf(">\n");
-
-	if (IsFunc || IsFuncPointer)
-	{
-		for (int i = 0; i < Node->Obj.Func_Params.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Obj.Func_Params, struct AST_Node*, i), Depth + 1);
-	}
+	printf("<%s: ", IsFunc ? "FUNCTION" : (IsFuncPointer ? "FUNC_POINTER" : "VARIABLE"));
+	PrintObjDeclarator(&Node->Obj, IsFunc || IsFuncPointer);
 
 	if (IsFunc)
 		PrintLabeledNode("BODY", Node->Obj.Func_Block, Depth + 1);
@@ -115,8 +150,8 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 			PrintNode(Vector_GetValueAt(Node->Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;
 	case AST_NODE_TYPEDEF:
-		// TODO: Improve logging to show full declarator data in a compressed format on the right (and improve object logging at the same time).
-		printf("<TYPEDEF: '%s' - '%s'>\n", Node->Typedef.Declarator.Name.Str, Datatype_GetName(&Node->Typedef.Declarator.ReturnType));
+		printf("<TYPEDEF: ");
+		PrintObjDeclarator(&Node->Typedef.Declarator, Node->Typedef.Declarator.FuncPointerLevel > 0);
 		break;
 	case AST_NODE_ENUM:
 		printf("<ENUM>\n");

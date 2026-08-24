@@ -79,7 +79,7 @@ void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out)
 // Attempts to parse a Var Declaration statement node, up until reaching the provided end symbol.
 struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
 {
-	int TokenStartIndex = Parser->TokenIndex;
+	int StartTokenIndex = Parser->TokenIndex;
 
 	struct AST_Node* VarDecNode = NULL;
 
@@ -90,6 +90,7 @@ struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Par
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
 	PARSE_FAIL:
 		if (VarDecNode != NULL) FreeNode(VarDecNode);
+		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
 

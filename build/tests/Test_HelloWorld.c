@@ -1,7 +1,9 @@
 // Single file test.
 // Hello world program.
 
-typedef int (*int_func_ptr)();
+typedef int (*int_func_ptr)(float, float);
+
+int foo(int_func_ptr func, int(float));
 
 int main(int argc, char** argv)
 {
