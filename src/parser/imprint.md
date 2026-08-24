@@ -1,3 +1,7 @@
+IMPRINT \<Root>/src/parser/
+
+Stamp 2026-08-24 | (GIT SHA 9cbefe956748e22c2cb260faa37356b45a8fdfb2) | Marc Jacob
+
 # Structure
 
 This folder contains the full implementation of the Parser Process, which turns a vector of Tokens into a vector of root AST_Node pointers.
