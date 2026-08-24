@@ -136,14 +136,15 @@ void Parser_Run(struct ParserProcess* Parser)
 
 	while (Parser_PeekToken(Parser) != NULL)
 	{
-		if (ParseGlobal_Object(Parser) || ParseGlobal_Structs(Parser)
-			// TODO: Add Typedef parsing.
-			)
+		if (ParseGlobal_Typedef(Parser) 
+			|| ParseGlobal_Object(Parser) 
+			|| ParseGlobal_Structs(Parser))
 		{
 			// Successfully parsed node tree.
 		}
 		else
 		{
+			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected variable, function or type declaration.");
 			break;
 		}
 	}
@@ -190,7 +191,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			&& NextToken->Keyword != KEYWORD_UNION
 			&& NextToken->Keyword != KEYWORD_ENUM))
 	{
-		// Not a type.
+		// Not a type. Can be interpreted as default type (int32) instead from the call site.
 		goto PARSE_FAIL;
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF when parsing data type.");
@@ -669,5 +670,68 @@ ui8 ParseGlobal_Object(struct ParserProcess* Parser)
 
 	Vector_Append(Parser->RootNodes, &ObjNodes);
 	Vector_Destroy(&ObjNodes);
+	return 1;
+}
+
+ui8 ParseGlobal_Typedef(struct ParserProcess* Parser)
+{
+	int TokenStartIndex = Parser->TokenIndex;
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	struct AST_Node* TypedefNode = NULL;
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF.");
+	PARSE_FAIL:
+		Parser->TokenIndex = TokenStartIndex;
+		if (TypedefNode != NULL) FreeNode(TypedefNode);
+		return 0;
+	}
+
+	if (!Token_IsKeyword(NextToken, KEYWORD_TYPEDEF))
+	{
+		goto PARSE_FAIL;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume typedef keyword.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// Parse a datatype def - declarator pair stopped by a semicolon.
+	struct DatatypeDef Type;
+	if (!ParseDatatypeDef(Parser, &Type, 1))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
+		goto PARSE_FAIL;
+	}
+
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	struct AST_Node* DeclaratorNode = ParseDeclarator(Parser, &Type);
+	if (DeclaratorNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected declaration.");
+		goto PARSE_FAIL;
+	}
+
+	// Ensure the end character of the declarator is a semicolon. TODO: Allow compounded typedefs separated by commas.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	if (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
+		goto PARSE_FAIL;
+	}
+	Parser_ConsumeToken(Parser); // Consume ';' token.
+
+	// "Extract" the declarator from the node then free the node.
+	TypedefNode = AllocNewNode(AST_NODE_TYPEDEF);
+	TypedefNode->BufferLocation = DeclaratorNode->BufferLocation;
+
+	// Declarator Node's Obj data can be moved into the Typedef Node's, then discarded without freeing.
+	TypedefNode->Typedef.Declarator = DeclaratorNode->Obj;
+
+	Vector_PushPtr(Parser->RootNodes, &TypedefNode);
 	return 1;
 }

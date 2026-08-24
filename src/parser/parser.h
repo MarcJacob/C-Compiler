@@ -114,8 +114,8 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 
 // Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
 // If NULL is returned, then the parser has encountered an error or failed to read any expressionable tokens.
-// The end symbol token is consumed.
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma);
+// ConsumeStopCharacter determines whether the end token is consumed (comma, semicolon, closing parenthesis...).
+struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopCharacter);
 
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
@@ -138,5 +138,8 @@ ui8 ParseGlobal_Object(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Struct declaration and its definition if available.
 ui8 ParseGlobal_Structs(struct ParserProcess* Parser);
+
+// Attempts to parse a new AST, covering a Typedef declaration.
+ui8 ParseGlobal_Typedef(struct ParserProcess* Parser);
 
 #endif // PARSER_INCLUDED

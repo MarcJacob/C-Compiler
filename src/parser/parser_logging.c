@@ -114,6 +114,10 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		for (int i = 0; i < Node->Struct.Members.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;
+	case AST_NODE_TYPEDEF:
+		// TODO: Improve logging to show full declarator data in a compressed format on the right (and improve object logging at the same time).
+		printf("<TYPEDEF: '%s' - '%s'>\n", Node->Typedef.Declarator.Name.Str, Datatype_GetName(&Node->Typedef.Declarator.ReturnType));
+		break;
 	case AST_NODE_ENUM:
 		printf("<ENUM>\n");
 		break;

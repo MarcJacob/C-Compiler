@@ -153,3 +153,4 @@ ui8 ParseGlobal_Structs(struct ParserProcess* Parser)
 	return 1;
 }
 
+

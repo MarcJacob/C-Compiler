@@ -142,7 +142,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	{
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_OP_COMMA);
+		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_OP_COMMA, 1);
 		if (NewExpr == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter expression.");

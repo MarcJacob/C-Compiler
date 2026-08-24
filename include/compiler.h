@@ -540,6 +540,7 @@ enum TOKEN_KEYWORD
 	KEYWORD_STRUCT,
 	KEYWORD_ENUM,
 	KEYWORD_UNION,
+	KEYWORD_TYPEDEF,
 
 	// Special Statements 
 	KEYWORD_IF,
@@ -593,6 +594,7 @@ static const struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 	{ KEYWORD_STRUCT, "struct" },
 	{ KEYWORD_ENUM, "enum" },
 	{ KEYWORD_UNION, "union" },
+	{ KEYWORD_TYPEDEF, "typedef" },
 
 	{ KEYWORD_IF, "if" },
 	{ KEYWORD_ELSE, "else" },
@@ -659,22 +661,6 @@ static inline ui8 Token_IsKeyword(struct Token* Token, enum TOKEN_KEYWORD Keywor
 
 // Parser Stage
 
-// All possible values for the type of an AST Node.
-enum AST_NODE_TYPE
-{
-	AST_NODE_OBJ_VAR,					// Global, Local, Structure or Param Variable. Covers values, pointers and function pointers.
-	AST_NODE_OBJ_FUNC,					// Function definition or declaration.
-	AST_NODE_STRUCT,				// Structure / Union definition or declaration.
-	AST_NODE_ENUM,					// Enumeration definition or declaration.
-	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
-	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
-	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
-	AST_NODE_STATEMENT_BLOCK,		// Container statement for other statements.
-	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
-	AST_NODE_STATEMENT_WHILE,		// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
-	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
-	AST_NODE_STATEMENT_VAR_DEC,		// Declares one or more variable symbols associated with a specific base type.
-};
 
 // Values for primitive data types + an extra value indicating the type is user-defined. 
 enum DATATYPE
@@ -802,6 +788,24 @@ struct Expression
 
 };
 
+// All possible values for the type of an AST Node.
+enum AST_NODE_TYPE
+{
+	AST_NODE_OBJ_VAR,				// Global, Local, Structure or Param Variable. Covers values, pointers and function pointers.
+	AST_NODE_OBJ_FUNC,				// Function definition or declaration.
+	AST_NODE_STRUCT,				// Structure / Union definition or declaration.
+	AST_NODE_TYPEDEF,				// Typedef definition, providing a "Prefab" declarator to be merged into a usage declarator when used to declare an object.
+	AST_NODE_ENUM,					// Enumeration definition or declaration.
+	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
+	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
+	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
+	AST_NODE_STATEMENT_BLOCK,		// Container statement for other statements.
+	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
+	AST_NODE_STATEMENT_WHILE,		// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
+	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
+	AST_NODE_STATEMENT_VAR_DEC,		// Declares one or more variable symbols associated with a specific base type.
+};
+
 // Node composing an Abstract Syntax Tree.
 struct AST_Node
 {
@@ -841,10 +845,11 @@ struct AST_Node
 		} Struct;
 
 		// Typedef declaration.
+		// Basically just a wrapper for a Declarator to be re-used (recursively if its return type is an alias)
+		// when using that declarator for an object.
 		struct
 		{
-			struct DatatypeDef Type;	// Aliased type.
-			struct String_ANSI Alias;	// Alias name.
+			struct ObjDeclarator Declarator;
 		} Typedef;
 
 		// Root type for any statement found inside functions.
