@@ -841,7 +841,12 @@ struct AST_Node
 			union 
 			{
 				struct AST_Node* Func_Block; // Root instruction block if this is a function definition.
-				struct AST_Node* Var_InitExpression; // Initialization expression node.
+
+				struct
+				{
+					struct AST_Node* Var_InitExpression; // Initialization expression node.
+					struct Vector Var_ArraySizes; // Vector type = AST_Node*. Sequence of array size expressions. If empty, this variable isn't an array.
+				};
 			};
 
 			// Vector of sub-declarators, representing param variable / function pointers.

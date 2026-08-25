@@ -500,7 +500,7 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	{
 		Parser_ConsumeToken(Parser);
 
-		// ObjNode is a function or function pointer.
+		// ObjNode is a function or function pointer variable.
 		// Start recursively parsing datatype + declarator pairs as parameters.
 
 FUNC_PARAMS_PARSING:
@@ -547,6 +547,26 @@ FUNC_PARAMS_PARSING:
 
 		// Consume closing parenthesis.
 		Parser_ConsumeToken(Parser);
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	}
+
+	// If the declarator is a variable, then accept any number of array size declarations.
+	ObjNode->Obj.Var_ArraySizes = Vector_Create(struct AST_Node*, 0);
+	while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+	{
+		struct AST_Node* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);
+		if (ArrayExpressionNode == NULL || Parser->HasError)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse array size declaration expression.");
+			goto PARSE_FAIL;
+		}
+
+		// The node's right operand is the size we're looking for. Take it away from the array expression node and discard the latter.
+		Vector_Push(ObjNode->Obj.Var_ArraySizes, struct AST_Node*, ArrayExpressionNode->Expression.Op.RightOperand);
+		ArrayExpressionNode->Expression.Op.RightOperand = NULL;
+		FreeNode(ArrayExpressionNode);
+
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
