@@ -176,6 +176,8 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Function(Parser);
 	if (Expressionable == NULL)
+		Expressionable = ParseExpressionable_ArrayAccess(Parser);
+	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Operator(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Variable(Parser);
@@ -232,12 +234,12 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 	// It must avoid crossing a right-to-left / left-to-right boundary, parenthesis levels and
 	// left operand must have LOWER precedence if the two have the same associativity, or it must be right-to-left and root left-to-right.
 	while (
-		// Check parenthesis level (Is entry at a deeper or similar level along with the left operand's right operand ?)
-		(EntryNodeParenthesisLevel >= Left_Right_ParenthesisLevel)
-		// Are we strictly deeper in parenthesis than the left operand OR do the rules of associativity and precedence mean we should capture the left_right operand ?
-		&& (EntryNodeParenthesisLevel > Left_ParenthesisLevel
-			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) > 0)
-			|| (Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) == 0 && !Symbol_IsOpLeftToRightAssociative(LeftOp)))
+		// First possibility: Are entry and left_right both in a lower parenthesis level than left ?
+		(EntryNodeParenthesisLevel > Left_ParenthesisLevel && Left_Right_ParenthesisLevel > Left_ParenthesisLevel)
+		// Second possibility: Do the rules of associativity and precedence mean we should capture the left_right operand ?
+		|| (	(Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) > 0)
+			||	(Symbol_CompareOpPrecedence(EntryNodeOp, LeftOp) == 0 
+					&& !Symbol_IsOpLeftToRightAssociative(LeftOp)))
 		)
 	{
 		// Perform swap.
@@ -319,7 +321,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 
 	// Initialize parenthesis level to whatever the entry Operator has been assigned to.
 	ui8 ParenthesisLevel = Op->Expression.ParenthesisLevel;
-	if (NeedsRightOperand)
+	if (NeedsRightOperand && Op->Expression.Op.RightOperand == NULL)
 	{
 		// New operator requires a right operand.
 		struct AST_Node* RightOperand = NULL;
@@ -516,7 +518,54 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 	return ExpressionRootNode;
 }
 
-struct AST_Node* ParseArrayAccessExpressionNode(struct ParserProcess* Parser)
+struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 {
-	
+	int StartTokenIndex = Parser->TokenIndex;
+	struct AST_Node* ArrayAccessNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing array access expression.");
+	PARSE_FAIL:
+		if (ArrayAccessNode != NULL) FreeNode(ArrayAccessNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+
+	// Expect first token to be an opening bracket.
+	NextToken = Parser_ConsumeToken(Parser);
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+	{
+		goto PARSE_FAIL; // Not an array access.
+	}
+
+	// Parse whatever expression follows and expect it to end with a closing bracket.
+	struct AST_Node* IndexExpressionNode = ParseExpressionNode(Parser, 0, 0);
+	if (IndexExpressionNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
+		goto PARSE_FAIL;
+	}
+
+	int ArrayAccessBufferLocation = NextToken->BufferLocation;
+	NextToken = Parser_ConsumeToken(Parser);
+	if (!Token_IsSymbol(NextToken, SYMBOL_BRACKET_CLOSE))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ']' token.");
+		goto PARSE_FAIL;
+	}
+
+	// Create a new Array Access operator node and assign the index expression as its right operand, and leave
+	// the left operand empty.
+
+	ArrayAccessNode = AllocNewNode(AST_NODE_EXPRESSION);
+	ArrayAccessNode->BufferLocation = NextToken->BufferLocation;
+	ArrayAccessNode->Expression.Type = EXP_OP;
+	ArrayAccessNode->Expression.Op.OperatorSymbol = SYMBOL_OP_ARRAY_ACCESS;
+	ArrayAccessNode->Expression.Op.RightOperand = IndexExpressionNode;
+	ArrayAccessNode->Expression.Op.LeftOperand = NULL;
+
+	return ArrayAccessNode;
 }

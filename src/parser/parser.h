@@ -117,10 +117,10 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 // ConsumeStopCharacter determines whether the end token is consumed (comma, semicolon, closing parenthesis...).
 struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopCharacter);
 
-// Specialized parser specifically made to parse an array access operator expression.
+// Specialized parser specifically made to parse an array access operator expressionable (missing its left operand).
 // Expects the first token to be an opening bracket. Stops at the first corresponding closing bracket found and consumes it.
 // The resulting operator expression node will require a left operand as the thing being array-accessed.
-struct AST_Node* ParseArrayAccessExpressionNode(struct ParserProcess* Parser);
+struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser);
 
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
 struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
