@@ -142,17 +142,26 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	{
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		struct AST_Node* NewExpr = ParseExpressionNode(Parser, SYMBOL_OP_COMMA, 1);
+		struct AST_Node* NewExpr = ParseExpressionNode(Parser, 1, 0);
 		if (NewExpr == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter expression.");
 			goto PARSE_FAIL;
 		}
 
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
 		Vector_Push(FunctionExpressionableNode->Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
+
+		Parser_ConsumeToken(Parser); // Consume whatever character caused the param expression to end.
+		if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA)) continue;
+		if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE)) break;
+		// Else...
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+		goto PARSE_FAIL;
 	}
 
-	NextToken = Parser_ConsumeToken(Parser);
 	return FunctionExpressionableNode;
 }
 
@@ -429,9 +438,11 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 		NextToken = Parser_PeekToken(Parser);
 
 		// Check for End Symbol if outside a parenthesis scope.
-		// Temp: Also stop on a closing parenthesis regardless, but do not consume it if it's not set as the end symbol.
-		// TODO: Rework this function so that it can accept multiple end symbols cleanly.
-		if (ParenthesisLevel == 0 && (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) || (StopAtComma && Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))))
+		if (ParenthesisLevel == 0 && 
+			(Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) 
+				|| (StopAtComma && Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
+				|| Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE)
+				|| Token_IsSymbol(NextToken, SYMBOL_BRACKET_CLOSE)))
 		{
 			if (ConsumeStopChar)
 			{
@@ -503,4 +514,9 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 	}
 
 	return ExpressionRootNode;
+}
+
+struct AST_Node* ParseArrayAccessExpressionNode(struct ParserProcess* Parser)
+{
+	
 }
