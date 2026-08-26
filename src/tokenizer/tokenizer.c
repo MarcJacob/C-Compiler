@@ -500,36 +500,51 @@ void Tokenizer_PrintTokens(struct TokenizerProcess* Tokenizer)
 	{
 		struct Token* Tok = Vector_GetPtr(Tokenizer->Tokens, TokenIndex);
 
+		struct String_ANSI FormatString;
+
 		switch (Tok->Type)
 		{
 		case TOKEN_COMMENT:
-			printf("<COMMENT>\n");
+			FormatString = String_CreateFormat_ANSI("<COMMENT>");
 			break;
 		case TOKEN_IDENTIFIER:
-			printf("<IDENTIFIER: '%s'>\n", Tok->Identifier.Str);
+			FormatString = String_CreateFormat_ANSI("<IDENTIFIER: '%s'>", Tok->Identifier.Str);
 			break;
 		case TOKEN_KEYWORD:
-			printf("<KEYWORD: '%s'>\n", Keyword_ToString(Tok->Keyword));
+			FormatString = String_CreateFormat_ANSI("<KEYWORD: '%s'>", Keyword_ToString(Tok->Keyword));
 			break;
 		case TOKEN_SYMBOL:
-			printf("<SYMBOL: '%s'>\n", Symbol_ToString(Tok->Symbol));
+			FormatString = String_CreateFormat_ANSI("<SYMBOL: '%s'>", Symbol_ToString(Tok->Symbol));
 			break;
 		case TOKEN_LITERAL_STRING:
-			printf("<LITERAL_STRING: \"%s\">\n", Tok->LiteralString.Str);
+			FormatString = String_CreateFormat_ANSI("<LITERAL_STRING: \"%s\">n", Tok->LiteralString.Str);
 			break;
 		case TOKEN_LITERAL_CHAR:
-			printf("<LITERAL_CHAR: '%c'>\n", Tok->LiteralCharacter);
+			FormatString = String_CreateFormat_ANSI("<LITERAL_CHAR: '%c'>", Tok->LiteralCharacter);
 			break;
 		case TOKEN_LITERAL_NUMBER_INT:
-			printf("<LITERAL_NUMBER_INT: %lld>\n", Tok->LiteralNumber.Integer);
+			FormatString = String_CreateFormat_ANSI("<LITERAL_NUMBER_INT: %lld>", Tok->LiteralNumber.Integer);
 			break;
 		case TOKEN_LITERAL_NUMBER_FLOAT:
-			printf("<LITERAL_NUMBER_FLOAT: %f>\n", Tok->LiteralNumber.Float);
+			FormatString = String_CreateFormat_ANSI("<LITERAL_NUMBER_FLOAT: %f>", Tok->LiteralNumber.Float);
 			break;
 		case TOKEN_LITERAL_NUMBER_DOUBLE:
-			printf("<LITERAL_NUMBER_DOUBLE: %lf>\n", Tok->LiteralNumber.Double);
+			FormatString = String_CreateFormat_ANSI("<LITERAL_NUMBER_DOUBLE: %lf>", Tok->LiteralNumber.Double);
 			break;
+		default:
+			FormatString = String_Create_ANSI("<UNKNOWN>");
 		}
+
+		if (FormatString.Length < 30)
+		{
+			printf("%-30.30s\tLoc = %d\n", FormatString.Str, Tok->BufferLocation);
+		}
+		else
+		{
+			printf("%-27.27s...\tLoc = %d\n", FormatString.Str, Tok->BufferLocation);
+		}
+
+		String_Free_ANSI(&FormatString);
 	}
 }
 

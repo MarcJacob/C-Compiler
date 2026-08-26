@@ -75,6 +75,11 @@ static void PrintObjDeclarator(struct ObjDeclarator* Declarator, ui8 IsFuncLike)
 
 	if (IsFuncLike) PrintParamList(&Declarator->Func_Params);
 
+	for (i8 i = 0; i < Declarator->Var_ArraySizes.Size; i++)
+	{
+		printf("[]");
+	}
+
 	printf(">\n");
 }
 

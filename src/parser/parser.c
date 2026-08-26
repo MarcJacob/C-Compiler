@@ -422,7 +422,17 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	ObjNode->BufferLocation = NextToken->BufferLocation;
 	ObjNode->Obj.ReturnType = *ReturnType;
 
-	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR) || Token_IsSymbol(NextToken, SYMBOL_OP_DEREF))
+	// Check entry conditions: All non-empty declarators have to start with pointer levels,
+	// an identifier or an opening parenthesis.
+	if (!Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR)
+		&& !Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN)
+		&& NextToken->Type != TOKEN_IDENTIFIER)
+	{
+		// Return empty declarator.
+		return ObjNode;
+	}
+
+	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR))
 	{
 		ObjNode->Obj.ReturnType.PointerLevel++;
 
@@ -432,8 +442,11 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	}
 
 	// Parse opening parenthesis and function pointer levels.
+	ui8 IdentifierInParenthesis = 0;
 	if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{	
+		IdentifierInParenthesis = 1;
+
 		Parser_ConsumeToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -466,16 +479,17 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	}
 
 	// Ensure we have a closing parenthesis if there was an opening and consume it.
-	if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE) && ObjNode->Obj.FuncPointerLevel > 0)
+	if (IdentifierInParenthesis)
 	{
+		if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+			goto PARSE_FAIL;
+		}
+
 		Parser_ConsumeToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-	}
-	else if (ObjNode->Obj.FuncPointerLevel > 0)
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
-		goto PARSE_FAIL;
 	}
 
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
@@ -552,25 +566,35 @@ FUNC_PARAMS_PARSING:
 	}
 
 	// If the declarator is a variable, then accept any number of array size declarations.
-	ObjNode->Obj.Var_ArraySizes = Vector_Create(struct AST_Node*, 0);
-	while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+	if (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
 	{
-		struct AST_Node* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);
-		if (ArrayExpressionNode == NULL || Parser->HasError)
+		if (ObjNode->Type == AST_NODE_OBJ_FUNC)
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse array size declaration expression.");
+			Parser_Error(Parser, NextToken->BufferLocation, "Cannot declare array of functions.");
 			goto PARSE_FAIL;
 		}
 
-		// The node's right operand is the size we're looking for. Take it away from the array expression node and discard the latter.
-		Vector_Push(ObjNode->Obj.Var_ArraySizes, struct AST_Node*, ArrayExpressionNode->Expression.Op.RightOperand);
-		ArrayExpressionNode->Expression.Op.RightOperand = NULL;
-		FreeNode(ArrayExpressionNode);
+		ObjNode->Obj.Var_ArraySizes = Vector_Create(struct AST_Node*, 0);
+		while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
+		{
+			struct AST_Node* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);
+			if (ArrayExpressionNode == NULL || Parser->HasError)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse array size declaration expression.");
+				goto PARSE_FAIL;
+			}
 
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+			// The node's right operand is the size we're looking for. Take it away from the array expression node and discard the latter.
+			Vector_Push(ObjNode->Obj.Var_ArraySizes, struct AST_Node*, ArrayExpressionNode->Expression.Op.RightOperand);
+			ArrayExpressionNode->Expression.Op.RightOperand = NULL;
+			FreeNode(ArrayExpressionNode);
+
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		}
+
 	}
-
+	
 	// If the next token is an assignment operator, then we have an initialization expression. Parse it up until the next-encountered comma.
 	if (Token_IsSymbol(NextToken, SYMBOL_OP_ASSIGN))
 	{

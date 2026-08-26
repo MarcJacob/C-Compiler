@@ -356,9 +356,10 @@ struct String_ANSI String_CreateFormatV_ANSI(const char* StrFormat, va_list args
 
 	struct String_ANSI NewString = { 0 };
 
-	String_Resize_ANSI(&NewString, vsnprintf(NULL, 0, StrFormat, args) + 1, 0); // First pass - determine required string size including null terminator.
-	vsnprintf(NewString.Str, NewString._Capacity, StrFormat, args); // Second pass - perform actual formatting and copying.
-	NewString.Length = NewString._Capacity - 1;
+	ui32 RequiredLen = vsnprintf(NULL, 0, StrFormat, args);
+	String_Resize_ANSI(&NewString, RequiredLen + 1, 0);
+	vsnprintf(NewString.Str, NewString._Capacity, StrFormat, args);
+	NewString.Length = RequiredLen;
 
 	return NewString;
 }
