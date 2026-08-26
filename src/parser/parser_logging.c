@@ -153,9 +153,14 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		else
 		{
 			printf("<SIZE_OF>");
-			PrintExpressionNode(Node->Expression.Sizeof.Operand, Depth + 1);
-			printf("\n");
+			PrintNode(Node->Expression.Sizeof.Operand, Depth + 1);
 		}
+		break;
+	case EXP_OP_CAST:
+		printf("<CAST: ");
+		PrintObj_AsParam(&Node->Expression.Cast.TargetTypeDeclarator->Obj);
+		printf(">\n");
+		PrintNode(Node->Expression.Cast.Operand, Depth + 1);
 	}
 }
 

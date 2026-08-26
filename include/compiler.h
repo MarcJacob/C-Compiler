@@ -769,6 +769,7 @@ enum EXPRESSION_TYPE
 	EXP_OP,				// Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
 	EXP_FUNC_CALL,		// Expression is a function call's return value.
 	EXP_OP_SIZEOF,		// Special operator expression for sizeof.
+	EXP_OP_CAST,		// Special operator expression for casts.
 };
 
 // Returns whether the passed type of expression is supposed to have sub-expressions.
@@ -823,6 +824,12 @@ struct Expression
 			struct AST_Node* Operand;
 			ui8 IsDeclarator; // Whether this sizeof targets a declarator / type or an expression.
 		} Sizeof;
+
+		struct
+		{
+			struct AST_Node* Operand;
+			struct AST_Node* TargetTypeDeclarator;
+		} Cast;
 	};
 
 };

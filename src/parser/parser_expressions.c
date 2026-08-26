@@ -2,6 +2,8 @@
 
 #include "parser.h"
 
+static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser);
+
 // Attempts to parse the next available token as a literal expression.
 static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser)
 {
@@ -107,7 +109,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
-		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Function expressionable.");
 	PARSE_FAIL:
 		if (FunctionExpressionableNode != NULL) FreeNode(FunctionExpressionableNode);
 		Parser->TokenIndex = StartTokenIndex;
@@ -180,7 +182,7 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
-		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Ternary expressionable.");
 	PARSE_FAIL:
 		FreeNode(TernaryNode);
 		FreeNode(DelimNode);
@@ -255,7 +257,7 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
-		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Sizeof expressionable.");
 	PARSE_FAIL:
 		FreeNode(SizeofNode);
 		FreeNode(OperandNode);
@@ -333,14 +335,118 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 	return SizeofNode;
 }
 
+static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
+{
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct AST_Node* CastNode = NULL;
+	struct AST_Node* DeclaratorNode = NULL;
+	struct AST_Node* OperandNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Cast expressionable.");
+	PARSE_FAIL:
+		FreeNode(CastNode);
+		FreeNode(DeclaratorNode);
+		FreeNode(OperandNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+
+	// Expect to begin with an anonymous object declarator between parenthesis as the target type.
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		goto PARSE_FAIL;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume '('.
+
+	struct DatatypeDef TargetBaseType;
+	if (!ParseDatatypeDef(Parser, &TargetBaseType, 1))
+	{
+		goto PARSE_FAIL; // Don't error out as this could still be a valid expression.
+	}
+
+	DeclaratorNode = ParseDeclarator(Parser, &TargetBaseType);
+	if (DeclaratorNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
+		goto PARSE_FAIL;
+	}
+
+	if (DeclaratorNode->Obj.Name.Length > 0)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be a declaration.");
+		goto PARSE_FAIL;
+	}
+
+	if (DeclaratorNode->Type == AST_NODE_OBJ_FUNC)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be a function.");
+		goto PARSE_FAIL;
+	}
+
+	if (DeclaratorNode->Obj.Var_ArraySizes.Size > 0)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be an array.");
+		goto PARSE_FAIL;
+	}
+
+	// Check that declarator is followed by a closing parenthesis.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+	{
+		// Do not output an error, as this may just be an expression and not a cast.
+		goto PARSE_FAIL;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume ')'.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// if the cast is followed by an opening parenthesis, get the entire expression within. Otherwise just get the next expressionable.
+	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		OperandNode = ParseExpressionableNode(Parser); // Parse only the next expressionable as operand. It will effectively be "shielded" from precedence concerns.
+	}
+	else
+	{
+		Parser_ConsumeToken(Parser); // Consume '(' so the parsed expression below will stop at the corresponding closing parenthesis.
+		OperandNode = ParseExpressionNode(Parser, 0, 0);
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+			goto PARSE_FAIL;
+		}
+	}
+
+	CastNode = AllocNewNode(AST_NODE_EXPRESSION);
+	CastNode->BufferLocation = DeclaratorNode->BufferLocation;
+	CastNode->Expression.Type = EXP_OP_CAST;
+	CastNode->Expression.Cast.TargetTypeDeclarator = DeclaratorNode;
+	CastNode->Expression.Cast.Operand = OperandNode;
+
+	return CastNode;
+}
+
 // Parses a single "expression component" from the next tokens and the previously parsed expression.
 // An expressionable is an expression node that is either a leaf node, or incomplete in the case of operators.
 // They can either be built from a single token or trigger a more complex parsing system that ends up forming
 // its own expression tree. The only commonality between expressionables is that they are "atomic" in the way they're parsed.
-static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
+static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel)
 {
 	struct AST_Node* Expressionable = NULL;
 
+PARSE_EXPRESSIONABLE:
 	// Handle all valid Expressionable types.
 	// For this determination to go a little faster, put the simplest or most specific types at the top
 	// since they are faster to discard as a possibility.
@@ -352,14 +458,21 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_ArrayAccess(Parser);
 	if (Expressionable == NULL)
+		Expressionable = ParseExpressionable_Cast(Parser);
+	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Function(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Operator(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Variable(Parser);
 
-	if (Expressionable == NULL)
-		return NULL;
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (Expressionable == NULL && Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		Parser_ConsumeToken(Parser); // Consume '('.
+		*ParenthesisLevel = *ParenthesisLevel + 1;
+		goto PARSE_EXPRESSIONABLE;
+	}
 
 	return Expressionable;
 }
@@ -512,18 +625,8 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 			return NULL;
 		}
 
-		// Look for opening parenthesis.
-		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
-		{
-			Parser_ConsumeToken(Parser);
-			NextToken = Parser_PeekToken(Parser);
-			if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
-			ParenthesisLevel++;
-		}
-
 		// Parse next available expressionable.
-		RightOperand = ParseExpressionableNode(Parser);
+		RightOperand = ParseExpressionableNode(Parser, &ParenthesisLevel);
 		if (RightOperand == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token while parsing right operand for operator.");
@@ -599,17 +702,6 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 
 	ui8 ParenthesisLevel = 0;
 
-	// Check for opening parenthesis, before the first expressionable is parsed.
-	// After that, it can only increase while parsing the right operand of an operator.
-	while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
-	{
-		Parser_ConsumeToken(Parser);
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
-		ParenthesisLevel++;
-	}
-
 	// Constantly try to update the root node to cover the next expressionables / sub-expression that are found until a stop point is reached.
 	for (;;)
 	{
@@ -635,7 +727,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 		}
 
 		// Get the next node composing the expression.
-		struct AST_Node* NextNode = ParseExpressionableNode(Parser);
+		struct AST_Node* NextNode = ParseExpressionableNode(Parser, &ParenthesisLevel);
 		if (NextNode == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token in expression.");
