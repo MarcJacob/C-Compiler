@@ -244,6 +244,95 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 	return TernaryNode;
 }
 
+static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
+{
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct AST_Node* SizeofNode = NULL;
+	struct AST_Node* OperandNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+	PARSE_FAIL:
+		FreeNode(SizeofNode);
+		FreeNode(OperandNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+
+	// Check that we're starting with a sizeof keyword.
+	if (!Token_IsKeyword(NextToken, KEYWORD_SIZEOF))
+	{
+		goto PARSE_FAIL;
+	}
+	Parser_ConsumeToken(Parser); // Consume 'sizeof'.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	SizeofNode = AllocNewNode(AST_NODE_EXPRESSION);
+	SizeofNode->Expression.Type = EXP_OP_SIZEOF;
+	SizeofNode->Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+
+	// If an opening parenthesis is found, attempt to parse a datatype / declarator pair first.
+	// If that fails, or no parenthesis are found, parse an expression.
+	
+	if (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
+	{
+		Parser_ConsumeToken(Parser); // Consume '('.
+
+		struct DatatypeDef Type;
+		if (ParseDatatypeDef(Parser, &Type, 1)
+			&& (OperandNode = ParseDeclarator(Parser, &Type)) != NULL)
+		{
+			if (OperandNode->Obj.Name.Length > 0)
+			{
+				// Deny any named object declarations.
+				Parser_Error(Parser, OperandNode->BufferLocation, "Sizeof operand may not be a declaration.");
+				goto PARSE_FAIL;
+			}
+			if (OperandNode->Type == AST_NODE_OBJ_FUNC)
+			{
+				// Deny function declarations.
+				Parser_Error(Parser, OperandNode->BufferLocation, "Sizeof operand may not be a function.");
+				goto PARSE_FAIL;
+			}
+
+			SizeofNode->Expression.Sizeof.IsDeclarator = 1;
+		}
+		else
+		{
+			OperandNode = ParseExpressionNode(Parser, 0, 0);
+		}	
+
+		// Check that we have a closing parenthesis after declarator or expression.
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Expected ')' token.");
+			goto PARSE_FAIL;
+		}
+
+		Parser_ConsumeToken(Parser); // Consume ')'.
+		NextToken = Parser_PeekToken(Parser);
+	}
+	else
+	{
+		OperandNode = ParseExpressionNode(Parser, 0, 1);
+		if (OperandNode == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
+			goto PARSE_FAIL;
+		}
+	}
+
+	SizeofNode->Expression.Sizeof.Operand = OperandNode;
+	return SizeofNode;
+}
+
 // Parses a single "expression component" from the next tokens and the previously parsed expression.
 // An expressionable is an expression node that is either a leaf node, or incomplete in the case of operators.
 // They can either be built from a single token or trigger a more complex parsing system that ends up forming
@@ -258,6 +347,8 @@ static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 	Expressionable = ParseExpressionable_Literal(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Ternary(Parser);
+	if (Expressionable == NULL)
+		Expressionable = ParseExpressionable_Sizeof(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_ArrayAccess(Parser);
 	if (Expressionable == NULL)

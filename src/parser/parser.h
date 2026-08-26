@@ -133,6 +133,8 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 // Gathers all statement nodes directly or indirectly contained inside the given root statement node into the provided Out vector.
 void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
 
+// Parses a single declarator / obj node of the given return type.
+struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType);
 // Parses a set of declarators / obj nodes of the given type into the OutObjNodes vector. 
 ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, struct Vector* OutObjNodes);
 

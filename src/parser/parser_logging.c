@@ -30,6 +30,24 @@ static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Dept
 	PrintNode(Node, Depth + 1);
 }
 
+static void PrintParamList(struct Vector* Params);
+static void PrintObj_AsParam(struct ObjDeclarator* Param)
+{
+	PrintDatatypeName(&Param->ReturnType);
+	if (Param->FuncPointerLevel > 0)
+	{
+		printf(" (");
+		for (i8 j = 0; j < Param->FuncPointerLevel; j++) printf("*");
+		if (Param->Name.Length > 0) printf("%s", Param->Name.Str);
+		printf(")");
+		PrintParamList(&Param->Func_Params);
+	}
+	else if (Param->Name.Length > 0)
+	{
+		printf(" %s", Param->Name.Str);
+	}
+}
+
 // Prints a function / function pointer's parameter list inline, comma-separated and wrapped in
 // parentheses (eg. "(int a, void (*callback)(int x))"). Always emits parens, even when Params is empty,
 // so the declarator still reads as callable rather than looking like a simple pointer.
@@ -41,19 +59,7 @@ static void PrintParamList(struct Vector* Params)
 		if (i > 0) printf(", ");
 
 		struct ObjDeclarator* Param = &Vector_GetValueAt(*Params, struct AST_Node*, i)->Obj;
-		PrintDatatypeName(&Param->ReturnType);
-		if (Param->FuncPointerLevel > 0)
-		{
-			printf(" (");
-			for (i8 j = 0; j < Param->FuncPointerLevel; j++) printf("*");
-			if (Param->Name.Length > 0) printf("%s", Param->Name.Str);
-			printf(")");
-			PrintParamList(&Param->Func_Params);
-		}
-		else if (Param->Name.Length > 0)
-		{
-			printf(" %s", Param->Name.Str);
-		}
+		PrintObj_AsParam(Param);
 	}
 	printf(")");
 }
@@ -137,6 +143,19 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		for (int i = 0; i < Node->Expression.FunctionCall.Params.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Expression.FunctionCall.Params, struct AST_Node*, i), Depth + 1);
 		break;
+	case EXP_OP_SIZEOF:
+		if (Node->Expression.Sizeof.IsDeclarator)
+		{
+			printf("<SIZE_OF: ");
+			PrintObj_AsParam(&Node->Expression.Sizeof.Operand->Obj);
+			printf(">\n");
+		}
+		else
+		{
+			printf("<SIZE_OF>");
+			PrintExpressionNode(Node->Expression.Sizeof.Operand, Depth + 1);
+			printf("\n");
+		}
 	}
 }
 

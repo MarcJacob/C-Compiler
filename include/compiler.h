@@ -125,7 +125,7 @@ enum TOKEN_SYMBOL
 	SYMBOL_OP_RIGHT_SHIFT_ASSIGN,	// >>=
 
 	SYMBOL_OP_STRUCT_DEREF,			// ->
-	SYMBOL_OP_STRUCT_ACCESS,			// .
+	SYMBOL_OP_STRUCT_ACCESS,		// .
 };
 
 // Returns 1 if the passed symbol corresponds to a left-unary operator.
@@ -581,13 +581,15 @@ enum TOKEN_KEYWORD
 	KEYWORD_CONTINUE,
 	KEYWORD_RETURN,
 	KEYWORD_GOTO,
+
+	// Special operators 
+	KEYWORD_SIZEOF, // Converted to SYMBOL_OP_SIZEOF during parsing.
 };
 
 inline ui8 Keyword_IsPrimitiveType(enum TOKEN_KEYWORD Keyword)
 {
 	return Keyword >= KEYWORD_VOID && Keyword <= KEYWORD_DOUBLE;
 }
-
 
 inline ui8 Keyword_IsTypeSpecifier(enum TOKEN_KEYWORD Keyword)
 {
@@ -633,6 +635,8 @@ static const struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 	{ KEYWORD_CONTINUE, "continue" },
 	{ KEYWORD_RETURN, "return" },
 	{ KEYWORD_GOTO, "goto" },
+
+	{ KEYWORD_SIZEOF, "sizeof" },
 };
 
 // Returns the string representation of a Keyword token value (eg. KEYWORD_RETURN -> "return"), or NULL if not found.
@@ -763,7 +767,8 @@ enum EXPRESSION_TYPE
 	EXP_VAR_ACCESS,		// Expression accesses a variable value (for reading or writing).
 
 	EXP_OP,				// Expression is a unary or binary operator applied over one or two operand sub-expressions located to either side.
-	EXP_FUNC_CALL,	// Expression is a function call's return value.
+	EXP_FUNC_CALL,		// Expression is a function call's return value.
+	EXP_OP_SIZEOF,		// Special operator expression for sizeof.
 };
 
 // Returns whether the passed type of expression is supposed to have sub-expressions.
@@ -774,6 +779,9 @@ static inline ui8 Expression_IsLeafType(enum EXPRESSION_TYPE Type)
 
 // Expression tree structure combining operators and operands until reaching "leaf expressions".
 // First parsed during Parsing, then retained within validated trees to emit instructions from.
+// TODO: Expressions were recently separated from AST_Nodes, so a lot of code has to be refactored
+// once we start linking Expressions to other Expressions instead of AST_Nodes directly.
+// Ideally we end up in a situation where only Root Expressions are wrapped in an AST_Node.
 struct Expression
 {
 	struct DatatypeDef ResultType; // Expected return type for this expression.
@@ -809,6 +817,12 @@ struct Expression
 			struct String_ANSI FunctionName;
 			struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
 		} FunctionCall;
+
+		struct
+		{
+			struct AST_Node* Operand;
+			ui8 IsDeclarator; // Whether this sizeof targets a declarator / type or an expression.
+		} Sizeof;
 	};
 
 };
