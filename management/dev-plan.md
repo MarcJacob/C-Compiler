@@ -17,7 +17,7 @@
 - Collects/formats reported errors and surfaces them as a console message. DONE
 - Non-assert: distinct from `ASSERT` (which guards internal invariants) — this handles expected failure cases (bad input, invalid source).
 
-## Step 4 — Tokenizer (Complete) [WIP]
+## Step 4 — Tokenizer [WIP]
 
 - Extend the tokenizer to cover the full C token set:
   - All core C operators. [DONE]
@@ -29,9 +29,9 @@
   - Literal numbers (int). [DONE]
   - Literal numbers (float and double).
   - `extern` keyword (companion to multi-file input support in the backlog below).
-  - `typedef` keyword.
-  - `sizeof` keyword.
-  - `?` symbol (for the ternary operator).
+  - `typedef` keyword. [DONE]
+  - `sizeof` keyword. [DONE]
+  - `?` symbol (for the ternary operator). [DONE]
 - Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [DONE]
 
 ## Step 5 — Parser [WIP]
@@ -50,19 +50,19 @@
   - Goto statement parsing.
   - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
-  - Array & Array Access operator parsing.
+  - Array & Array Access operator parsing. [DONE]
   - Struct parsing. [WIP]
     - Named & anonymous struct declaration/definition via the shared datatype-prefix parser, including forward declarations. [DONE]
     - Inline variable declaration(s) following a struct body, including pointer levels. [DONE]
     - Bitfield members (e.g. `int x : 4;`).
   - Union parsing.
   - Enum parsing.
-  - Typedef parsing.
+  - Typedef parsing. [DONE]
   - Expression parsing. [WIP]
     - Function call expressionables. [DONE]
-    - `sizeof` operator (needs a new `KEYWORD_SIZEOF` token).
+    - `sizeof` operator. [DONE]
     - Cast expressions (`(type)expr`).
-    - Ternary operator `?:` (needs a new `?` symbol token - not yet in `TOKEN_SYMBOL`).
+    - Ternary operator `?:`. [DONE]
   - Initializer lists for arrays/structs (e.g. `int a[3] = {1,2,3};`).
   - Parenthesized/function-pointer declarators (e.g. `int (*fp)(int,int);`), unified with function/variable declarator parsing via a shared `ParseDeclarator`/`ParseDeclarators` mechanism. [DONE]
 
