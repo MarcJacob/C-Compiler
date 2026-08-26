@@ -177,45 +177,47 @@ static inline ui8 Symbol_IsBinaryOp(enum TOKEN_SYMBOL Symbol)
 {
 	switch (Symbol)
 	{
-		case SYMBOL_OP_ARRAY_ACCESS: // Special operator - Left operand is accessed address, right operand is index expression. Uses dedicated parsing function.
-		case SYMBOL_OP_ADD:
-		case SYMBOL_OP_AMB_MINUS:
-		case SYMBOL_OP_SUB:
-		case SYMBOL_OP_AMB_STAR:
-		case SYMBOL_OP_MULT:
-		case SYMBOL_OP_DIV:
-		case SYMBOL_OP_MOD:
-		case SYMBOL_OP_AND:
-		case SYMBOL_OP_AMB_AMP:
-		case SYMBOL_OP_BITWISE_AND:
-		case SYMBOL_OP_OR:
-		case SYMBOL_OP_BITWISE_OR:
-		case SYMBOL_OP_BITWISE_XOR:
-		case SYMBOL_OP_RIGHT_SHIFT:
-		case SYMBOL_OP_GREATER_EQUAL:
-		case SYMBOL_OP_GREATER:
-		case SYMBOL_OP_LEFT_SHIFT:
-		case SYMBOL_OP_LOWER_EQUAL:
-		case SYMBOL_OP_LOWER:
-		case SYMBOL_OP_EQUAL:
-		case SYMBOL_OP_ASSIGN:
-		case SYMBOL_OP_UNEQUAL:
-		case SYMBOL_OP_ADD_ASSIGN:
-		case SYMBOL_OP_SUB_ASSIGN:
-		case SYMBOL_OP_MULT_ASSIGN:
-		case SYMBOL_OP_DIV_ASSIGN:
-		case SYMBOL_OP_MOD_ASSIGN:
-		case SYMBOL_OP_BITWISE_AND_ASSIGN:
-		case SYMBOL_OP_BITWISE_OR_ASSIGN:
-		case SYMBOL_OP_BITWISE_XOR_ASSIGN:
-		case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
-		case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
-		case SYMBOL_OP_STRUCT_DEREF:
-		case SYMBOL_OP_STRUCT_ACCESS:
-		case SYMBOL_OP_COMMA:
-			return 1;
-		default:
-			return 0;
+	case SYMBOL_OP_TERNARY_BRANCH:
+	case SYMBOL_OP_TERNARY_DELIM:
+	case SYMBOL_OP_ARRAY_ACCESS: // Special operator - Left operand is accessed address, right operand is index expression. Uses dedicated parsing function.
+	case SYMBOL_OP_ADD:
+	case SYMBOL_OP_AMB_MINUS:
+	case SYMBOL_OP_SUB:
+	case SYMBOL_OP_AMB_STAR:
+	case SYMBOL_OP_MULT:
+	case SYMBOL_OP_DIV:
+	case SYMBOL_OP_MOD:
+	case SYMBOL_OP_AND:
+	case SYMBOL_OP_AMB_AMP:
+	case SYMBOL_OP_BITWISE_AND:
+	case SYMBOL_OP_OR:
+	case SYMBOL_OP_BITWISE_OR:
+	case SYMBOL_OP_BITWISE_XOR:
+	case SYMBOL_OP_RIGHT_SHIFT:
+	case SYMBOL_OP_GREATER_EQUAL:
+	case SYMBOL_OP_GREATER:
+	case SYMBOL_OP_LEFT_SHIFT:
+	case SYMBOL_OP_LOWER_EQUAL:
+	case SYMBOL_OP_LOWER:
+	case SYMBOL_OP_EQUAL:
+	case SYMBOL_OP_ASSIGN:
+	case SYMBOL_OP_UNEQUAL:
+	case SYMBOL_OP_ADD_ASSIGN:
+	case SYMBOL_OP_SUB_ASSIGN:
+	case SYMBOL_OP_MULT_ASSIGN:
+	case SYMBOL_OP_DIV_ASSIGN:
+	case SYMBOL_OP_MOD_ASSIGN:
+	case SYMBOL_OP_BITWISE_AND_ASSIGN:
+	case SYMBOL_OP_BITWISE_OR_ASSIGN:
+	case SYMBOL_OP_BITWISE_XOR_ASSIGN:
+	case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
+	case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
+	case SYMBOL_OP_STRUCT_DEREF:
+	case SYMBOL_OP_STRUCT_ACCESS:
+	case SYMBOL_OP_COMMA:
+		return 1;
+	default:
+		return 0;
 	}
 }
 
@@ -402,6 +404,14 @@ static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
 			SYMBOL_OP_COMMA,
 		}, 1
 	},
+
+	// Ternary operators, the sort of inseparable top-level couple a C programmer can never find
+	{
+		{
+			SYMBOL_OP_TERNARY_BRANCH,
+			SYMBOL_OP_TERNARY_DELIM,
+		}, 1
+	},
 };
 
 static inline void Symbol_GetOpParseRules(enum TOKEN_SYMBOL Op, ui8* OutPrecedenceLevel, ui8* OutIsRightToLeft)
@@ -470,7 +480,9 @@ static const struct SymbolToStringPair SYMBOL_TO_STRING_TABLE[] =
 	{ SYMBOL_BRACE_OPEN, "{" },
 	{ SYMBOL_BRACE_CLOSE, "}" },
 
-	{ SYMBOL_OP_ARRAY_ACCESS, "index"},
+	{ SYMBOL_OP_TERNARY_BRANCH, "?" },
+	{ SYMBOL_OP_TERNARY_DELIM, ":" },
+	{ SYMBOL_OP_ARRAY_ACCESS, "index" },
 	{ SYMBOL_OP_STRUCT_ACCESS, "." },
 	{ SYMBOL_OP_STRUCT_DEREF, "->" },
 	{ SYMBOL_OP_AMB_INCREMENT, "++" },

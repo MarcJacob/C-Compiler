@@ -165,18 +165,103 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	return FunctionExpressionableNode;
 }
 
+// Attempts to parse a Ternary operator node with a pre-built Ternary Delimitor operator and a parsed left operand for it.
+// The node must then be given its left operator (condition) and its right branch operand (if condition == 0).
+static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser)
+{
+	int StartTokenIndex = Parser->TokenIndex;
+
+	struct AST_Node* TernaryNode = NULL;
+	struct AST_Node* DelimNode = NULL;
+	struct AST_Node* TrueExpNode = NULL;
+	struct AST_Node* FalseExpNode = NULL;
+
+	struct Token* NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL)
+	{
+	PARSE_FAIL_EOF:
+		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing function expressionable.");
+	PARSE_FAIL:
+		FreeNode(TernaryNode);
+		FreeNode(DelimNode);
+		FreeNode(TrueExpNode);
+		Parser->TokenIndex = StartTokenIndex;
+		return NULL;
+	}
+
+	// Expect to begin with a ? operator token.
+	if (!Token_IsSymbol(NextToken, SYMBOL_OP_TERNARY_BRANCH))
+	{
+		goto PARSE_FAIL; // Not a ternary.
+	}
+
+	TernaryNode = AllocNewNode(AST_NODE_EXPRESSION);
+	TernaryNode->BufferLocation = NextToken->BufferLocation;
+	TernaryNode->Expression.Type = EXP_OP;
+	TernaryNode->Expression.Op.OperatorSymbol = SYMBOL_OP_TERNARY_BRANCH;
+
+	Parser_ConsumeToken(Parser); // Consume '?'
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	// Parse true expression, delimitor, then false expression.
+
+	TrueExpNode = ParseExpressionNode(Parser, 0, 0);
+	if (TrueExpNode == NULL || TrueExpNode->Expression.Type == EXP_NOP)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression following ternary operator.");
+		goto PARSE_FAIL;
+	}
+
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	if (!Token_IsSymbol(NextToken, SYMBOL_AMB_COLON))
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected ':' token.");
+		goto PARSE_FAIL;
+	}
+
+	Parser_ConsumeToken(Parser); // Consume ':'.
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+	FalseExpNode = ParseExpressionNode(Parser, 0, 0);
+	if (FalseExpNode == NULL)
+	{
+		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression following ternary delimitor.");
+		goto PARSE_FAIL;
+	}
+
+	DelimNode = AllocNewNode(AST_NODE_EXPRESSION);
+	DelimNode->Expression.Type = EXP_OP;
+	DelimNode->Expression.Op.OperatorSymbol = SYMBOL_OP_TERNARY_DELIM;
+	DelimNode->Expression.Op.LeftOperand = TrueExpNode;
+	DelimNode->Expression.Op.RightOperand = FalseExpNode;
+
+	TernaryNode->Expression.Op.RightOperand = DelimNode;
+	
+	return TernaryNode;
+}
+
 // Parses a single "expression component" from the next tokens and the previously parsed expression.
 // An expressionable is an expression node that is either a leaf node, or incomplete in the case of operators.
+// They can either be built from a single token or trigger a more complex parsing system that ends up forming
+// its own expression tree. The only commonality between expressionables is that they are "atomic" in the way they're parsed.
 static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser)
 {
 	struct AST_Node* Expressionable = NULL;
 
 	// Handle all valid Expressionable types.
+	// For this determination to go a little faster, put the simplest or most specific types at the top
+	// since they are faster to discard as a possibility.
 	Expressionable = ParseExpressionable_Literal(Parser);
 	if (Expressionable == NULL)
-		Expressionable = ParseExpressionable_Function(Parser);
+		Expressionable = ParseExpressionable_Ternary(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_ArrayAccess(Parser);
+	if (Expressionable == NULL)
+		Expressionable = ParseExpressionable_Function(Parser);
 	if (Expressionable == NULL)
 		Expressionable = ParseExpressionable_Operator(Parser);
 	if (Expressionable == NULL)
@@ -444,7 +529,8 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 			(Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) 
 				|| (StopAtComma && Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
 				|| Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE)
-				|| Token_IsSymbol(NextToken, SYMBOL_BRACKET_CLOSE)))
+				|| Token_IsSymbol(NextToken, SYMBOL_BRACKET_CLOSE)
+				|| Token_IsSymbol(NextToken, SYMBOL_AMB_COLON)))
 		{
 			if (ConsumeStopChar)
 			{

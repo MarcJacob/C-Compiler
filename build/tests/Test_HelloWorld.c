@@ -9,6 +9,7 @@ int arr[5][10];
 
 int main(int argc, char** argv)
 {
+	int ternary_test = ((argc > 0) ? 1 : 0) + 1;
 	int a = 4, b = 2, c = 2;
 	if (foo(a, b) + (&a + 1)[a + 5] + 3 * 4 + (2 - 1) && d->x == 2)
 	{
