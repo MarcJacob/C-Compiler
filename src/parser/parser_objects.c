@@ -436,7 +436,7 @@ FUNC_PARAMS_PARSING:
 	// If the next token is an opening brace, parse a function definition.
 	else if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 	{
-		if (ObjNode->Type != AST_NODE_OBJ_FUNC)
+		if (ObjNode->Type != AST_NODE_OBJ_FUNC || !AllowInitializer)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected function definition.");
 			goto PARSE_FAIL;
@@ -446,6 +446,23 @@ FUNC_PARAMS_PARSING:
 		if (Parser->HasError || ObjNode->Obj.Func.StatementsBlock == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Error parsing function definition.");
+			goto PARSE_FAIL;
+		}
+	}
+	else if (Token_IsSymbol(NextToken, SYMBOL_AMB_COLON))
+	{
+		if (ObjNode->Type != AST_NODE_OBJ_VAR || !AllowBitCount)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected bit count assignment.");
+			goto PARSE_FAIL;
+		}
+
+		Parser_ConsumeToken(Parser); // Consume ':'.
+
+		ObjNode->Obj.Var.Initializer = ParseExpressionNode(Parser, 0, 0);
+		if (Parser->HasError || ObjNode->Obj.Var.Initializer == NULL)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Error parsing bit count assignment expression.");
 			goto PARSE_FAIL;
 		}
 	}

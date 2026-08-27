@@ -29,7 +29,7 @@ typedef struct
 
 union union_test
 {
-	int member_a;
+	int member_a : 2;
 	float member_b;
 	int_func_ptr member_c;
 };
