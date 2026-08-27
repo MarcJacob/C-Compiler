@@ -2,7 +2,7 @@
 
 #include "parser.h"
 
-static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser);
+static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel);
 
 // Attempts to parse the next available token as a literal expression.
 static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser)
@@ -287,7 +287,7 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 
 		struct DatatypeDef Type;
 		if (ParseDatatypeDef(Parser, &Type, 1)
-			&& (OperandNode = ParseDeclarator(Parser, &Type)) != NULL)
+			&& (OperandNode = ParseDeclarator(Parser, &Type, 1)) != NULL)
 		{
 			if (OperandNode->Obj.Name.Length > 0)
 			{
@@ -370,7 +370,7 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		goto PARSE_FAIL; // Don't error out as this could still be a valid expression.
 	}
 
-	DeclaratorNode = ParseDeclarator(Parser, &TargetBaseType);
+	DeclaratorNode = ParseDeclarator(Parser, &TargetBaseType, 1);
 	if (DeclaratorNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
@@ -409,10 +409,11 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	// if the cast is followed by an opening parenthesis, get the entire expression within. Otherwise just get the next expressionable.
+	// If the cast is followed by an opening parenthesis, get the entire expression within. Otherwise just get the next expressionable.
 	if (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN))
 	{
-		OperandNode = ParseExpressionableNode(Parser); // Parse only the next expressionable as operand. It will effectively be "shielded" from precedence concerns.
+		ui8 ParenthesisLevel = 0;
+		OperandNode = ParseExpressionableNode(Parser, &ParenthesisLevel); // Parse only the next expressionable as operand. It will effectively be "shielded" from precedence concerns.
 	}
 	else
 	{
@@ -712,6 +713,7 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 			(Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) 
 				|| (StopAtComma && Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
 				|| Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE)
+				|| Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE)
 				|| Token_IsSymbol(NextToken, SYMBOL_BRACKET_CLOSE)
 				|| Token_IsSymbol(NextToken, SYMBOL_AMB_COLON)))
 		{

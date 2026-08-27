@@ -4,7 +4,7 @@
 
 #include "parser_expressions.c"
 #include "parser_statements.c"
-#include "parser_structs.c"
+#include "parser_structs_enums.c"
 #include "parser_logging.c"
 
 // Returns the next Token without advancing the internal reading cursor.
@@ -95,6 +95,10 @@ void FreeNode(struct AST_Node* Node)
 		String_Free_ANSI(&Node->Struct.Type.TypeName);
 		FreeNodeVector(&Node->Struct.Members);
 		break;
+	case AST_NODE_ENUM:
+		String_Free_ANSI(&Node->Enum.Type.TypeName);
+		FreeNodeVector(&Node->Enum.Members);
+		break;
 	case AST_NODE_STATEMENT_EXP:
 		FreeNode(Node->Statement.Expression);
 		break;
@@ -151,7 +155,7 @@ void Parser_Run(struct ParserProcess* Parser)
 	{
 		if (ParseGlobal_Typedef(Parser) 
 			|| ParseGlobal_Object(Parser) 
-			|| ParseGlobal_Structs(Parser))
+			|| ParseGlobal_Struct_Union_Enum(Parser))
 		{
 			// Successfully parsed node tree.
 		}
@@ -216,10 +220,20 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 
 	enum DATATYPE_FLAGS Flags = 0;
 
+	// Perform various flag checks. TODO: Make it so those keywords can be put in any order.
+
 	// Check for static-ness.
 	if (NextToken->Keyword == KEYWORD_STATIC)
 	{
 		Flags |= DATATYPE_IS_STATIC;
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "static"
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+	}
+
+	// Check for extern.
+	if (NextToken->Keyword == KEYWORD_EXTERN)
+	{
+		Flags |= DATATYPE_IS_EXTERN;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "static"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
@@ -278,8 +292,9 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		Flags &= ~DATATYPE_IS_STRUCTURED;
 		Flags |= DATATYPE_IS_ENUM_OR_UNION;
 
-		Parser_Error(Parser, NextToken->BufferLocation, "Enum parsing is unimplemented.");
-		goto PARSE_FAIL;
+		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
 	// Determine signage.
@@ -411,7 +426,8 @@ PARSE_SUCCESS:
 }
 
 // Performs the parsing process for a single declarator / obj node.
-struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType)
+// If AllowEmpty is set, the function will be able to return an empty declarator that's just a wrapper for the given type.
+struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty)
 {
 	ASSERT(ReturnType != NULL);
 
@@ -429,7 +445,6 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 	}
 
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN)) goto PARSE_FAIL;
-
 
 	// For each declarator, parse the following:
 	// - A set of star symbols, one for each declarator-specific pointer level.
@@ -449,8 +464,11 @@ struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDe
 		&& !Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_OPEN)
 		&& NextToken->Type != TOKEN_IDENTIFIER)
 	{
-		// Return empty declarator.
-		return ObjNode;
+		// Return empty declarator if allowed, otherwise consider this a failure (with no error).
+		if (AllowEmpty)
+			return ObjNode;
+
+		goto PARSE_FAIL;
 	}
 
 	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR))
@@ -553,7 +571,7 @@ FUNC_PARAMS_PARSING:
 				goto PARSE_FAIL;
 			}
 
-			struct AST_Node* ParamObj = ParseDeclarator(Parser, &ParamDatatype);
+			struct AST_Node* ParamObj = ParseDeclarator(Parser, &ParamDatatype, 1);
 			if (ParamObj == NULL)
 			{
 				if (Parser->HasError) goto PARSE_FAIL;
@@ -643,7 +661,7 @@ FUNC_PARAMS_PARSING:
 	return ObjNode;
 }
 
-// Parses a set of obj / declarator nodes into the OutObjNodes vector.
+// Parses a set of comma-separated NON EMPTY obj / declarator nodes into the OutObjNodes vector until a non-comma is reached.
 // Returns 1 if at least one declarator was parsed successfully.
 ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, struct Vector* OutObjNodes)
 {
@@ -662,8 +680,7 @@ ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnTyp
 		return 0;
 	}
 
-	ObjNode = ParseDeclarator(Parser, ReturnType);
-	if (ObjNode == NULL) goto PARSE_FAIL;
+	ObjNode = ParseDeclarator(Parser, ReturnType, 0);
 
 	while(ObjNode != NULL)
 	{
@@ -671,19 +688,17 @@ ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnTyp
 		Vector_PushPtr(OutObjNodes, &ObjNode);
 
 		NextToken = Parser_PeekToken(Parser);
-		if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON) || Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN)) break;
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 		if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA)) Parser_ConsumeToken(Parser);
+		else break;
 
-		ObjNode = ParseDeclarator(Parser, ReturnType);
+		ObjNode = ParseDeclarator(Parser, ReturnType, 0);
 	}
 
+	// Consume next token if it's a semicolon. If it's not, leave it alone and leave caller to determine what to do with it.
 	NextToken = Parser_PeekToken(Parser);
-	if ( Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
-	{
-		// Consume final semicolon.
-		Parser_ConsumeToken(Parser);
-	}
+	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON)) Parser_ConsumeToken(Parser);
 
 	return 1;
 }
@@ -710,7 +725,7 @@ ui8 ParseGlobal_Object(struct ParserProcess* Parser)
 	}
 
 	struct Vector ObjNodes = Vector_Create(struct AST_Node*, 1);
-	if (!ParseDeclarators(Parser, &ReturnType, &ObjNodes))
+	if (!ParseDeclarators(Parser, &ReturnType, &ObjNodes) || ObjNodes.Size == 0)
 	{
 		goto PARSE_FAIL;
 	}
@@ -785,7 +800,7 @@ ui8 ParseGlobal_Typedef(struct ParserProcess* Parser)
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	struct AST_Node* DeclaratorNode = ParseDeclarator(Parser, &Type);
+	struct AST_Node* DeclaratorNode = ParseDeclarator(Parser, &Type, 0);
 	if (DeclaratorNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected declaration.");

@@ -12,10 +12,27 @@ parser\_expressions.c contains all the expression parsing code, and has a single
 
 parser\_statements.c contains all the statement parsing code, and exposes all of its non-static functions as entry points.
 
-parser\_structs.c contains all the structure parsing code, and exposes a single entry point with ParseGlobal_Structure function.
+parser\_structs_enums.c contains all the structure parsing code, and exposes a single entry point with ParseGlobal_Struct_Union_Enum function.
 
 parser\_logging.c contains all the logging code for debugging the contents of a parsed AST to stdout, and exposes a single entry point with the Parser_PrintTree function.
 	- Mostly authored by AI.
+
+# What is the parser ?
+
+The parser is the process taking in a sequence of tokens as input and giving back one or more Abstract Syntax Trees as output.
+
+The policy of the parser when it comes to catching errors is "*Could* it work in this local context ?".
+
+If ever something tries to get parsed in a way that couldn't *possibly* work, it may error. This involves "local" checks:
+	- Expression format, not allowing two binary operators next to one another, not allowing unterminated parenthesis scopes...
+	- Expecting function definitions to terminate their block before the file ends or the next function begins.
+
+It is *not* supposed to check for overall program consistency. This means some specific error scenarios should remain undetected by it:
+	- Undeclared symbol usage (the parser is not aware of previously declared symbols or what type they resolve to).
+	- Break statements outside a for or while or switch statement (parser is not usually aware of the immediate context and never aware of parent contexts / blocks).
+	- Invalid assignments (parser is not aware of what type functions or expressions or variables resolve to, or the compatibility of even primitive types among one another).
+
+The point of the parser is to produce syntax trees that can easily be *integrated*, which is specifically the step that will check whether the program DOES work in the global context.
 
 # Strategy & Guidelines
 

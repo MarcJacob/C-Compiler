@@ -186,7 +186,9 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		PrintObjDeclarator(&Node->Typedef.Declarator, Node->Typedef.Declarator.FuncPointerLevel > 0);
 		break;
 	case AST_NODE_ENUM:
-		printf("<ENUM>\n");
+		printf("<ENUM : '%s'>\n", Node->Enum.Type.TypeName.Str);
+		for (int i = 0; i < Node->Enum.Members.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Enum.Members, struct AST_Node*, i), Depth + 1);
 		break;
 	case AST_NODE_OBJ_VAR:
 	case AST_NODE_OBJ_FUNC:

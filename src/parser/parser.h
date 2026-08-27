@@ -134,7 +134,7 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
 
 // Parses a single declarator / obj node of the given return type.
-struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType);
+struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty);
 // Parses a set of declarators / obj nodes of the given type into the OutObjNodes vector. 
 ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, struct Vector* OutObjNodes);
 
@@ -144,7 +144,7 @@ ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnTyp
 ui8 ParseGlobal_Object(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Struct declaration and its definition if available.
-ui8 ParseGlobal_Structs(struct ParserProcess* Parser);
+ui8 ParseGlobal_Struct_Union_Enum(struct ParserProcess* Parser);
 
 // Attempts to parse a new AST, covering a Typedef declaration.
 ui8 ParseGlobal_Typedef(struct ParserProcess* Parser);

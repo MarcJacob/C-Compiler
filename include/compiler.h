@@ -558,6 +558,7 @@ enum TOKEN_KEYWORD
 
 	// Type modifiers
 	KEYWORD_STATIC,
+	KEYWORD_EXTERN,
 	KEYWORD_SIGNED,
 	KEYWORD_UNSIGNED,
 	KEYWORD_CONST,
@@ -614,6 +615,7 @@ static const struct KeywordToStringPair KEYWORD_TO_STRING_TABLE[] =
 	{ KEYWORD_DOUBLE, "double" },
 
 	{ KEYWORD_STATIC, "static" },
+	{ KEYWORD_EXTERN, "extern" },
 	{ KEYWORD_SIGNED, "signed" },
 	{ KEYWORD_UNSIGNED, "unsigned" },
 	{ KEYWORD_CONST, "const" },
@@ -711,11 +713,12 @@ enum DATATYPE_FLAGS
 {
 	DATATYPE_IS_UNSIGNED = 1 << 0,
 	DATATYPE_IS_STATIC = 1 << 1,
-	DATATYPE_IS_CONST = 1 << 2,
-	DATATYPE_IS_VOLATILE = 1 << 3,
-	DATATYPE_IS_STRUCTURED = 1 << 4, // If set, this type contains sub-symbols. 
-	DATATYPE_IS_ENUM_OR_UNION = 1 << 5, // If set, this is an enum if STRUCTURED is 0, or a union if STRUCTURED is 1. 
-	DATATYPE_IS_TYPEDEF = 1 << 6,  // Indicates the type is an alias to something else to be resolved during Validation.
+	DATATYPE_IS_EXTERN = 1 << 2,
+	DATATYPE_IS_CONST = 1 << 3,
+	DATATYPE_IS_VOLATILE = 1 << 4,
+	DATATYPE_IS_STRUCTURED = 1 << 5, // If set, this type contains sub-symbols. 
+	DATATYPE_IS_ENUM_OR_UNION = 1 << 6, // If set, this is an enum if STRUCTURED is 0, or a union if STRUCTURED is 1. 
+	DATATYPE_IS_TYPEDEF = 1 << 7,  // Indicates the type is an alias to something else to be resolved during Validation.
 };
 
 // Data Type information for a variable or function return value.
@@ -894,6 +897,15 @@ struct AST_Node
 
 			ui8 IsUnion : 1;			// Whether this structure acts as a union or collection of its members.
 		} Struct;
+
+		// Enum declaration / definition.
+		// Contains a set of expression nodes which declare symbols associated to a specific number automatically (vector index) or 
+		// to whatever they are assigned to.
+		struct
+		{
+			struct DatatypeDef Type; // Datatype def for this enum. Contains its name.
+			struct Vector Members; // Vector type = AST_Node*. Each expression must be a single VAR_ACCESS or an assignment with a VAR ACCESS as left operand.
+		} Enum;
 
 		// Typedef declaration.
 		// Basically just a wrapper for a Declarator to be re-used (recursively if its return type is an alias)

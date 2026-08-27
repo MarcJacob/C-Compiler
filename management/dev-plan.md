@@ -17,7 +17,7 @@
 - Collects/formats reported errors and surfaces them as a console message. DONE
 - Non-assert: distinct from `ASSERT` (which guards internal invariants) — this handles expected failure cases (bad input, invalid source).
 
-## Step 4 — Tokenizer [WIP]
+## Step 4 — Tokenizer [DONE]
 
 - Extend the tokenizer to cover the full C token set:
   - All core C operators. [DONE]
@@ -28,7 +28,7 @@
   - Literal chars. [DONE]
   - Literal numbers (int). [DONE]
   - Literal numbers (float and double).
-  - `extern` keyword (companion to multi-file input support in the backlog below).
+  - `extern` keyword [DONE]
   - `typedef` keyword. [DONE]
   - `sizeof` keyword. [DONE]
   - `?` symbol (for the ternary operator). [DONE]
@@ -82,6 +82,7 @@
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
 - Handle multiple input files.
 - Preprocessor.
+- Parser: Rework declarator parsing so that functions can be DEFINED anywhere a full symbol declaration declarator is allowed, even inline with a struct / enum def or a multi variable declaration (insanity).
 
 ---
 

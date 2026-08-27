@@ -1,6 +1,8 @@
 // Single file test.
 // Hello world program.
 
+extern int extern_func(int a);
+
 //float cast_test = (float)5;
 int sizeof_test = sizeof(int****);
 
@@ -17,6 +19,12 @@ struct struct_test
 	int member_a;
 	float member_b;
 	int_func_ptr member_c;
+
+	enum nested_enum_test
+	{
+		MEMBER_A,
+		MEMBER_B
+	} enumerated_member;
 };
 
 union union_test
@@ -24,6 +32,13 @@ union union_test
 	int member_a;
 	float member_b;
 	int_func_ptr member_c;
+};
+
+enum enum_test
+{
+	MEMBER_A,
+	MEMBER_B,
+	MEMBER_C = 44,
 };
 
 int main(int argc, char** argv)
