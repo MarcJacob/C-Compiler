@@ -286,8 +286,8 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 		Parser_ConsumeToken(Parser); // Consume '('.
 
 		struct DatatypeDef Type;
-		if (ParseDatatypeDef(Parser, &Type, 1)
-			&& (OperandNode = ParseDeclarator(Parser, &Type, 1)) != NULL)
+		if (ParseDatatypeDef(Parser, &Type)
+			&& (OperandNode = ParseObject_VarFunc(Parser, &Type, 1, 0, 0)) != NULL)
 		{
 			if (OperandNode->Obj.Name.Length > 0)
 			{
@@ -340,7 +340,7 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	int StartTokenIndex = Parser->TokenIndex;
 
 	struct AST_Node* CastNode = NULL;
-	struct AST_Node* DeclaratorNode = NULL;
+	struct AST_Node* ObjNode = NULL;
 	struct AST_Node* OperandNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -350,7 +350,7 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Cast expressionable.");
 	PARSE_FAIL:
 		FreeNode(CastNode);
-		FreeNode(DeclaratorNode);
+		FreeNode(ObjNode);
 		FreeNode(OperandNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
@@ -365,31 +365,31 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	Parser_ConsumeToken(Parser); // Consume '('.
 
 	struct DatatypeDef TargetBaseType;
-	if (!ParseDatatypeDef(Parser, &TargetBaseType, 1))
+	if (!ParseDatatypeDef(Parser, &TargetBaseType))
 	{
 		goto PARSE_FAIL; // Don't error out as this could still be a valid expression.
 	}
 
-	DeclaratorNode = ParseDeclarator(Parser, &TargetBaseType, 1);
-	if (DeclaratorNode == NULL)
+	ObjNode = ParseObject_VarFunc(Parser, &TargetBaseType, 1, 0, 0);
+	if (ObjNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
 		goto PARSE_FAIL;
 	}
 
-	if (DeclaratorNode->Obj.Name.Length > 0)
+	if (ObjNode->Obj.Name.Length > 0)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be a declaration.");
 		goto PARSE_FAIL;
 	}
 
-	if (DeclaratorNode->Type == AST_NODE_OBJ_FUNC)
+	if (ObjNode->Type == AST_NODE_OBJ_FUNC)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be a function.");
 		goto PARSE_FAIL;
 	}
 
-	if (DeclaratorNode->Obj.Var_ArraySizes.Size > 0)
+	if (ObjNode->Obj.Var.ArraySizes.Size > 0)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be an array.");
 		goto PARSE_FAIL;
@@ -431,9 +431,9 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	}
 
 	CastNode = AllocNewNode(AST_NODE_EXPRESSION);
-	CastNode->BufferLocation = DeclaratorNode->BufferLocation;
+	CastNode->BufferLocation = ObjNode->BufferLocation;
 	CastNode->Expression.Type = EXP_OP_CAST;
-	CastNode->Expression.Cast.TargetTypeDeclarator = DeclaratorNode;
+	CastNode->Expression.Cast.TargetTypeDeclarator = ObjNode;
 	CastNode->Expression.Cast.Operand = OperandNode;
 
 	return CastNode;

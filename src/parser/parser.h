@@ -108,9 +108,7 @@ static inline struct DatatypeDef GetPrimitiveDatatypeDef_String()
 }
 
 // Attempts to parse the next few tokens into a DatatypeDef structure.
-// AllowVoid determines whether non-pointer void type is considered valid.
-static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef,
-	ui8 AllowVoid);
+static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef);
 
 // Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
 // If NULL is returned, then the parser has encountered an error or failed to read any expressionable tokens.
@@ -122,31 +120,19 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 // The resulting operator expression node will require a left operand as the thing being array-accessed.
 struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser);
 
+// Root statement parsing function, used when parsing a function definition.
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseSwitchStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser);
-struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol);
 struct AST_Node* ParseStatementNode(struct ParserProcess* Parser);
 
 // Gathers all statement nodes directly or indirectly contained inside the given root statement node into the provided Out vector.
 void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
 
-// Parses a single declarator / obj node of the given return type.
-struct AST_Node* ParseDeclarator(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty);
-// Parses a set of declarators / obj nodes of the given type into the OutObjNodes vector. 
-ui8 ParseDeclarators(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, struct Vector* OutObjNodes);
+// Parses a single variable or function object node of the given return type. 
+// The allowed initializers type parameters allow triggering an error when encountering a disallowed type.
+struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty, ui8 AllowInitializer, ui8 AllowBitCount);
 
-// Root Parser functions
-
-// Attempts to parse a new AST, covering an Object (Variable or Function) declaration and definition if available.
-ui8 ParseGlobal_Object(struct ParserProcess* Parser);
-
-// Attempts to parse a new AST, covering a Struct declaration and its definition if available.
-ui8 ParseGlobal_Struct_Union_Enum(struct ParserProcess* Parser);
-
-// Attempts to parse a new AST, covering a Typedef declaration.
-ui8 ParseGlobal_Typedef(struct ParserProcess* Parser);
+// Root parsing function, used to parse the start of ASTs.
+// Parses objects until a "break" is reached, usually a semicolon.
+ui8 ParseNextRootObjects(struct ParserProcess* Parser);
 
 #endif // PARSER_INCLUDED

@@ -31,20 +31,20 @@ static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Dept
 }
 
 static void PrintParamList(struct Vector* Params);
-static void PrintObj_AsParam(struct ObjDeclarator* Param)
+static void PrintObj_AsParam(struct AST_Node* Param)
 {
-	PrintDatatypeName(&Param->ReturnType);
-	if (Param->FuncPointerLevel > 0)
+	PrintDatatypeName(&Param->Obj.ReturnType);
+	if (Param->Type == AST_NODE_OBJ_VAR && Param->Obj.Var.FuncPointerLevel > 0)
 	{
 		printf(" (");
-		for (i8 j = 0; j < Param->FuncPointerLevel; j++) printf("*");
-		if (Param->Name.Length > 0) printf("%s", Param->Name.Str);
+		for (i8 j = 0; j < Param->Obj.Var.FuncPointerLevel; j++) printf("*");
+		if (Param->Obj.Name.Length > 0) printf("%s", Param->Obj.Name.Str);
 		printf(")");
-		PrintParamList(&Param->Func_Params);
+		PrintParamList(&Param->Obj.Var.FuncPointer_Params);
 	}
-	else if (Param->Name.Length > 0)
+	else if (Param->Obj.Name.Length > 0)
 	{
-		printf(" %s", Param->Name.Str);
+		printf(" %s", Param->Obj.Name.Str);
 	}
 }
 
@@ -58,52 +58,42 @@ static void PrintParamList(struct Vector* Params)
 	{
 		if (i > 0) printf(", ");
 
-		struct ObjDeclarator* Param = &Vector_GetValueAt(*Params, struct AST_Node*, i)->Obj;
+		struct AST_Node* Param = Vector_GetValueAt(*Params, struct AST_Node*, i);
 		PrintObj_AsParam(Param);
 	}
 	printf(")");
 }
 
-// Prints an ObjDeclarator's name and type (datatype name, pointer stars, function pointer
-// dereference parens if FuncPointerLevel > 0, and an inline parameter list if IsFuncLike).
-// Shared by Obj nodes (which wrap this with a VARIABLE/FUNCTION/FUNC_POINTER label and a body /
-// initializer) and Typedef nodes (which wrap it with a plain TYPEDEF label and nothing else).
-static void PrintObjDeclarator(struct ObjDeclarator* Declarator, ui8 IsFuncLike)
+static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 {
-	printf("'%s' : ", Declarator->Name.Str);
-	PrintDatatypeName(&Declarator->ReturnType);
-	if (Declarator->FuncPointerLevel > 0)
+	ui8 IsFunc = Node->Type == AST_NODE_OBJ_FUNC;
+	ui8 IsFuncPointer = !IsFunc && Node->Obj.Var.FuncPointerLevel > 0;
+
+	printf("<%s: ", IsFunc ? "FUNCTION" : (IsFuncPointer ? "FUNC_POINTER" : "VARIABLE"));
+
+	printf("'%s' : ", Node->Obj.Name.Str);
+	PrintDatatypeName(&Node->Obj.ReturnType);
+	if (IsFuncPointer)
 	{
 		printf(" (");
-		for (i8 i = 0; i < Declarator->FuncPointerLevel; i++) printf("*");
+		for (i8 i = 0; i < Node->Obj.Var.FuncPointerLevel; i++) printf("*");
 		printf(")");
 	}
 
-	if (IsFuncLike) PrintParamList(&Declarator->Func_Params);
+	if (IsFuncPointer || IsFunc) PrintParamList(&Node->Obj.Func.Params);
 
-	for (i8 i = 0; i < Declarator->Var_ArraySizes.Size; i++)
+	if (!IsFunc)
+	for (i8 i = 0; i < Node->Obj.Var.ArraySizes.Size; i++)
 	{
 		printf("[]");
 	}
 
 	printf(">\n");
-}
-
-// Prints an Obj declarator node (AST_NODE_OBJ_VAR / AST_NODE_OBJ_FUNC), covering plain variables,
-// function pointers (FuncPointerLevel > 0) and functions, then recurses into its
-// body (function) or initializer expression (variable / function pointer).
-static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
-{
-	ui8 IsFunc = Node->Type == AST_NODE_OBJ_FUNC;
-	ui8 IsFuncPointer = Node->Obj.FuncPointerLevel > 0;
-
-	printf("<%s: ", IsFunc ? "FUNCTION" : (IsFuncPointer ? "FUNC_POINTER" : "VARIABLE"));
-	PrintObjDeclarator(&Node->Obj, IsFunc || IsFuncPointer);
 
 	if (IsFunc)
-		PrintLabeledNode("BODY", Node->Obj.Func_Block, Depth + 1);
+		PrintLabeledNode("BODY", Node->Obj.Func.StatementsBlock, Depth + 1);
 	else
-		PrintLabeledNode("INIT", Node->Obj.Var_InitExpression, Depth + 1);
+		PrintLabeledNode("INIT", Node->Obj.Var.Initializer, Depth + 1);
 }
 
 // Prints an Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
@@ -147,7 +137,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		if (Node->Expression.Sizeof.IsDeclarator)
 		{
 			printf("<SIZE_OF: ");
-			PrintObj_AsParam(&Node->Expression.Sizeof.Operand->Obj);
+			PrintObj_AsParam(Node->Expression.Sizeof.Operand);
 			printf(">\n");
 		}
 		else
@@ -158,7 +148,7 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 		break;
 	case EXP_OP_CAST:
 		printf("<CAST: ");
-		PrintObj_AsParam(&Node->Expression.Cast.TargetTypeDeclarator->Obj);
+		PrintObj_AsParam(Node->Expression.Cast.TargetTypeDeclarator);
 		printf(">\n");
 		PrintNode(Node->Expression.Cast.Operand, Depth + 1);
 	}
@@ -171,24 +161,31 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 
 	PrintIndent(Depth);
 
+	if (Node->Type == AST_NODE_OBJ_VAR
+		|| Node->Type == AST_NODE_OBJ_FUNC
+		|| Node->Type == AST_NODE_OBJ_STRUCT
+		|| Node->Type == AST_NODE_OBJ_ENUM)
+	{
+		if (Node->Obj.IsTypedef)
+		{
+			printf("[TYPEDEF]");
+		}
+	}
+
 	switch (Node->Type)
 	{
-	case AST_NODE_STRUCT:
-		if (!Node->Struct.IsUnion)
-			printf("<STRUCT: '%s'>\n", Node->Struct.Type.TypeName.Str);
+	case AST_NODE_OBJ_STRUCT:
+		if (!Node->Obj.Struct.IsUnion)
+			printf("<STRUCT: '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
 		else
-			printf("<UNION: '%s'>\n", Node->Struct.Type.TypeName.Str);
-		for (int i = 0; i < Node->Struct.Members.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Struct.Members, struct AST_Node*, i), Depth + 1);
+			printf("<UNION: '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
+		for (int i = 0; i < Node->Obj.Struct.Members.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Obj.Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;
-	case AST_NODE_TYPEDEF:
-		printf("<TYPEDEF: ");
-		PrintObjDeclarator(&Node->Typedef.Declarator, Node->Typedef.Declarator.FuncPointerLevel > 0);
-		break;
-	case AST_NODE_ENUM:
-		printf("<ENUM : '%s'>\n", Node->Enum.Type.TypeName.Str);
-		for (int i = 0; i < Node->Enum.Members.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Enum.Members, struct AST_Node*, i), Depth + 1);
+	case AST_NODE_OBJ_ENUM:
+		printf("<ENUM : '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
+		for (int i = 0; i < Node->Obj.Enum.Members.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Obj.Enum.Members, struct AST_Node*, i), Depth + 1);
 		break;
 	case AST_NODE_OBJ_VAR:
 	case AST_NODE_OBJ_FUNC:
@@ -238,10 +235,10 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		PrintLabeledNode("POST", Node->Statement.For.PostLoopExpression, Depth + 1);
 		PrintLabeledNode("BODY", Node->Statement.For.ExecStatement, Depth + 1);
 		break;
-	case AST_NODE_STATEMENT_VAR_DEC:
-		printf("<VAR_DECLARATION>\n");
-		for (int i = 0; i < Node->Statement.VarDeclaration.Declarators.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Statement.VarDeclaration.Declarators, struct AST_Node*, i), Depth + 1);
+	case AST_NODE_STATEMENT_OBJ_DEC:
+		printf("<OBJ_DEC>\n");
+		for (int i = 0; i < Node->Statement.ObjectDeclaration.Objects.Size; i++)
+			PrintNode(Vector_GetValueAt(Node->Statement.ObjectDeclaration.Objects, struct AST_Node*, i), Depth + 1);
 		break;
 	default:
 		printf("<UNKNOWN NODE TYPE>\n");

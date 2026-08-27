@@ -77,7 +77,7 @@ void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out)
 }
 
 // Attempts to parse a Var Declaration statement node, up until reaching the provided end symbol.
-struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
+struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
@@ -97,22 +97,49 @@ struct AST_Node* ParseVariableDeclarationStatementNode(struct ParserProcess* Par
 	// Get the data type to assign to the returned variable declaration node.
 	// If it fails, then we know we're not dealing with a variable declaration, but it could be something else
 	// hence no error is output.
-	struct DatatypeDef VarType;
-	if (!ParseDatatypeDef(Parser, &VarType, 0))
+	struct DatatypeDef ObjectsType;
+	if (!ParseDatatypeDef(Parser, &ObjectsType))
 	{
 		goto PARSE_FAIL;
 	}
+
+	NextToken = Parser_PeekToken(Parser);
+	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	// Construct Variable Declaration StatementNode node and return it.
-	VarDecNode = AllocNewNode(AST_NODE_STATEMENT_VAR_DEC);
+	VarDecNode = AllocNewNode(AST_NODE_STATEMENT_OBJ_DEC);
 	VarDecNode->BufferLocation = NextToken->BufferLocation;
 
-	VarDecNode->Statement.VarDeclaration.Declarators = Vector_Create(struct AST_Node*, 1);
-	if (!ParseDeclarators(Parser, &VarType, &VarDecNode->Statement.VarDeclaration.Declarators))
+	VarDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
+
+	// Parse objects using the member type.
+	while (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
 	{
-		goto PARSE_FAIL;
+		struct AST_Node* NextObj = ParseObject_VarFunc(Parser, &ObjectsType, 0, 1, 1);
+		if (NextObj == NULL)
+		{
+			goto PARSE_FAIL;
+		}
+
+		if (NextObj->Type == AST_NODE_OBJ_FUNC)
+		{
+			Parser_Error(Parser, NextToken->BufferLocation, "Functions are not allowed inside functions.");
+			goto PARSE_FAIL;
+		}
+
+		Vector_Push(VarDecNode->Statement.ObjectDeclaration.Objects, struct AST_Node*, NextObj);
+
+		NextToken = Parser_PeekToken(Parser);
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+		if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
+		{
+			Parser_ConsumeToken(Parser); // Consume ','.
+			continue;
+		}
 	}
 
+	Parser_ConsumeToken(Parser); // Consume ';'.
 	return VarDecNode;
 }
 
@@ -186,7 +213,7 @@ struct AST_Node* ParseDependentStatementNode(struct ParserProcess* Parser)
 	if (StatementNode == NULL) return NULL;
 
 	// Do not allow a var declaration statement.
-	if (StatementNode->Type == AST_NODE_STATEMENT_VAR_DEC)
+	if (StatementNode->Type == AST_NODE_STATEMENT_OBJ_DEC)
 	{
 		Parser_Error(Parser, StatementNode->BufferLocation, "Dependent statement cannot be a declaration.");
 		FreeNode(StatementNode);
@@ -475,7 +502,7 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	else
 	{
 		// Attempt to parse a var declaration node.
-		StatementNode = ParseVariableDeclarationStatementNode(Parser, SYMBOL_SEMICOLON);
+		StatementNode = ParseObjectDeclarationStatementNode(Parser, SYMBOL_SEMICOLON);
 		if (StatementNode == NULL)
 		{
 			// ... Otherwise continue on to parsing a free-standing expression.

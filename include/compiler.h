@@ -718,7 +718,7 @@ enum DATATYPE_FLAGS
 	DATATYPE_IS_VOLATILE = 1 << 4,
 	DATATYPE_IS_STRUCTURED = 1 << 5, // If set, this type contains sub-symbols. 
 	DATATYPE_IS_ENUM_OR_UNION = 1 << 6, // If set, this is an enum if STRUCTURED is 0, or a union if STRUCTURED is 1. 
-	DATATYPE_IS_TYPEDEF = 1 << 7,  // Indicates the type is an alias to something else to be resolved during Validation.
+	DATATYPE_IS_TYPEDEF = 1 << 7,  // Indicates that this type should bind to a typedef object by name in Integration.
 };
 
 // Data Type information for a variable or function return value.
@@ -842,9 +842,9 @@ enum AST_NODE_TYPE
 {
 	AST_NODE_OBJ_VAR,				// Global, Local, Structure or Param Variable. Covers values, pointers and function pointers.
 	AST_NODE_OBJ_FUNC,				// Function definition or declaration.
-	AST_NODE_STRUCT,				// Structure / Union definition or declaration.
-	AST_NODE_TYPEDEF,				// Typedef definition, providing a "Prefab" declarator to be merged into a usage declarator when used to declare an object.
-	AST_NODE_ENUM,					// Enumeration definition or declaration.
+	AST_NODE_OBJ_STRUCT,			// Structure / Union definition or declaration.
+	AST_NODE_OBJ_ENUM,				// Enumeration definition or declaration.
+
 	AST_NODE_EXPRESSION,			// Expression with or without a compile-time result located inside instructions and variable definitions.
 	AST_NODE_STATEMENT_EXP,			// A single statement node executing an expression tree.
 	AST_NODE_STATEMENT_CONTROL,		// A single statement executing a flow control keyword (return, break, continue...)
@@ -852,7 +852,7 @@ enum AST_NODE_TYPE
 	AST_NODE_STATEMENT_IF,			// Non-looping condition statement executing the next statement only if a condition expression returns > 0, or an else statement if specified.
 	AST_NODE_STATEMENT_WHILE,		// Looping condition statement executing the next statement only if a condition expression returns > 0 and attempting re-entry.
 	AST_NODE_STATEMENT_FOR,			// Looping condition similar to WHILE with specific Init and Post-Loop expression statements.
-	AST_NODE_STATEMENT_VAR_DEC,		// Declares one or more variable symbols associated with a specific base type.
+	AST_NODE_STATEMENT_OBJ_DEC,		// Declares one or more variable symbols associated with a specific base type.
 };
 
 // Node composing an Abstract Syntax Tree.
@@ -867,53 +867,48 @@ struct AST_Node
 	{
 		// Declarator structure for Object types (variables, pointers, functions & function pointers).
 		// Can be contained independently inside Var Declaration statements.
-		struct ObjDeclarator
+		struct AST_Object
 		{	
-			struct DatatypeDef ReturnType;
-			struct String_ANSI Name;
+			struct DatatypeDef ReturnType; // Contains the object's signature in terms of what base type it "produces".
+			struct String_ANSI Name; // Symbol name for this object. During integration this is what is evaluated to determine if two objects refer to the same thing (on top of shadowing).
+			ui8 IsTypedef; // Indicates this object is a template for other objects to base themselves on at declaration.
 
-			i8 FuncPointerLevel; // If > 0, this is a function pointer. How many dereferences are required to reach actual function.
-
-			union 
+			struct
 			{
-				struct AST_Node* Func_Block; // Root instruction block if this is a function definition.
+				ui8 FuncPointerLevel; // If > 0, this is a function pointer. How many dereferences are required to reach actual function.
 
-				struct
-				{
-					struct AST_Node* Var_InitExpression; // Initialization expression node.
-					struct Vector Var_ArraySizes; // Vector type = AST_Node*. Sequence of array size expressions. If empty, this variable isn't an array.
-				};
-			};
+				ui8 InitIsInitializerList; // If set, then the Var_Init expression must be treated as an initalizer list.
+				struct AST_Node* Initializer; // Initializer expression.
+				struct Vector ArraySizes; // Vector type = AST_Node*. Sequence of array size expressions. If empty, this variable isn't an array.
 
-			// Vector of sub-declarators, representing param variable / function pointers.
-			struct Vector Func_Params; // Vector type = ObjDeclarator.
+				// Vector of sub-objects, representing param variable / function pointers.
+				struct Vector FuncPointer_Params; // Vector type = AST_Node*.
+			} Var;
+
+			struct
+			{
+				struct AST_Node* StatementsBlock; // Root instruction block if this is a function definition.
+
+				// Vector of sub-objects, representing param variable / function pointers.
+				struct Vector Params; // Vector type = AST_Node*.
+			} Func;
+
+			// Struct declaration / definition.
+			struct
+			{
+				struct Vector Members;		// Vector type = AST_Node*. Sub-structures Variable Objects.
+				ui8 IsUnion : 1;			// Whether this structure acts as a union or collection of its members.
+			} Struct;
+
+			// Enum declaration / definition.
+			// Contains a set of expression nodes which declare symbols associated to a specific number automatically (vector index) or 
+			// to whatever they are assigned to.
+			struct
+			{
+				struct Vector Members; // Vector type = Expression*. Each expression must be a single VAR_ACCESS or an assignment with a VAR ACCESS as left operand.
+			} Enum;
+
 		} Obj;
-
-		// Struct declaration / definition.
-		struct
-		{
-			struct DatatypeDef Type;	// Datatype def for this structure. Also contains the structure's name.
-			struct Vector Members;		// Vector type = AST_Node*. Sub-structures and variable / function pointer ObjDeclarators.
-
-			ui8 IsUnion : 1;			// Whether this structure acts as a union or collection of its members.
-		} Struct;
-
-		// Enum declaration / definition.
-		// Contains a set of expression nodes which declare symbols associated to a specific number automatically (vector index) or 
-		// to whatever they are assigned to.
-		struct
-		{
-			struct DatatypeDef Type; // Datatype def for this enum. Contains its name.
-			struct Vector Members; // Vector type = AST_Node*. Each expression must be a single VAR_ACCESS or an assignment with a VAR ACCESS as left operand.
-		} Enum;
-
-		// Typedef declaration.
-		// Basically just a wrapper for a Declarator to be re-used (recursively if its return type is an alias)
-		// when using that declarator for an object.
-		struct
-		{
-			struct ObjDeclarator Declarator;
-		} Typedef;
 
 		// Root type for any statement found inside functions.
 		struct
@@ -960,18 +955,17 @@ struct AST_Node
 					struct AST_Node* Expression;
 				} Control;
 
-				// Variable(s) declaration, just a container for a set of declarators to be broken down into a variable declaration and an initialization expression.	
+				// Container for a set of objects being declared in the context of a block.
 				struct
 				{
-					struct Vector Declarators; // Vector type AST_Node*. Collection of Declarator nodes.
-				} VarDeclaration;
+					struct Vector Objects; // Vector type AST_Node*. Collection of Object nodes.
+				} ObjectDeclaration;
 
 				struct AST_Node* Expression; // Free-standing expression to be executed.
 			};
 		} Statement;
 
 		struct Expression Expression;
-
 	};
 };
 

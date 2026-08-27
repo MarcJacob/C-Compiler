@@ -14,7 +14,7 @@ int arr[5][10];
 float* cast_test = (float*)2;
 int_func_ptr funcPtr = (int_func_ptr)4;
 
-struct struct_test
+typedef struct
 {
 	int member_a;
 	float member_b;
@@ -25,7 +25,7 @@ struct struct_test
 		MEMBER_A,
 		MEMBER_B
 	} enumerated_member;
-};
+} struct_test;
 
 union union_test
 {
@@ -40,6 +40,10 @@ enum enum_test
 	MEMBER_B,
 	MEMBER_C = 44,
 };
+
+struct a {
+	int b;
+} c, * d, e(int a, int b) { return 0; }
 
 int main(int argc, char** argv)
 {
