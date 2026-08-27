@@ -174,7 +174,10 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	switch (Node->Type)
 	{
 	case AST_NODE_STRUCT:
-		printf("<STRUCT: '%s'>\n", Node->Struct.Type.TypeName.Str);
+		if (!Node->Struct.IsUnion)
+			printf("<STRUCT: '%s'>\n", Node->Struct.Type.TypeName.Str);
+		else
+			printf("<UNION: '%s'>\n", Node->Struct.Type.TypeName.Str);
 		for (int i = 0; i < Node->Struct.Members.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;

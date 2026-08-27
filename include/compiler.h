@@ -713,8 +713,8 @@ enum DATATYPE_FLAGS
 	DATATYPE_IS_STATIC = 1 << 1,
 	DATATYPE_IS_CONST = 1 << 2,
 	DATATYPE_IS_VOLATILE = 1 << 3,
-	DATATYPE_IS_STRUCTURED = 1 << 4, // Used for structs and unions.
-	DATATYPE_IS_ENUM = 1 << 5,
+	DATATYPE_IS_STRUCTURED = 1 << 4, // If set, this type contains sub-symbols. 
+	DATATYPE_IS_ENUM_OR_UNION = 1 << 5, // If set, this is an enum if STRUCTURED is 0, or a union if STRUCTURED is 1. 
 	DATATYPE_IS_TYPEDEF = 1 << 6,  // Indicates the type is an alias to something else to be resolved during Validation.
 };
 

@@ -63,6 +63,7 @@ static struct AST_Node* ParseStructNode(struct ParserProcess* Parser, struct Vec
 	StructNode = AllocNewNode(AST_NODE_STRUCT);
 	StructNode->BufferLocation = StartToken->BufferLocation;
 	StructNode->Struct.Type = StructType;
+	StructNode->Struct.IsUnion = (StructType.Flags & DATATYPE_IS_STRUCTURED) && (StructType.Flags & DATATYPE_IS_ENUM_OR_UNION);
 	StructNode->Struct.Members = Vector_Create(struct AST_Node*, 0);
 
 	if (Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))

@@ -259,17 +259,25 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	if (NextToken->Keyword == KEYWORD_STRUCT)
 	{
 		Flags |= DATATYPE_IS_STRUCTURED;
+		Flags &= ~DATATYPE_IS_ENUM_OR_UNION;
+
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
-	if (NextToken->Keyword == KEYWORD_UNION)
+	else if (NextToken->Keyword == KEYWORD_UNION)
 	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Union parsing is unimplemented.");
-		goto PARSE_FAIL;
+		Flags |= DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION;
+
+		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
+		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
+		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
-	if (NextToken->Keyword == KEYWORD_ENUM)
+	else if (NextToken->Keyword == KEYWORD_ENUM)
 	{
+		Flags &= ~DATATYPE_IS_STRUCTURED;
+		Flags |= DATATYPE_IS_ENUM_OR_UNION;
+
 		Parser_Error(Parser, NextToken->BufferLocation, "Enum parsing is unimplemented.");
 		goto PARSE_FAIL;
 	}
@@ -280,7 +288,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	if (NextToken->Keyword == KEYWORD_SIGNED
 		|| NextToken->Keyword == KEYWORD_UNSIGNED)
 	{
-		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM))
+		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 			goto PARSE_FAIL;
@@ -303,7 +311,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Next determine size and broad type.
 	if (NextToken->Type == TOKEN_KEYWORD)
 	{
-		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM))
+		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 			goto PARSE_FAIL;
@@ -373,7 +381,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			}
 		}
 	}
-	else if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM))
+	else if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
 	{
 		if (NextToken->Type == TOKEN_IDENTIFIER)
 		{

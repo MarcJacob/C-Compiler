@@ -12,6 +12,20 @@ int arr[5][10];
 float* cast_test = (float*)2;
 int_func_ptr funcPtr = (int_func_ptr)4;
 
+struct struct_test
+{
+	int member_a;
+	float member_b;
+	int_func_ptr member_c;
+};
+
+union union_test
+{
+	int member_a;
+	float member_b;
+	int_func_ptr member_c;
+};
+
 int main(int argc, char** argv)
 {
 	int ternary_test = ((argc > 0) ? 1 : 0) + 1;
