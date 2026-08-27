@@ -946,7 +946,6 @@ struct AST_Node
 				{
 					enum TOKEN_KEYWORD Keyword;
 					struct AST_Node* Expression;
-					struct AST_Node* TargetStatement; // Statement to jump back to when encountering the keyword. What exactly happens after that depends on the keyword itself.
 				} Control;
 
 				// Variable(s) declaration, just a container for a set of declarators to be broken down into a variable declaration and an initialization expression.	

@@ -274,26 +274,6 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	if (IsWhile)
 	{
 		StatementNode->Statement.While.ExecStatement = ExecNode;
-
-		// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
-		struct Vector Substatements = Vector_Create(struct AST_Node*, 8);
-		GetAllStatements(StatementNode->Statement.While.ExecStatement, &Substatements);
-
-		for (int i = 0; i < Substatements.Size; i++)
-		{
-			struct AST_Node* Substatement = Vector_GetValueAt(Substatements, struct AST_Node*, i);
-			ASSERT(Substatement != NULL);
-
-			if (Substatement->Type != AST_NODE_STATEMENT_CONTROL) continue;
-			enum TOKEN_KEYWORD Kwd = Substatement->Statement.Control.Keyword;
-
-			if (Kwd != KEYWORD_CONTINUE && Kwd != KEYWORD_BREAK) continue;
-			if (Substatement->Statement.Control.TargetStatement != NULL) continue; // Already linked to a sub-loop.
-
-			Substatement->Statement.Control.TargetStatement = StatementNode;
-		}
-
-		Vector_Destroy(&Substatements);
 	}
 	else
 	{
@@ -376,25 +356,6 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	// Go over all sub-statements of this while loop and link up any break and continue statement that isn't already linked up to something.
-	struct Vector Substatements = Vector_Create(struct AST_Node*, 8);
-	GetAllStatements(StatementNode->Statement.For.ExecStatement, &Substatements);
-
-	for (int i = 0; i < Substatements.Size; i++)
-	{
-		struct AST_Node* Substatement = Vector_GetValueAt(Substatements, struct AST_Node*, i);
-		ASSERT(Substatement != NULL);
-
-		if (Substatement->Type != AST_NODE_STATEMENT_CONTROL) continue;
-		enum TOKEN_KEYWORD Kwd = Substatement->Statement.Control.Keyword;
-
-		if (Kwd != KEYWORD_CONTINUE && Kwd != KEYWORD_BREAK) continue;
-		if (Substatement->Statement.Control.TargetStatement != NULL) continue; // Already linked to a sub-loop.
-
-		Substatement->Statement.Control.TargetStatement = StatementNode;
-	}
-
-	Vector_Destroy(&Substatements);
 	return StatementNode;
 }
 

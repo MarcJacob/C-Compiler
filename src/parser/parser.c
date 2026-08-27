@@ -52,30 +52,44 @@ void FreeNode(struct AST_Node* Node)
 	default:
 		break;
 	case AST_NODE_EXPRESSION:
-		if (Node->Expression.Type == EXP_OP)
+		switch (Node->Expression.Type)
 		{
+		case EXP_OP:
 			FreeNode(Node->Expression.Op.LeftOperand);
 			FreeNode(Node->Expression.Op.RightOperand);
-		}
-		else if (Node->Expression.Type == EXP_VAR_ACCESS)
-		{
+			break;
+		case EXP_VAR_ACCESS:
 			String_Free_ANSI(&Node->Expression.Variable.Name);
-		}
-		else if (Node->Expression.Type == EXP_FUNC_CALL)
-		{
+			break;
+		case EXP_FUNC_CALL:
 			String_Free_ANSI(&Node->Expression.FunctionCall.FunctionName);
 			FreeNodeVector(&Node->Expression.FunctionCall.Params);
-		}
-		else if (Node->Expression.Type == EXP_LITERAL_STRING)
-		{
+			break;
+		case EXP_LITERAL_STRING:
 			String_Free_ANSI(&Node->Expression.Literal.String);
+			break;
+		case EXP_OP_CAST:
+			FreeNode(Node->Expression.Cast.Operand);
+			FreeNode(Node->Expression.Cast.TargetTypeDeclarator);
+			break;
+		case EXP_OP_SIZEOF:
+			FreeNode(Node->Expression.Sizeof.Operand);
+			break;
 		}
 		break;
 	case AST_NODE_OBJ_VAR:
 	case AST_NODE_OBJ_FUNC:
 		String_Free_ANSI(&Node->Obj.Name);
 		FreeNodeVector(&Node->Obj.Func_Params);
-		FreeNode(Node->Obj.Func_Block); // In union with Init Expression node.
+		if (Node->Type == AST_NODE_OBJ_FUNC)
+		{
+			FreeNode(Node->Obj.Func_Block);	
+		}
+		else
+		{
+			FreeNode(Node->Obj.Var_InitExpression);
+			Vector_Destroy(&Node->Obj.Var_ArraySizes);
+		}
 		break;
 	case AST_NODE_STRUCT:
 		String_Free_ANSI(&Node->Struct.Type.TypeName);
@@ -86,7 +100,6 @@ void FreeNode(struct AST_Node* Node)
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
 		FreeNode(Node->Statement.Control.Expression);
-		// Don't free the Target StatementNode since it's not "owned" by this node.
 		break;
 	case AST_NODE_STATEMENT_IF:
 		FreeNode(Node->Statement.If.EntryCondition);

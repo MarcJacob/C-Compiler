@@ -10,6 +10,7 @@ typedef int (*int_func_ptr)(float, float);
 int arr[5][10];
 
 float* cast_test = (float*)2;
+int_func_ptr funcPtr = (int_func_ptr)4;
 
 int main(int argc, char** argv)
 {
