@@ -2,46 +2,55 @@
 
 #include "parser.h"
 
-static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel);
+struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar);
+static struct Expression* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel);
+struct Expression* ParseRootExpression(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar);
+
+static struct Expression* AllocNewExpressionNode()
+{
+	struct Expression* New = calloc(1, sizeof(struct Expression));
+	ASSERT(New != NULL);
+	return New;
+}
 
 // Attempts to parse the next available token as a literal expression.
-static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Literal(struct ParserProcess* Parser)
 {
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) return NULL;
 
-	struct AST_Node* LiteralNode = AllocNewNode(AST_NODE_EXPRESSION);
+	struct Expression* LiteralNode = AllocNewExpressionNode();
 	LiteralNode->BufferLocation = NextToken->BufferLocation;
 
 	switch (NextToken->Type)
 	{
 	case TOKEN_LITERAL_CHAR:
-		LiteralNode->Expression.Type = EXP_LITERAL_CHAR;
-		LiteralNode->Expression.Literal.Character = NextToken->LiteralCharacter;
-		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Char();
+		LiteralNode->Type = EXP_LITERAL_CHAR;
+		LiteralNode->Literal.Character = NextToken->LiteralCharacter;
+		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Char();
 		break;
 	case TOKEN_LITERAL_NUMBER_INT:
-		LiteralNode->Expression.Type = EXP_LITERAL_INT;
-		LiteralNode->Expression.Literal.Integer = NextToken->LiteralNumber.Integer;
-		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+		LiteralNode->Type = EXP_LITERAL_INT;
+		LiteralNode->Literal.Integer = NextToken->LiteralNumber.Integer;
+		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Int64();
 		break;
 	case TOKEN_LITERAL_NUMBER_FLOAT:
-		LiteralNode->Expression.Type = EXP_LITERAL_FLOAT;
-		LiteralNode->Expression.Literal.Float = NextToken->LiteralNumber.Float;
-		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Float();
+		LiteralNode->Type = EXP_LITERAL_FLOAT;
+		LiteralNode->Literal.Float = NextToken->LiteralNumber.Float;
+		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Float();
 		break;
 	case TOKEN_LITERAL_NUMBER_DOUBLE:
-		LiteralNode->Expression.Type = EXP_LITERAL_DOUBLE;
-		LiteralNode->Expression.Literal.Double = NextToken->LiteralNumber.Double;
-		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_Double();
+		LiteralNode->Type = EXP_LITERAL_DOUBLE;
+		LiteralNode->Literal.Double = NextToken->LiteralNumber.Double;
+		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Double();
 		break;
 	case TOKEN_LITERAL_STRING:
-		LiteralNode->Expression.Type = EXP_LITERAL_STRING;
-		LiteralNode->Expression.Literal.String = String_Copy_ANSI(NextToken->LiteralString);
-		LiteralNode->Expression.ResultType = GetPrimitiveDatatypeDef_String();
+		LiteralNode->Type = EXP_LITERAL_STRING;
+		LiteralNode->Literal.String = String_Copy_ANSI(NextToken->LiteralString);
+		LiteralNode->ResultType = GetPrimitiveDatatypeDef_String();
 		break;
 	default:
-		FreeNode(LiteralNode);
+		FreeExpression(LiteralNode);
 		return NULL;
 	}
 
@@ -51,7 +60,7 @@ static struct AST_Node* ParseExpressionable_Literal(struct ParserProcess* Parser
 }
 
 // Attempts to parse the next available token as a variable read expression node.
-static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Variable(struct ParserProcess* Parser)
 {
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) return NULL;
@@ -61,11 +70,11 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 		return NULL;
 	}
 
-	struct AST_Node* VarNode = AllocNewNode(AST_NODE_EXPRESSION);
+	struct Expression* VarNode = AllocNewExpressionNode();
 	VarNode->BufferLocation = NextToken->BufferLocation;
 
-	VarNode->Expression.Type = EXP_VAR_ACCESS;
-	VarNode->Expression.Variable.Name = NextToken->LiteralString;
+	VarNode->Type = EXP_VAR_ACCESS;
+	VarNode->Variable.Name = NextToken->LiteralString;
 
 	// Consume token and return.
 	Parser_ConsumeToken(Parser);
@@ -74,7 +83,7 @@ static struct AST_Node* ParseExpressionable_Variable(struct ParserProcess* Parse
 
 // Attempts to parse the next available token as an operator expression node, WITHOUT attempting to parse
 // the next tokens for an operand.
-static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Operator(struct ParserProcess* Parser)
 {
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) return NULL;
@@ -87,10 +96,10 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 	}
 
 	// Parse next token as an operator node.
-	struct AST_Node* OpExpression = AllocNewNode(AST_NODE_EXPRESSION);
+	struct Expression* OpExpression = AllocNewExpressionNode();
 	OpExpression->BufferLocation = NextToken->BufferLocation;
-	OpExpression->Expression.Type = EXP_OP;
-	OpExpression->Expression.Op.OperatorSymbol = NextToken->Symbol;
+	OpExpression->Type = EXP_OP;
+	OpExpression->Op.OperatorSymbol = NextToken->Symbol;
 
 	// Consume token and return.
 	Parser_ConsumeToken(Parser);
@@ -99,11 +108,11 @@ static struct AST_Node* ParseExpressionable_Operator(struct ParserProcess* Parse
 
 // Attempts to parse the next tokens as a function call, starting sub-expression parsing processes
 // for each parameter, delimited by commas (effectively overriding the standard nature of the comma operator).
-static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Function(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
-	struct AST_Node* FunctionExpressionableNode = NULL;
+	struct Expression* FunctionExpressionableNode = NULL;
 
 	struct Token* NextToken = Parser_ConsumeToken(Parser);
 	if (NextToken == NULL)
@@ -111,7 +120,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Function expressionable.");
 	PARSE_FAIL:
-		if (FunctionExpressionableNode != NULL) FreeNode(FunctionExpressionableNode);
+		if (FunctionExpressionableNode != NULL) FreeExpression(FunctionExpressionableNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -131,20 +140,20 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 		goto PARSE_FAIL;
 	}
 
-	FunctionExpressionableNode = AllocNewNode(AST_NODE_EXPRESSION);
+	FunctionExpressionableNode = AllocNewExpressionNode();
 	FunctionExpressionableNode->BufferLocation = IdentifierToken->BufferLocation;
-	FunctionExpressionableNode->Expression.Type = EXP_FUNC_CALL;
-	FunctionExpressionableNode->Expression.FunctionCall.FunctionName = IdentifierToken->Identifier;
+	FunctionExpressionableNode->Type = EXP_FUNC_CALL;
+	FunctionExpressionableNode->FunctionCall.FunctionName = IdentifierToken->Identifier;
 
 	// Start parsing param expressions until a closing parenthesis is reached.
-	FunctionExpressionableNode->Expression.FunctionCall.Params = Vector_Create(struct AST_Node*, 0);
+	FunctionExpressionableNode->FunctionCall.Params = Vector_Create(struct Expression*, 0);
 
 	for (NextToken = Parser_PeekToken(Parser);
 		!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE); NextToken = Parser_PeekToken(Parser))
 	{
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		struct AST_Node* NewExpr = ParseExpressionNode(Parser, 1, 0);
+		struct Expression* NewExpr = ParseRootExpression(Parser, 1, 0);
 		if (NewExpr == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse parameter expression.");
@@ -154,7 +163,7 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		Vector_Push(FunctionExpressionableNode->Expression.FunctionCall.Params, struct AST_Node*, NewExpr);
+		Vector_Push(FunctionExpressionableNode->FunctionCall.Params, struct Expression*, NewExpr);
 
 		Parser_ConsumeToken(Parser); // Consume whatever character caused the param expression to end.
 		if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA)) continue;
@@ -169,14 +178,14 @@ static struct AST_Node* ParseExpressionable_Function(struct ParserProcess* Parse
 
 // Attempts to parse a Ternary operator node with a pre-built Ternary Delimitor operator and a parsed left operand for it.
 // The node must then be given its left operator (condition) and its right branch operand (if condition == 0).
-static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Ternary(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
-	struct AST_Node* TernaryNode = NULL;
-	struct AST_Node* DelimNode = NULL;
-	struct AST_Node* TrueExpNode = NULL;
-	struct AST_Node* FalseExpNode = NULL;
+	struct Expression* TernaryNode = NULL;
+	struct Expression* DelimNode = NULL;
+	struct Expression* TrueExpNode = NULL;
+	struct Expression* FalseExpNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
@@ -184,9 +193,9 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Ternary expressionable.");
 	PARSE_FAIL:
-		FreeNode(TernaryNode);
-		FreeNode(DelimNode);
-		FreeNode(TrueExpNode);
+		FreeExpression(TernaryNode);
+		FreeExpression(DelimNode);
+		FreeExpression(TrueExpNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -197,10 +206,10 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 		goto PARSE_FAIL; // Not a ternary.
 	}
 
-	TernaryNode = AllocNewNode(AST_NODE_EXPRESSION);
+	TernaryNode = AllocNewExpressionNode();
 	TernaryNode->BufferLocation = NextToken->BufferLocation;
-	TernaryNode->Expression.Type = EXP_OP;
-	TernaryNode->Expression.Op.OperatorSymbol = SYMBOL_OP_TERNARY_BRANCH;
+	TernaryNode->Type = EXP_OP;
+	TernaryNode->Op.OperatorSymbol = SYMBOL_OP_TERNARY_BRANCH;
 
 	Parser_ConsumeToken(Parser); // Consume '?'
 	NextToken = Parser_PeekToken(Parser);
@@ -208,8 +217,8 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 
 	// Parse true expression, delimitor, then false expression.
 
-	TrueExpNode = ParseExpressionNode(Parser, 0, 0);
-	if (TrueExpNode == NULL || TrueExpNode->Expression.Type == EXP_NOP)
+	TrueExpNode = ParseRootExpression(Parser, 0, 0);
+	if (TrueExpNode == NULL || TrueExpNode->Type == EXP_NOP)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression following ternary operator.");
 		goto PARSE_FAIL;
@@ -228,29 +237,29 @@ static struct AST_Node* ParseExpressionable_Ternary(struct ParserProcess* Parser
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	FalseExpNode = ParseExpressionNode(Parser, 0, 0);
+	FalseExpNode = ParseRootExpression(Parser, 0, 0);
 	if (FalseExpNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression following ternary delimitor.");
 		goto PARSE_FAIL;
 	}
 
-	DelimNode = AllocNewNode(AST_NODE_EXPRESSION);
-	DelimNode->Expression.Type = EXP_OP;
-	DelimNode->Expression.Op.OperatorSymbol = SYMBOL_OP_TERNARY_DELIM;
-	DelimNode->Expression.Op.LeftOperand = TrueExpNode;
-	DelimNode->Expression.Op.RightOperand = FalseExpNode;
+	DelimNode = AllocNewExpressionNode();
+	DelimNode->Type = EXP_OP;
+	DelimNode->Op.OperatorSymbol = SYMBOL_OP_TERNARY_DELIM;
+	DelimNode->Op.LeftOperand = TrueExpNode;
+	DelimNode->Op.RightOperand = FalseExpNode;
 
-	TernaryNode->Expression.Op.RightOperand = DelimNode;
+	TernaryNode->Op.RightOperand = DelimNode;
 	
 	return TernaryNode;
 }
 
-static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
-	struct AST_Node* SizeofNode = NULL;
+	struct Expression* SizeofNode = NULL;
 	struct AST_Node* OperandNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -259,8 +268,8 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Sizeof expressionable.");
 	PARSE_FAIL:
-		FreeNode(SizeofNode);
-		FreeNode(OperandNode);
+		FreeExpression(SizeofNode);
+		FreeASTNode(OperandNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -274,9 +283,9 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	SizeofNode = AllocNewNode(AST_NODE_EXPRESSION);
-	SizeofNode->Expression.Type = EXP_OP_SIZEOF;
-	SizeofNode->Expression.ResultType = GetPrimitiveDatatypeDef_Int64();
+	SizeofNode = AllocNewExpressionNode();
+	SizeofNode->Type = EXP_OP_SIZEOF;
+	SizeofNode->ResultType = GetPrimitiveDatatypeDef_Int64();
 
 	// If an opening parenthesis is found, attempt to parse a datatype / declarator pair first.
 	// If that fails, or no parenthesis are found, parse an expression.
@@ -301,12 +310,10 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 				Parser_Error(Parser, OperandNode->BufferLocation, "Sizeof operand may not be a function.");
 				goto PARSE_FAIL;
 			}
-
-			SizeofNode->Expression.Sizeof.IsDeclarator = 1;
 		}
 		else
 		{
-			OperandNode = ParseExpressionNode(Parser, 0, 0);
+			OperandNode = ParseExpressionASTNode(Parser, 0, 0);
 		}	
 
 		// Check that we have a closing parenthesis after declarator or expression.
@@ -323,7 +330,7 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 	}
 	else
 	{
-		OperandNode = ParseExpressionNode(Parser, 0, 1);
+		OperandNode = ParseExpressionASTNode(Parser, 0, 1);
 		if (OperandNode == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
@@ -331,17 +338,18 @@ static struct AST_Node* ParseExpressionable_Sizeof(struct ParserProcess* Parser)
 		}
 	}
 
-	SizeofNode->Expression.Sizeof.Operand = OperandNode;
+	SizeofNode->Sizeof.Operand = OperandNode;
 	return SizeofNode;
 }
 
-static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
+static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
-	struct AST_Node* CastNode = NULL;
+	struct Expression* CastNode = NULL;
+	struct Expression* OperandNode = NULL;
+
 	struct AST_Node* ObjNode = NULL;
-	struct AST_Node* OperandNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
@@ -349,9 +357,9 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Cast expressionable.");
 	PARSE_FAIL:
-		FreeNode(CastNode);
-		FreeNode(ObjNode);
-		FreeNode(OperandNode);
+		FreeExpression(CastNode);
+		FreeExpression(ObjNode);
+		FreeExpression(OperandNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -418,7 +426,7 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	else
 	{
 		Parser_ConsumeToken(Parser); // Consume '(' so the parsed expression below will stop at the corresponding closing parenthesis.
-		OperandNode = ParseExpressionNode(Parser, 0, 0);
+		OperandNode = ParseRootExpression(Parser, 0, 0);
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -430,11 +438,11 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		}
 	}
 
-	CastNode = AllocNewNode(AST_NODE_EXPRESSION);
+	CastNode = AllocNewExpressionNode();
 	CastNode->BufferLocation = ObjNode->BufferLocation;
-	CastNode->Expression.Type = EXP_OP_CAST;
-	CastNode->Expression.Cast.TargetTypeDeclarator = ObjNode;
-	CastNode->Expression.Cast.Operand = OperandNode;
+	CastNode->Type = EXP_OP_CAST;
+	CastNode->Cast.TargetTypeASTObject = ObjNode;
+	CastNode->Cast.Operand = OperandNode;
 
 	return CastNode;
 }
@@ -443,9 +451,9 @@ static struct AST_Node* ParseExpressionable_Cast(struct ParserProcess* Parser)
 // An expressionable is an expression node that is either a leaf node, or incomplete in the case of operators.
 // They can either be built from a single token or trigger a more complex parsing system that ends up forming
 // its own expression tree. The only commonality between expressionables is that they are "atomic" in the way they're parsed.
-static struct AST_Node* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel)
+static struct Expression* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel)
 {
-	struct AST_Node* Expressionable = NULL;
+	struct Expression* Expressionable = NULL;
 
 PARSE_EXPRESSIONABLE:
 	// Handle all valid Expressionable types.
@@ -481,26 +489,26 @@ PARSE_EXPRESSIONABLE:
 // Handles operator precedence between a "root" operator expression, and its left operand.
 // If the left operand is itself an operator expression with an operator of LOWER precedence (and the same parenthesis level),
 // then the root becomes the left operand's right operand, itself becoming the root's left operand, and the left operand becomes the new root (return value).
-static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression)
+static struct Expression* HandleOperatorPrecedence(struct Expression* RootExpression)
 {
 	ASSERT(RootExpression != NULL);
 
-	struct AST_Node* LeftOperand = RootExpression->Expression.Op.LeftOperand;
+	struct Expression* LeftOperand = RootExpression->Op.LeftOperand;
 	ASSERT(LeftOperand != NULL);
 
-	if (LeftOperand->Expression.Type != EXP_OP)
+	if (LeftOperand->Type != EXP_OP)
 	{
 		// Left operand is not an operator itself.
 		return RootExpression;
 	}
 
-	if (LeftOperand->Expression.Op.RightOperand == NULL)
+	if (LeftOperand->Op.RightOperand == NULL)
 	{
 		// Left operand has no right operand - no precedence can apply.
 		return RootExpression;
 	}
 
-	if (RootExpression->Expression.ParenthesisLevel < LeftOperand->Expression.ParenthesisLevel)
+	if (RootExpression->ParenthesisLevel < LeftOperand->ParenthesisLevel)
 	{
 		// Left operand is inside an extra parenthesis scope.
 		return RootExpression;
@@ -508,17 +516,17 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 
 	// Cache the "entry root" into the actual expression we'll be descending into the left expression tree.
 	// RootExpression will be set to the first left operand that was promoted to be the root. 
-	struct AST_Node* EntryNode = RootExpression;
+	struct Expression* EntryNode = RootExpression;
 
-	struct AST_Node* Left_Right_Operand = LeftOperand->Expression.Op.RightOperand;
-	enum TOKEN_SYMBOL LeftOp = LeftOperand->Expression.Op.OperatorSymbol;
-	enum TOKEN_SYMBOL EntryNodeOp = EntryNode->Expression.Op.OperatorSymbol;
+	struct Expression* Left_Right_Operand = LeftOperand->Op.RightOperand;
+	enum TOKEN_SYMBOL LeftOp = LeftOperand->Op.OperatorSymbol;
+	enum TOKEN_SYMBOL EntryNodeOp = EntryNode->Op.OperatorSymbol;
 
-	ui8 Left_ParenthesisLevel = LeftOperand->Expression.ParenthesisLevel;
-	ui8 Left_Right_ParenthesisLevel = LeftOperand->Expression.Op.RightOperand->Expression.ParenthesisLevel;
-	ui8 EntryNodeParenthesisLevel = EntryNode->Expression.ParenthesisLevel;
+	ui8 Left_ParenthesisLevel = LeftOperand->ParenthesisLevel;
+	ui8 Left_Right_ParenthesisLevel = LeftOperand->Op.RightOperand->ParenthesisLevel;
+	ui8 EntryNodeParenthesisLevel = EntryNode->ParenthesisLevel;
 
-	struct AST_Node* ParentNode = NULL;
+	struct Expression* ParentNode = NULL;
 
 	// Repeatedly attempt to perform a swap.
 	// It must avoid crossing a right-to-left / left-to-right boundary, parenthesis levels and
@@ -533,15 +541,15 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 		)
 	{
 		// Perform swap.
-		LeftOperand->Expression.Op.RightOperand = EntryNode;
-		EntryNode->Expression.Op.LeftOperand = Left_Right_Operand;
+		LeftOperand->Op.RightOperand = EntryNode;
+		EntryNode->Op.LeftOperand = Left_Right_Operand;
 
 		// If this is the first swap, assign Left Operand as the new Root Expression before we lose track of it.
 		if (RootExpression == EntryNode) RootExpression = LeftOperand;
 
 		if (ParentNode != NULL)
 		{
-			ParentNode->Expression.Op.RightOperand = LeftOperand;
+			ParentNode->Op.RightOperand = LeftOperand;
 		}
 		ParentNode = LeftOperand;
 
@@ -549,16 +557,16 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 
 		// Check break conditions.
 		if (LeftOperand == NULL) break; // The Left Operand lacked its own right operand.
-		if (LeftOperand->Expression.Type != EXP_OP) break; // The new left operand is not an operator.
-		if (EntryNode->Expression.ParenthesisLevel < LeftOperand->Expression.ParenthesisLevel) break; // The new left operand is on a deeper parenthesis level.
+		if (LeftOperand->Type != EXP_OP) break; // The new left operand is not an operator.
+		if (EntryNode->ParenthesisLevel < LeftOperand->ParenthesisLevel) break; // The new left operand is on a deeper parenthesis level.
 
-		Left_Right_Operand = LeftOperand->Expression.Op.RightOperand;
+		Left_Right_Operand = LeftOperand->Op.RightOperand;
 		if (Left_Right_Operand == NULL) break; // The new left operand does not have a right operand.
 
 		// Update check / cached values.
-		LeftOp = LeftOperand->Expression.Op.OperatorSymbol;
-		Left_ParenthesisLevel = LeftOperand->Expression.ParenthesisLevel;
-		Left_Right_ParenthesisLevel = LeftOperand->Expression.Op.RightOperand->Expression.ParenthesisLevel;
+		LeftOp = LeftOperand->Op.OperatorSymbol;
+		Left_ParenthesisLevel = LeftOperand->ParenthesisLevel;
+		Left_Right_ParenthesisLevel = LeftOperand->Op.RightOperand->ParenthesisLevel;
 	}
 
 	return RootExpression;
@@ -570,23 +578,23 @@ static struct AST_Node* HandleOperatorPrecedence(struct AST_Node* RootExpression
 // Returns the root of the resulting expression tree.
 // End Symbol is used so in the case of parsing the next expressionable as a right operator, we can determine when
 // to use an empty NOP node instead.
-static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, struct AST_Node* Op, ui8* OutParenthesisLevel)
+static struct Expression* ParseOperatorExpression(struct ParserProcess* Parser, struct Expression* Op, ui8* OutParenthesisLevel)
 {
 	ASSERT(Op != NULL);
-	ASSERT(Op->Expression.Type == EXP_OP);
+	ASSERT(Op->Type == EXP_OP);
 
-	enum TOKEN_SYMBOL OpSymbol = Op->Expression.Op.OperatorSymbol;
+	enum TOKEN_SYMBOL OpSymbol = Op->Op.OperatorSymbol;
 
 	// Check error case: Unary left operator given a left operand or unary right / binary operator NOT given a left operand.
 	ui8 NeedsLeftOperand = Symbol_IsRightUnaryOp(OpSymbol) && !Symbol_IsBinaryOp(OpSymbol);
 	ui8 SupportsLeftOperand = NeedsLeftOperand || Symbol_IsBinaryOp(OpSymbol);
-	if (!SupportsLeftOperand && Op->Expression.Op.LeftOperand != NULL)
+	if (!SupportsLeftOperand && Op->Op.LeftOperand != NULL)
 	{
 		Parser_Error(Parser, Op->BufferLocation, "Unexpected left operand for operator.");
 		return NULL;
 	}
 	// Check error case: Unary right operator not given a left operand.
-	if (NeedsLeftOperand && Op->Expression.Op.LeftOperand == NULL)
+	if (NeedsLeftOperand && Op->Op.LeftOperand == NULL)
 	{
 		Parser_Error(Parser, Op->BufferLocation, "Left operand required for operator.");
 		return NULL;	}
@@ -594,7 +602,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	ui8 NeedsRightOperand = !Symbol_IsRightUnaryOp(OpSymbol);
 
 	// We can now deduce the exact kind of operator we're dealing with. Deambiguate as needed.
-	if (Op->Expression.Op.LeftOperand != NULL && NeedsRightOperand)
+	if (Op->Op.LeftOperand != NULL && NeedsRightOperand)
 	{
 		OpSymbol = Symbol_DeambiguateBinaryOp(OpSymbol);
 	}
@@ -607,14 +615,14 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		OpSymbol = Symbol_DeambiguateRightUnaryOp(OpSymbol);
 	}
 
-	Op->Expression.Op.OperatorSymbol = OpSymbol;
+	Op->Op.OperatorSymbol = OpSymbol;
 
 	// Initialize parenthesis level to whatever the entry Operator has been assigned to.
-	ui8 ParenthesisLevel = Op->Expression.ParenthesisLevel;
-	if (NeedsRightOperand && Op->Expression.Op.RightOperand == NULL)
+	ui8 ParenthesisLevel = Op->ParenthesisLevel;
+	if (NeedsRightOperand && Op->Op.RightOperand == NULL)
 	{
 		// New operator requires a right operand.
-		struct AST_Node* RightOperand = NULL;
+		struct Expression* RightOperand = NULL;
 
 		struct Token* NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL)
@@ -622,7 +630,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		PARSE_FAIL_EOF:
 			Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing expression.");
 		PARSE_FAIL:
-			if (RightOperand != NULL) FreeNode(RightOperand);
+			if (RightOperand != NULL) FreeExpression(RightOperand);
 			return NULL;
 		}
 
@@ -634,17 +642,17 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 			goto PARSE_FAIL;
 		}
 
-		RightOperand->Expression.ParenthesisLevel = ParenthesisLevel;
+		RightOperand->ParenthesisLevel = ParenthesisLevel;
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 		// If right operand expressionable is itself an operator, recursively call this function on it.
-		if (RightOperand->Expression.Type == EXP_OP)
+		if (RightOperand->Type == EXP_OP)
 		{
 			// The right operand is parsed without a left operand for itself meaning it will only work with left unary operators.
-			Op->Expression.Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
-			if (Op->Expression.Op.RightOperand == NULL)
+			Op->Op.RightOperand = ParseOperatorExpression(Parser, RightOperand, &ParenthesisLevel);
+			if (Op->Op.RightOperand == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse right operand operator expression.");
 				goto PARSE_FAIL;
@@ -652,7 +660,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		}
 		else
 		{
-			Op->Expression.Op.RightOperand = RightOperand;
+			Op->Op.RightOperand = RightOperand;
 		}
 
 		NextToken = Parser_PeekToken(Parser);
@@ -662,7 +670,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 		while (Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
 			if (ParenthesisLevel == 0) break; // Can happen when closing parenthesis is to be used as end symbol.
-			if (ParenthesisLevel < Op->Expression.ParenthesisLevel) break;
+			if (ParenthesisLevel < Op->ParenthesisLevel) break;
 
 			ParenthesisLevel--;
 
@@ -674,7 +682,7 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	}
 
 	// If a left operand is present, handle precedence between it and this operator expression.
-	if (Op->Expression.Op.LeftOperand != NULL)
+	if (Op->Op.LeftOperand != NULL)
 	{
 		Op = HandleOperatorPrecedence(Op);
 	}
@@ -683,21 +691,20 @@ static struct AST_Node* ParseOperatorExpression(struct ParserProcess* Parser, st
 	return Op;
 }
 
-// Entry point of expression parsing. Parses a "root expression" until reaching an end symbol (';' or ',' if specified) or a closing parenthesis
-// that does not match an opening parenthesis inside the expression itself.
-// Returns an NOP expression if no expression could be parsed at all, or NULL if there was a parser error.
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar)
+// Parses a new Expression Tree using the next tokens. Returns the root node if successful, NULL if no expression
+// could be parsed or if there was an error.
+struct Expression* ParseRootExpression(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 
-	struct AST_Node* ExpressionRootNode = NULL;
-		struct Token* NextToken = Parser_PeekToken(Parser);
+	struct Expression* ExpressionRootNode = NULL;
+	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing expression.");
 	PARSE_FAIL:
-		if (ExpressionRootNode != NULL) FreeNode(ExpressionRootNode);
+		if (ExpressionRootNode != NULL) FreeExpression(ExpressionRootNode);
 		return NULL;
 	}
 
@@ -729,20 +736,20 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 		}
 
 		// Get the next node composing the expression.
-		struct AST_Node* NextNode = ParseExpressionableNode(Parser, &ParenthesisLevel);
+		struct Expression* NextNode = ParseExpressionableNode(Parser, &ParenthesisLevel);
 		if (NextNode == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected token in expression.");
 			goto PARSE_FAIL;
 		}
 		NextNode->BufferLocation = NextToken->BufferLocation;
-		NextNode->Expression.ParenthesisLevel = ParenthesisLevel;
+		NextNode->ParenthesisLevel = ParenthesisLevel;
 
-		if (NextNode->Expression.Type == EXP_OP)
+		if (NextNode->Type == EXP_OP)
 		{
 			// If we're here then it means parsing has just started or that the previous node can be operated on (as opposed
 			// to an incomplete operator node which can't yet), so it can be put into the new node's left operand slot right away.
-			NextNode->Expression.Op.LeftOperand = ExpressionRootNode;
+			NextNode->Op.LeftOperand = ExpressionRootNode;
 
 			// Continue parsing to obtain the right operand of this operator.
 			ExpressionRootNode = ParseOperatorExpression(Parser, NextNode, &ParenthesisLevel);
@@ -778,21 +785,49 @@ struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtCom
 		}
 	}
 
-	// If parsing was valid but failed to turn up any expression, return a NOP expression.
+	// If parsing didn't encounter an error but failed to find anything, just return a NOP expression node.
 	if (ExpressionRootNode == NULL)
 	{
-		ExpressionRootNode = AllocNewNode(AST_NODE_EXPRESSION);
-		ExpressionRootNode->BufferLocation = NextToken->BufferLocation;
-		ExpressionRootNode->Expression.Type = EXP_NOP;
+		ExpressionRootNode = AllocNewExpressionNode();
+		ExpressionRootNode->BufferLocation = Parser_PeekToken(Parser)->BufferLocation;
+		ExpressionRootNode->Type = EXP_NOP;
 	}
 
 	return ExpressionRootNode;
 }
 
-struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
+// Entry point of expression parsing for AST Parsing. Parses a node wrapping a root expression until reaching an end symbol (';' or ',' if specified) or a closing parenthesis
+// that does not match an opening parenthesis inside the expression itself.
+// Creates and wraps a NOP expression if no expression could be parsed at all, or NULL if there was a parser error.
+struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar)
+{
+	struct AST_Node* ExpressionRootASTNode = AllocNewASTNode(AST_NODE_EXPRESSION);
+	ExpressionRootASTNode->Expression = ParseRootExpression(Parser, StopAtComma, ConsumeStopChar);
+	if (ExpressionRootASTNode->Expression == NULL)
+	{
+		Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Error parsing expression.");
+		return NULL;
+	}
+
+	// If parsing was valid but failed to turn up any expression, return a NOP expression.
+	if (ExpressionRootASTNode->Expression == NULL && !Parser->HasError)
+	{
+	}
+	else if (Parser->HasError)
+	{
+		FreeASTNode(ExpressionRootASTNode);
+		return NULL;
+	}
+
+	ExpressionRootASTNode->BufferLocation = ExpressionRootASTNode->Expression->BufferLocation;
+
+	return ExpressionRootASTNode;
+}
+
+struct Expression* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 {
 	int StartTokenIndex = Parser->TokenIndex;
-	struct AST_Node* ArrayAccessNode = NULL;
+	struct Expression* ArrayAccessNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
@@ -800,7 +835,7 @@ struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing array access expression.");
 	PARSE_FAIL:
-		if (ArrayAccessNode != NULL) FreeNode(ArrayAccessNode);
+		if (ArrayAccessNode != NULL) FreeExpression(ArrayAccessNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -813,7 +848,7 @@ struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 	}
 
 	// Parse whatever expression follows and expect it to end with a closing bracket.
-	struct AST_Node* IndexExpressionNode = ParseExpressionNode(Parser, 0, 0);
+	struct Expression* IndexExpressionNode = ParseRootExpression(Parser, 0, 0);
 	if (IndexExpressionNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
@@ -831,12 +866,12 @@ struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 	// Create a new Array Access operator node and assign the index expression as its right operand, and leave
 	// the left operand empty.
 
-	ArrayAccessNode = AllocNewNode(AST_NODE_EXPRESSION);
+	ArrayAccessNode = AllocNewExpressionNode();
 	ArrayAccessNode->BufferLocation = NextToken->BufferLocation;
-	ArrayAccessNode->Expression.Type = EXP_OP;
-	ArrayAccessNode->Expression.Op.OperatorSymbol = SYMBOL_OP_ARRAY_ACCESS;
-	ArrayAccessNode->Expression.Op.RightOperand = IndexExpressionNode;
-	ArrayAccessNode->Expression.Op.LeftOperand = NULL;
+	ArrayAccessNode->Type = EXP_OP;
+	ArrayAccessNode->Op.OperatorSymbol = SYMBOL_OP_ARRAY_ACCESS;
+	ArrayAccessNode->Op.RightOperand = IndexExpressionNode;
+	ArrayAccessNode->Op.LeftOperand = NULL;
 
 	return ArrayAccessNode;
 }

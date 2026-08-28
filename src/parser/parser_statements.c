@@ -89,7 +89,7 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
 	PARSE_FAIL:
-		if (VarDecNode != NULL) FreeNode(VarDecNode);
+		if (VarDecNode != NULL) FreeASTNode(VarDecNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -107,7 +107,7 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	// Construct Variable Declaration StatementNode node and return it.
-	VarDecNode = AllocNewNode(AST_NODE_STATEMENT_OBJ_DEC);
+	VarDecNode = AllocNewASTNode(AST_NODE_STATEMENT_OBJ_DEC);
 	VarDecNode->BufferLocation = NextToken->BufferLocation;
 
 	VarDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
@@ -155,7 +155,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (BlockNode != NULL) FreeNode(BlockNode);
+		if (BlockNode != NULL) FreeASTNode(BlockNode);
 		return NULL;
 	}
 
@@ -165,7 +165,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	BlockNode = AllocNewNode(AST_NODE_STATEMENT_BLOCK);
+	BlockNode = AllocNewASTNode(AST_NODE_STATEMENT_BLOCK);
 	BlockNode->BufferLocation = NextToken->BufferLocation;
 	BlockNode->Statement.Block.Statements = Vector_Create(struct AST_Node*, 0);
 
@@ -216,7 +216,7 @@ struct AST_Node* ParseDependentStatementNode(struct ParserProcess* Parser)
 	if (StatementNode->Type == AST_NODE_STATEMENT_OBJ_DEC)
 	{
 		Parser_Error(Parser, StatementNode->BufferLocation, "Dependent statement cannot be a declaration.");
-		FreeNode(StatementNode);
+		FreeASTNode(StatementNode);
 		return NULL;
 	}
 
@@ -235,7 +235,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing conditional instruction.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (StatementNode != NULL) FreeNode(StatementNode);
+		if (StatementNode != NULL) FreeASTNode(StatementNode);
 		return NULL;
 	}
 
@@ -247,7 +247,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	StatementNode = AllocNewNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
+	StatementNode = AllocNewASTNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
 	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse the condition expression, specifically placing it in a parenthesis scope.
@@ -260,7 +260,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 	}
 
 	// Parse condition expression until matching closing parenthesis.
-	struct AST_Node* ConditionNode = ParseExpressionNode(Parser, 0, 0);
+	struct AST_Node* ConditionNode = ParseExpressionASTNode(Parser, 0, 0);
 	if (ConditionNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse conditional block expression.");
@@ -338,7 +338,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing For instruction.");
 	PARSE_FAIL:
 		Parser->TokenIndex = StartTokenIndex;
-		if (StatementNode != NULL) FreeNode(StatementNode);
+		if (StatementNode != NULL) FreeASTNode(StatementNode);
 		return NULL;
 	}
 
@@ -351,15 +351,15 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	StatementNode = AllocNewNode(AST_NODE_STATEMENT_FOR);
+	StatementNode = AllocNewASTNode(AST_NODE_STATEMENT_FOR);
 	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse init, condition and post-loop expressions.
-	StatementNode->Statement.For.InitExpression = ParseExpressionNode(Parser, 0, 1);
+	StatementNode->Statement.For.InitExpression = ParseExpressionASTNode(Parser, 0, 1);
 	if (Parser->HasError) goto PARSE_FAIL;
-	StatementNode->Statement.For.LoopCondition = ParseExpressionNode(Parser, 0, 1);	
+	StatementNode->Statement.For.LoopCondition = ParseExpressionASTNode(Parser, 0, 1);	
 	if (Parser->HasError) goto PARSE_FAIL;
-	StatementNode->Statement.For.PostLoopExpression = ParseExpressionNode(Parser, 0, 0);
+	StatementNode->Statement.For.PostLoopExpression = ParseExpressionASTNode(Parser, 0, 0);
 	if (Parser->HasError) goto PARSE_FAIL;
 
 	// Check end character is correct and consume it.
@@ -411,12 +411,12 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Control StatementNode.");
 	PARSE_FAIL:
-		if (ControlStatementNode != NULL) FreeNode(ControlStatementNode);
+		if (ControlStatementNode != NULL) FreeASTNode(ControlStatementNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
 
-	ControlStatementNode = AllocNewNode(AST_NODE_STATEMENT_CONTROL);
+	ControlStatementNode = AllocNewASTNode(AST_NODE_STATEMENT_CONTROL);
 	ControlStatementNode->BufferLocation = NextToken->BufferLocation;
 
 	switch (NextToken->Keyword)
@@ -439,7 +439,7 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	ControlStatementNode->Statement.Control.Keyword = NextToken->Keyword;
 
 	// Parse following expression. No expression is expected for BREAK and CONTINUE. For RETURN, whatever is parsed gets assigned and will be checked by Symbolizer.
-	struct AST_Node* ExpressionNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON, 1);
+	struct AST_Node* ExpressionNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
 	if (Parser->HasError)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing control keyword expression.");
@@ -453,7 +453,7 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	else if (ExpressionNode != NULL)
 	{
 		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression following keyword.");
-		FreeNode(ExpressionNode);
+		FreeASTNode(ExpressionNode);
 		goto PARSE_FAIL;
 	}
 
@@ -506,14 +506,14 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 		if (StatementNode == NULL)
 		{
 			// ... Otherwise continue on to parsing a free-standing expression.
-			StatementNode = ParseExpressionNode(Parser, SYMBOL_SEMICOLON, 1);
+			StatementNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
 		}
 	}
 
 	if (Parser->HasError || StatementNode == NULL)
 	{
 		if (!Parser->HasError) Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse statement.");
-		if (StatementNode != NULL) FreeNode(StatementNode);
+		if (StatementNode != NULL) FreeASTNode(StatementNode);
 		return NULL;
 	}
 	return StatementNode;

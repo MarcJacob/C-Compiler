@@ -48,26 +48,24 @@
   - Local variable declaration parsing (inside statement blocks). [DONE]
   - Global variable parsing. [DONE]
   - Array & Array Access operator parsing. [DONE]
-  - Struct parsing. [WIP]
+  - Struct parsing. [DONE]
     - Named & anonymous struct declaration/definition via the shared datatype-prefix parser, including forward declarations. [DONE]
     - Inline variable declaration(s) following a struct body, including pointer levels. [DONE]
-    - Bitfield members (e.g. `int x : 4;`).
+    - Bitfield members (e.g. `int x : 4;`). [DONE]
   - Union parsing. [DONE]
   - Enum parsing. [DONE]
   - Typedef parsing. [DONE]
-  - Expression parsing. [WIP]
+  - Expression parsing. [DONE]
     - Function call expressionables. [DONE]
     - `sizeof` operator. [DONE]
     - Cast expressions (`(type)expr`). [DONE]
     - Ternary operator `?:`. [DONE]
-    - Initializer lists for arrays/structs (e.g. `int a[3] = {1,2,3};`). [WIP]
+    - Initializer lists for arrays/structs (e.g. `int a[3] = {1,2,3};`). [DONE]
   - Parenthesized/function-pointer declarators (e.g. `int (*fp)(int,int);`), unified with function/variable declarator parsing via a shared `ParseDeclarator`/`ParseDeclarators` mechanism. [DONE]
-  - Switch statement parsing.
-  - Goto statement parsing.
-  - `do`/`while` loop parsing.
-  - Expression / AST Node decoupling. 
-    - Make sure Expression Trees do not contain nodes and that nodes contain expressions directly when possible.
-    - Done so that Expression structures can be reused in other stages.
+  - Expression / AST Node decoupling. [DONE]
+    - Decreases instances of expressions containing AST_Node pointers directly as much as possible and note down how they will get replaced over the next stage. [DONE]
+    - Done so that Expression structures can be reused in other stages. [DONE]
+  - Assign procedural name to anonymous user types so they may be recognized during integration.
 
 ## Step 6 — Integrator [PLANNING WIP]
 
@@ -107,8 +105,10 @@
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
 - Handle multiple input files.
 - Preprocessor.
-- Parser: Rework declarator parsing so that functions can be DEFINED anywhere a full symbol declaration declarator is allowed, even inline with a struct / enum def or a multi variable declaration (insanity).
 - Parser: More flexible specifier keyword order + check compatibility (like forbidding "static extern").
+- Switch statement support.
+- Goto statement support.
+- `do`/`while` loop support.
 
 ---
 

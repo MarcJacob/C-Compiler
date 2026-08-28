@@ -47,8 +47,10 @@ struct a {
 
 int main(int argc, char** argv)
 {
+	int init_list_test[] = { 1, 2, 3 };
 	int ternary_test = ((argc > 0) ? 1 : 0) + 1;
 	int a = 4, b = 2, c = 2 + sizeof(argc);
+
 
 
 	if (foo((float)a, b) + (&a + 1)[a + 5] + 3 * 4 + (2 - 1) && d->x == 2 && sizeof(int(*)(float)) > 4)

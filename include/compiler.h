@@ -781,15 +781,16 @@ static inline ui8 Expression_IsLeafType(enum EXPRESSION_TYPE Type)
 	return Type < EXP_OP;
 }
 
+struct AST_Node; // Forward declaration so Pre-Integration expressions can reference AST Nodes.
+
 // Expression tree structure combining operators and operands until reaching "leaf expressions".
-// First parsed during Parsing, then retained within validated trees to emit instructions from.
-// TODO: Expressions were recently separated from AST_Nodes, so a lot of code has to be refactored
-// once we start linking Expressions to other Expressions instead of AST_Nodes directly.
-// Ideally we end up in a situation where only Root Expressions are wrapped in an AST_Node.
+// First parsed during Parsing, then retained within Integrated Program Tree to emit instructions from.
+// Any reference to a AST_Node has to be replaced by something else over integration !
 struct Expression
 {
 	struct DatatypeDef ResultType; // Expected return type for this expression.
 	enum EXPRESSION_TYPE Type; // Type of expression.
+	ui32 BufferLocation; // Location of the expression in its source buffer. NOTE: Not sure this really belongs here... Done for the AST_Node -> Expression refactor.
 
 	ui8 ParenthesisLevel; // How "deep" inside parenthesis this expression is located. 
 
@@ -797,8 +798,8 @@ struct Expression
 	{
 		struct
 		{
-			struct AST_Node* LeftOperand; // Expression sub-node.
-			struct AST_Node* RightOperand; // Expression sub-node.
+			struct Expression* LeftOperand;
+			struct Expression* RightOperand;
 			enum TOKEN_SYMBOL OperatorSymbol;
 		} Op;
 
@@ -822,16 +823,21 @@ struct Expression
 			struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
 		} FunctionCall;
 
+		// Special expression type referencing a AST Sub-node.
+		// Will be resolved to a literal int node during integration.
 		struct
 		{
-			struct AST_Node* Operand;
-			ui8 IsDeclarator; // Whether this sizeof targets a declarator / type or an expression.
+			struct AST_Node* Operand;	// Abstract Syntax Node containing either expression or object.
 		} Sizeof;
 
 		struct
 		{
-			struct AST_Node* Operand;
-			struct AST_Node* TargetTypeDeclarator;
+			struct Expression* Operand;
+			union
+			{
+				struct AST_Node* TargetTypeASTObject; // Abstract Syntax Object node defining the combination of base type, pointer level, array size... we want to cast to.
+				void* TargetType; // PLACEHOLDER. The final resolved type to cast to, set by Integration.
+			};
 		} Cast;
 	};
 
@@ -865,9 +871,9 @@ struct AST_Node
 
 	union
 	{
-		// Declarator structure for Object types (variables, pointers, functions & function pointers).
-		// Can be contained independently inside Var Declaration statements.
-		struct AST_Object
+		// Specific structure for Object types (variables, functions & function pointers, structs / unions and enums).
+		// Sometimes contained independently from an AST Node Tree, to express a specific type / symbol.
+		struct	
 		{	
 			struct DatatypeDef ReturnType; // Contains the object's signature in terms of what base type it "produces".
 			struct String_ANSI Name; // Symbol name for this object. During integration this is what is evaluated to determine if two objects refer to the same thing (on top of shadowing).
@@ -875,12 +881,16 @@ struct AST_Node
 
 			struct
 			{
-				ui8 FuncPointerLevel; // If > 0, this is a function pointer. How many dereferences are required to reach actual function.
+				ui8 InitIsInitializerList; // If set, then must be initialized with Initializer List.
+				union
+				{
+					struct Expression* Expression; // Initializer expression. Corresponds to bit count override if variable is a struct member.
+					struct Vector List; // List of expressions corresponding to array members if array, otherwise struct members.
+				} Initializer;
 
-				ui8 InitIsInitializerList; // If set, then the Var_Init expression must be treated as an initalizer list.
-				struct AST_Node* Initializer; // Initializer expression.
 				struct Vector ArraySizes; // Vector type = AST_Node*. Sequence of array size expressions. If empty, this variable isn't an array.
 
+				ui8 FuncPointerLevel; // If > 0, this is a function pointer. How many dereferences are required to reach actual function.
 				// Vector of sub-objects, representing param variable / function pointers.
 				struct Vector FuncPointer_Params; // Vector type = AST_Node*.
 			} Var;
@@ -965,7 +975,7 @@ struct AST_Node
 			};
 		} Statement;
 
-		struct Expression Expression;
+		struct Expression* Expression;
 	};
 };
 

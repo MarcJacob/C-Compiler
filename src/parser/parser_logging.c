@@ -6,6 +6,7 @@
 // AST Printing
 
 static void PrintNode(struct AST_Node* Node, ui32 Depth);
+static void PrintExpression(struct Expression* Expression, ui32 Depth);
 
 static void PrintIndent(ui32 Depth)
 {
@@ -92,65 +93,77 @@ static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 
 	if (IsFunc)
 		PrintLabeledNode("BODY", Node->Obj.Func.StatementsBlock, Depth + 1);
-	else
-		PrintLabeledNode("INIT", Node->Obj.Var.Initializer, Depth + 1);
+	else if (Node->Obj.Var.InitIsInitializerList)
+	{
+		PrintIndent(Depth + 1);
+		printf("[INIT LIST]\n");
+		for (int i = 0; i < Node->Obj.Var.Initializer.List.Size; i++)
+		{
+			struct Expression* ListExpression = Vector_GetValueAt(Node->Obj.Var.Initializer.List, struct Expression*, i);
+			ASSERT(ListExpression != NULL);
+
+			PrintExpression(ListExpression, Depth + 1);
+		}
+	}
+	else if (Node->Obj.Var.Initializer.Expression != NULL)
+	{
+		PrintIndent(Depth);
+		printf("[INIT EXP]\n");
+		PrintExpression(Node->Obj.Var.Initializer.Expression, Depth + 1);
+	}
 }
 
 // Prints an Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
-static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
+static void PrintExpression(struct Expression* Expression, ui32 Depth)
 {
-	switch (Node->Expression.Type)
+	if (Expression == NULL) return;
+
+	PrintIndent(Depth);
+
+	switch (Expression->Type)
 	{
 	case EXP_LITERAL_INT:
-		printf("<LITERAL_INT: %lld>\n", Node->Expression.Literal.Integer);
+		printf("<LITERAL_INT: %lld>\n", Expression->Literal.Integer);
 		break;
 	case EXP_LITERAL_FLOAT:
-		printf("<LITERAL_FLOAT: %f>\n", Node->Expression.Literal.Float);
+		printf("<LITERAL_FLOAT: %f>\n", Expression->Literal.Float);
 		break;
 	case EXP_LITERAL_DOUBLE:
-		printf("<LITERAL_DOUBLE: %lf>\n", Node->Expression.Literal.Double);
+		printf("<LITERAL_DOUBLE: %lf>\n", Expression->Literal.Double);
 		break;
 	case EXP_LITERAL_STRING:
-		printf("<LITERAL_STRING: \"%s\">\n", Node->Expression.Literal.String.Str);
+		printf("<LITERAL_STRING: \"%s\">\n", Expression->Literal.String.Str);
 		break;
 	case EXP_LITERAL_CHAR:
-		printf("<LITERAL_CHAR: '%c'>\n", Node->Expression.Literal.Character);
+		printf("<LITERAL_CHAR: '%c'>\n", Expression->Literal.Character);
 		break;
 	case EXP_VAR_ACCESS:
-		printf("<VAR_ACCESS: '%s' : ", Node->Expression.Variable.Name.Str);
-		PrintDatatypeName(&Node->Expression.ResultType);
+		printf("<VAR_ACCESS: '%s' : ", Expression->Variable.Name.Str);
+		PrintDatatypeName(&Expression->ResultType);
 		printf(">\n");
 		break;
 	case EXP_OP:
-		printf("<OP: '%s'>\n", Symbol_ToString(Node->Expression.Op.OperatorSymbol));
-		PrintNode(Node->Expression.Op.LeftOperand, Depth + 1);
-		PrintNode(Node->Expression.Op.RightOperand, Depth + 1);
+		printf("<OP: '%s'>\n", Symbol_ToString(Expression->Op.OperatorSymbol));
+		PrintExpression(Expression->Op.LeftOperand, Depth + 1);
+		PrintExpression(Expression->Op.RightOperand, Depth + 1);
 		break;
 	case EXP_FUNC_CALL:
-		printf("<FUNCTION_CALL: '%s' : ", Node->Expression.FunctionCall.FunctionName.Str);
-		PrintDatatypeName(&Node->Expression.ResultType);
+		printf("<FUNCTION_CALL: '%s' : ", Expression->FunctionCall.FunctionName.Str);
+		PrintDatatypeName(&Expression->ResultType);
 		printf(">\n");
-		for (int i = 0; i < Node->Expression.FunctionCall.Params.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Expression.FunctionCall.Params, struct AST_Node*, i), Depth + 1);
+		for (int i = 0; i < Expression->FunctionCall.Params.Size; i++)
+			PrintExpression(Vector_GetValueAt(Expression->FunctionCall.Params, struct Expression*, i), Depth + 1);
 		break;
 	case EXP_OP_SIZEOF:
-		if (Node->Expression.Sizeof.IsDeclarator)
-		{
-			printf("<SIZE_OF: ");
-			PrintObj_AsParam(Node->Expression.Sizeof.Operand);
-			printf(">\n");
-		}
-		else
-		{
-			printf("<SIZE_OF>");
-			PrintNode(Node->Expression.Sizeof.Operand, Depth + 1);
-		}
+		printf("<SIZE_OF>\n");
+		PrintNode(Expression->Sizeof.Operand, Depth + 1);
 		break;
 	case EXP_OP_CAST:
 		printf("<CAST: ");
-		PrintObj_AsParam(Node->Expression.Cast.TargetTypeDeclarator);
+		PrintObj_AsParam(Expression->Cast.TargetTypeASTObject);
 		printf(">\n");
-		PrintNode(Node->Expression.Cast.Operand, Depth + 1);
+		PrintExpression(Expression->Cast.Operand, Depth + 1);
+		break;
 	}
 }
 
@@ -158,6 +171,12 @@ static void PrintExpressionNode(struct AST_Node* Node, ui32 Depth)
 static void PrintNode(struct AST_Node* Node, ui32 Depth)
 {
 	if (Node == NULL) return;
+
+	if (Node->Type == AST_NODE_EXPRESSION)
+	{
+		PrintExpression(Node->Expression, Depth);
+		return;
+	}
 
 	PrintIndent(Depth);
 
@@ -185,14 +204,11 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	case AST_NODE_OBJ_ENUM:
 		printf("<ENUM : '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
 		for (int i = 0; i < Node->Obj.Enum.Members.Size; i++)
-			PrintNode(Vector_GetValueAt(Node->Obj.Enum.Members, struct AST_Node*, i), Depth + 1);
+			PrintExpression(Vector_GetValueAt(Node->Obj.Enum.Members, struct Expression*, i), Depth + 1);
 		break;
 	case AST_NODE_OBJ_VAR:
 	case AST_NODE_OBJ_FUNC:
 		PrintObjNode(Node, Depth);
-		break;
-	case AST_NODE_EXPRESSION:
-		PrintExpressionNode(Node, Depth);
 		break;
 	case AST_NODE_STATEMENT_EXP:
 		printf("<STATEMENT_EXP>\n");

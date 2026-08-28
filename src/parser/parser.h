@@ -31,8 +31,8 @@ struct Token* Parser_PeekToken(struct ParserProcess* Parser);
 struct Token* Parser_ConsumeToken(struct ParserProcess* Parser);
 ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser);
 
-struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType);
-void FreeNode(struct AST_Node* Node);
+struct AST_Node* AllocNewASTNode(enum AST_NODE_TYPE NodeType);
+void FreeASTNode(struct AST_Node* Node);
 void FreeNodeVector(struct Vector* NodeVec);
 
 // Prints every root AST node tree held by the Parser process to stdout, using indentation to represent node hierarchy.
@@ -113,12 +113,16 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 // Parses an expression node containing all operations and sub-expressions between current token and the next instance of the specified end symbol.
 // If NULL is returned, then the parser has encountered an error or failed to read any expressionable tokens.
 // ConsumeStopCharacter determines whether the end token is consumed (comma, semicolon, closing parenthesis...).
-struct AST_Node* ParseExpressionNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopCharacter);
+struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopCharacter);
+
+// Frees an expression node / tree.
+// NOTE: Migrate this to a proper "Expressions" file independent from parser.
+void FreeExpression(struct Expression* Expression);
 
 // Specialized parser specifically made to parse an array access operator expressionable (missing its left operand).
 // Expects the first token to be an opening bracket. Stops at the first corresponding closing bracket found and consumes it.
 // The resulting operator expression node will require a left operand as the thing being array-accessed.
-struct AST_Node* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser);
+struct Expression* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser);
 
 // Root statement parsing function, used when parsing a function definition.
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser);

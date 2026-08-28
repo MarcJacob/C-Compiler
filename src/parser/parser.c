@@ -33,7 +33,7 @@ ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
 	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->SourceTokens->Size - 1))->BufferLocation;
 }
 
-struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
+struct AST_Node* AllocNewASTNode(enum AST_NODE_TYPE NodeType)
 {
 	struct AST_Node* NewNode = calloc(1, sizeof(struct AST_Node));
 	ASSERT(NewNode != NULL);
@@ -42,8 +42,48 @@ struct AST_Node* AllocNewNode(enum AST_NODE_TYPE NodeType)
 	return NewNode;
 }
 
+void FreeExpressionVector(struct Vector* Expressions);
+void FreeExpression(struct Expression* Expression)
+{
+	if (Expression == NULL) return;
+	switch (Expression->Type)
+	{
+	case EXP_OP:
+		FreeExpression(Expression->Op.LeftOperand);
+		FreeExpression(Expression->Op.RightOperand);
+		break;
+	case EXP_VAR_ACCESS:
+		String_Free_ANSI(&Expression->Variable.Name);
+		break;
+	case EXP_FUNC_CALL:
+		String_Free_ANSI(&Expression->FunctionCall.FunctionName);
+		FreeExpressionVector(&Expression->FunctionCall.Params);
+		break;
+	case EXP_LITERAL_STRING:
+		String_Free_ANSI(&Expression->Literal.String);
+		break;
+	case EXP_OP_CAST:
+		FreeASTNode(Expression->Cast.Operand);
+		FreeASTNode(Expression->Cast.TargetTypeASTObject);
+		break;
+	case EXP_OP_SIZEOF:
+		FreeASTNode(Expression->Sizeof.Operand);
+		break;
+	}
+}
+
+void FreeExpressionVector(struct Vector* Expressions)
+{
+	if (Expressions == NULL) return;
+
+	for (int i = 0; i < Expressions->Size; i++)
+	{
+		FreeExpression(Vector_GetValueAt(*Expressions, struct Expression*, i));
+	}
+}
+
 // Frees a node and its children recursively.
-void FreeNode(struct AST_Node* Node)
+void FreeASTNode(struct AST_Node* Node)
 {
 	if (Node == NULL) return;
 
@@ -52,40 +92,20 @@ void FreeNode(struct AST_Node* Node)
 	default:
 		break;
 	case AST_NODE_EXPRESSION:
-		switch (Node->Expression.Type)
-		{
-		case EXP_OP:
-			FreeNode(Node->Expression.Op.LeftOperand);
-			FreeNode(Node->Expression.Op.RightOperand);
-			break;
-		case EXP_VAR_ACCESS:
-			String_Free_ANSI(&Node->Expression.Variable.Name);
-			break;
-		case EXP_FUNC_CALL:
-			String_Free_ANSI(&Node->Expression.FunctionCall.FunctionName);
-			FreeNodeVector(&Node->Expression.FunctionCall.Params);
-			break;
-		case EXP_LITERAL_STRING:
-			String_Free_ANSI(&Node->Expression.Literal.String);
-			break;
-		case EXP_OP_CAST:
-			FreeNode(Node->Expression.Cast.Operand);
-			FreeNode(Node->Expression.Cast.TargetTypeDeclarator);
-			break;
-		case EXP_OP_SIZEOF:
-			FreeNode(Node->Expression.Sizeof.Operand);
-			break;
-		}
+		FreeExpression(&Node->Expression);
 		break;
 	case AST_NODE_OBJ_VAR:
 		String_Free_ANSI(&Node->Obj.Name);
-		FreeNode(Node->Obj.Var.Initializer);
+		if (Node->Obj.Var.InitIsInitializerList)
+			FreeExpressionVector(&Node->Obj.Var.Initializer.List);
+		else
+			FreeExpression(Node->Obj.Var.Initializer.Expression);
 		Vector_Destroy(&Node->Obj.Var.ArraySizes);
 		break;
 	case AST_NODE_OBJ_FUNC:
 		String_Free_ANSI(&Node->Obj.Name);
 		FreeNodeVector(&Node->Obj.Func.Params);
-		FreeNode(Node->Obj.Func.StatementsBlock);	
+		FreeASTNode(Node->Obj.Func.StatementsBlock);	
 		break;
 	case AST_NODE_OBJ_STRUCT:
 		String_Free_ANSI(&Node->Obj.ReturnType.TypeName);
@@ -96,26 +116,26 @@ void FreeNode(struct AST_Node* Node)
 		FreeNodeVector(&Node->Obj.Enum.Members);
 		break;
 	case AST_NODE_STATEMENT_EXP:
-		FreeNode(Node->Statement.Expression);
+		FreeASTNode(Node->Statement.Expression);
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
-		FreeNode(Node->Statement.Control.Expression);
+		FreeASTNode(Node->Statement.Control.Expression);
 		break;
 	case AST_NODE_STATEMENT_IF:
-		FreeNode(Node->Statement.If.EntryCondition);
-		FreeNode(Node->Statement.If.ExecStatement);
-		FreeNode(Node->Statement.If.ExecStatement_Else);
+		FreeASTNode(Node->Statement.If.EntryCondition);
+		FreeASTNode(Node->Statement.If.ExecStatement);
+		FreeASTNode(Node->Statement.If.ExecStatement_Else);
 		break;
 	case AST_NODE_STATEMENT_WHILE:
-		FreeNode(Node->Statement.While.EntryCondition);
-		FreeNode(Node->Statement.While.ExecStatement);
-		FreeNode(Node->Statement.While.LoopCondition);
+		FreeASTNode(Node->Statement.While.EntryCondition);
+		FreeASTNode(Node->Statement.While.ExecStatement);
+		FreeASTNode(Node->Statement.While.LoopCondition);
 		break;
 	case AST_NODE_STATEMENT_FOR:
-		FreeNode(Node->Statement.For.InitExpression);
-		FreeNode(Node->Statement.For.LoopCondition);
-		FreeNode(Node->Statement.For.PostLoopExpression);
-		FreeNode(Node->Statement.For.ExecStatement);
+		FreeASTNode(Node->Statement.For.InitExpression);
+		FreeASTNode(Node->Statement.For.LoopCondition);
+		FreeASTNode(Node->Statement.For.PostLoopExpression);
+		FreeASTNode(Node->Statement.For.ExecStatement);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
 		FreeNodeVector(&Node->Statement.Block.Statements);
@@ -134,7 +154,7 @@ void FreeNodeVector(struct Vector* NodeVec)
 
 	for (int i = 0; i < NodeVec->Size; i++)
 	{
-		FreeNode(Vector_GetValueAt(*NodeVec, struct AST_Node*, i));
+		FreeASTNode(Vector_GetValueAt(*NodeVec, struct AST_Node*, i));
 	}
 
 	Vector_Destroy(NodeVec);

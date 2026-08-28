@@ -19,6 +19,9 @@ parser\_logging.c contains all the logging code for debugging the contents of a 
 
 # What is the parser ?
 
+Stage description:
+Token Vector (Input) -> Abstract Syntax Tree Root Nodes Vector (Output)
+
 The parser is the process taking in a sequence of tokens as input and giving back one or more Abstract Syntax Trees as output.
 
 The policy of the parser when it comes to catching errors is "*Could* it work in this local context ?".

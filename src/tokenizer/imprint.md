@@ -1,6 +1,9 @@
 This folder contains the full implementation of the Tokenizer Process, which from the outside is basically one large function call that turns a buffer of characters into a vector of tokens.
 
-Although the main entry point of the tokenizer is in tokenizer.c, one should not hesitate to split it into multiple .c files,which should then all be included in tokenizer.c directly.
+Stage description:
+Source Character Buffer (Input) -> Token Vector (Output).
+
+Although the main entry point of the tokenizer is in tokenizer.c, one should not hesitate to split it into multiple .c files, which should then all be included in tokenizer.c directly.
 
 The tokenizer works off of a tree approach using the Nested Reader system, in a specific order of attempted token type.
 

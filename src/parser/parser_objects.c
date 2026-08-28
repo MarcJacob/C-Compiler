@@ -14,7 +14,7 @@ struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser)
 {
 	// Expect an opening brace, then start parsing expressions.
 
-	struct AST_Node* EnumNode = AllocNewNode(AST_NODE_OBJ_ENUM);
+	struct AST_Node* EnumNode = AllocNewASTNode(AST_NODE_OBJ_ENUM);
 	EnumNode->Obj.Enum.Members = Vector_Create(struct AST_Node*, 0);
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -23,7 +23,7 @@ struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing struct.");
 	PARSE_FAIL:
-		FreeNode(EnumNode);
+		FreeASTNode(EnumNode);
 		return 0;
 	}
 
@@ -43,20 +43,15 @@ struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser)
 
 	for(;;)
 	{
-		struct AST_Node* MemberExpNode = ParseExpressionNode(Parser, 1, 0);
-		if (MemberExpNode == NULL)
-		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
-			goto PARSE_FAIL;
-		}
+		struct Expression* MemberExpNode = ParseRootExpression(Parser, 1, 0);
 
 		// If expression is NOP (typically happens between the last member's comma and closing bracket), don't do anything.
-		if (MemberExpNode->Expression.Type != EXP_NOP)
+		if (MemberExpNode->Type != EXP_NOP)
 		{
 			// Check expression format and add to members vector.
-			ui8 ExpressionIsValid = MemberExpNode->Expression.Type == EXP_VAR_ACCESS
-				|| (MemberExpNode->Expression.Type == EXP_OP && MemberExpNode->Expression.Op.LeftOperand != NULL
-					&& MemberExpNode->Expression.Op.LeftOperand->Expression.Type == EXP_VAR_ACCESS);
+			ui8 ExpressionIsValid = MemberExpNode->Type == EXP_VAR_ACCESS
+				|| (MemberExpNode->Type == EXP_OP && MemberExpNode->Op.LeftOperand != NULL
+					&& MemberExpNode->Op.LeftOperand->Type == EXP_VAR_ACCESS);
 
 			if (!ExpressionIsValid)
 			{
@@ -64,7 +59,7 @@ struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser)
 				goto PARSE_FAIL;
 			}
 
-			Vector_Push(EnumNode->Obj.Enum.Members, struct AST_Node*, MemberExpNode);
+			Vector_Push(EnumNode->Obj.Enum.Members, struct Expression*, MemberExpNode);
 		}
 
 		NextToken = Parser_ConsumeToken(Parser); // Consume whatever ended the expression.
@@ -86,7 +81,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 {
 	// Expect an opening brace, then start parsing variable, struct / union and enum objects.
 
-	struct AST_Node* StructNode = AllocNewNode(AST_NODE_OBJ_STRUCT);
+	struct AST_Node* StructNode = AllocNewASTNode(AST_NODE_OBJ_STRUCT);
 	StructNode->Obj.Struct.Members = Vector_Create(struct AST_Node*, 2);
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -95,7 +90,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing struct.");
 	PARSE_FAIL:
-		FreeNode(StructNode);
+		FreeASTNode(StructNode);
 		return NULL;
 	}
 
@@ -205,12 +200,12 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF.");
 	PARSE_FAIL:
 		Parser->TokenIndex = TokenStartIndex;
-		if (ObjNode != NULL) FreeNode(ObjNode);
+		if (ObjNode != NULL) FreeASTNode(ObjNode);
 		return 0;
 	}
 
 	// Initialize new object with a default type of Var.
-	ObjNode = AllocNewNode(AST_NODE_OBJ_VAR);
+	ObjNode = AllocNewASTNode(AST_NODE_OBJ_VAR);
 	ObjNode->BufferLocation = NextToken->BufferLocation;
 	ObjNode->Obj.ReturnType = *ReturnType;
 
@@ -313,8 +308,9 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 		// Start recursively parsing datatype + declarator pairs as parameters.
 
 FUNC_PARAMS_PARSING:
-		struct Vector Params = Vector_Create(struct AST_Node*, 0);
 		ObjNode->Type = ObjNode->Obj.Var.FuncPointerLevel > 0 ? AST_NODE_OBJ_VAR : AST_NODE_OBJ_FUNC;
+
+		struct Vector Params = Vector_Create(struct AST_Node*, 0);
 
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -381,7 +377,7 @@ FUNC_PARAMS_PARSING:
 		ObjNode->Obj.Var.ArraySizes = Vector_Create(struct AST_Node*, 0);
 		while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
 		{
-			struct AST_Node* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);
+			struct Expression* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);
 			if (ArrayExpressionNode == NULL || Parser->HasError)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse array size declaration expression.");
@@ -389,9 +385,9 @@ FUNC_PARAMS_PARSING:
 			}
 
 			// The node's right operand is the size we're looking for. Take it away from the array expression node and discard the latter.
-			Vector_Push(ObjNode->Obj.Var.ArraySizes, struct AST_Node*, ArrayExpressionNode->Expression.Op.RightOperand);
-			ArrayExpressionNode->Expression.Op.RightOperand = NULL;
-			FreeNode(ArrayExpressionNode);
+			Vector_Push(ObjNode->Obj.Var.ArraySizes, struct Expression*, ArrayExpressionNode->Op.RightOperand);
+			ArrayExpressionNode->Op.RightOperand = NULL;
+			FreeExpression(ArrayExpressionNode);
 
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
@@ -419,14 +415,45 @@ FUNC_PARAMS_PARSING:
 		// Check whether we should parse an expression or an initializer list.
 		if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Initializer List parsing unimplemented.");
-			goto PARSE_FAIL;
+			Parser_ConsumeToken(Parser); // Consume '{'.
+
+			ObjNode->Obj.Var.InitIsInitializerList = 1;
+			ObjNode->Obj.Var.Initializer.List = Vector_Create(struct Expression*, 1);
+
+			for(;;)
+			{
+				struct Expression* NextExpression = ParseRootExpression(Parser, 1, 0);
+				if (NextExpression == NULL || NextExpression->Type == EXP_NOP ||
+					Parser->HasError)
+				{
+					Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
+					goto PARSE_FAIL;
+				}
+
+				NextToken = Parser_ConsumeToken(Parser); // Consume whatever ended the expression.
+				if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+				if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
+				{
+					Vector_Push(ObjNode->Obj.Var.Initializer.List, struct Expression*, NextExpression);
+					continue;
+				}
+
+				if (Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
+				{
+					break;
+				}
+
+				Parser_Error(Parser, NextToken->BufferLocation, "Expected '}' token.");
+				goto PARSE_FAIL;
+			}
 		}
 		else
 		{
-			// Parse an expression.
-			ObjNode->Obj.Var.Initializer = ParseExpressionNode(Parser, 1, 0);
-			if (ObjNode->Obj.Var.Initializer == NULL || ObjNode->Obj.Var.Initializer->Expression.Type == EXP_NOP)
+			// Parse an expression initalizer.
+			ObjNode->Obj.Var.InitIsInitializerList = 0;
+			ObjNode->Obj.Var.Initializer.Expression = ParseRootExpression(Parser, 1, 0);
+			if (ObjNode->Obj.Var.Initializer.Expression == NULL || ObjNode->Obj.Var.Initializer.Expression->Type == EXP_NOP)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Expected initializer expression.");
 				goto PARSE_FAIL;
@@ -449,6 +476,7 @@ FUNC_PARAMS_PARSING:
 			goto PARSE_FAIL;
 		}
 	}
+	// If the next token is a colon, parse a bit count.
 	else if (Token_IsSymbol(NextToken, SYMBOL_AMB_COLON))
 	{
 		if (ObjNode->Type != AST_NODE_OBJ_VAR || !AllowBitCount)
@@ -459,8 +487,10 @@ FUNC_PARAMS_PARSING:
 
 		Parser_ConsumeToken(Parser); // Consume ':'.
 
-		ObjNode->Obj.Var.Initializer = ParseExpressionNode(Parser, 0, 0);
-		if (Parser->HasError || ObjNode->Obj.Var.Initializer == NULL)
+		// Parse an expression initializer.
+		ObjNode->Obj.Var.InitIsInitializerList = 0;
+		ObjNode->Obj.Var.Initializer.Expression = ParseRootExpression(Parser, 0, 0);
+		if (Parser->HasError || ObjNode->Obj.Var.Initializer.Expression == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Error parsing bit count assignment expression.");
 			goto PARSE_FAIL;
@@ -481,7 +511,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF.");
 	PARSE_FAIL:
 		Parser->TokenIndex = TokenStartIndex;
-		if (ObjNode != NULL) FreeNode(ObjNode);
+		if (ObjNode != NULL) FreeASTNode(ObjNode);
 		return 0;
 	}
 
