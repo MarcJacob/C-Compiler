@@ -97,9 +97,10 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	// Get the data type to assign to the returned variable declaration node.
 	// If it fails, then we know we're not dealing with a variable declaration, but it could be something else
 	// hence no error is output.
-	struct DatatypeDef ObjectsType;
-	if (!ParseDatatypeDef(Parser, &ObjectsType))
+	struct TypeSignature* ObjectsType = AllocTypeSignature();
+	if (!ParseTypeSignature(Parser, ObjectsType))
 	{
+		FreeTypeSignature(ObjectsType);
 		goto PARSE_FAIL;
 	}
 
@@ -107,7 +108,7 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 	// Construct Variable Declaration StatementNode node and return it.
-	VarDecNode = AllocNewASTNode(AST_NODE_STATEMENT_OBJ_DEC);
+	VarDecNode = AllocASTNode(AST_NODE_STATEMENT_OBJ_DEC);
 	VarDecNode->BufferLocation = NextToken->BufferLocation;
 
 	VarDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
@@ -115,7 +116,7 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	// Parse objects using the member type.
 	while (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
 	{
-		struct AST_Node* NextObj = ParseObject_VarFunc(Parser, &ObjectsType, 0, 1, 1);
+		struct AST_Node* NextObj = ParseObject_VarFunc(Parser, ObjectsType, 0, 1, 1);
 		if (NextObj == NULL)
 		{
 			goto PARSE_FAIL;
@@ -165,7 +166,7 @@ struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	BlockNode = AllocNewASTNode(AST_NODE_STATEMENT_BLOCK);
+	BlockNode = AllocASTNode(AST_NODE_STATEMENT_BLOCK);
 	BlockNode->BufferLocation = NextToken->BufferLocation;
 	BlockNode->Statement.Block.Statements = Vector_Create(struct AST_Node*, 0);
 
@@ -247,7 +248,7 @@ struct AST_Node* ParseConditionalStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	StatementNode = AllocNewASTNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
+	StatementNode = AllocASTNode(IsWhile ? AST_NODE_STATEMENT_WHILE : AST_NODE_STATEMENT_IF);
 	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse the condition expression, specifically placing it in a parenthesis scope.
@@ -351,7 +352,7 @@ struct AST_Node* ParseForStatementNode(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	StatementNode = AllocNewASTNode(AST_NODE_STATEMENT_FOR);
+	StatementNode = AllocASTNode(AST_NODE_STATEMENT_FOR);
 	StatementNode->BufferLocation = NextToken->BufferLocation;
 
 	// Parse init, condition and post-loop expressions.
@@ -416,7 +417,7 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 		return NULL;
 	}
 
-	ControlStatementNode = AllocNewASTNode(AST_NODE_STATEMENT_CONTROL);
+	ControlStatementNode = AllocASTNode(AST_NODE_STATEMENT_CONTROL);
 	ControlStatementNode->BufferLocation = NextToken->BufferLocation;
 
 	switch (NextToken->Keyword)

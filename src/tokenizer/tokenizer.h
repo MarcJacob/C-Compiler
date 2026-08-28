@@ -3,7 +3,7 @@
 #ifndef TOKENIZER_INCLUDED
 #define TOKENIZER_INCLUDED
 
-#include "compiler.h"
+#include "compiler/tokens.h"
 
 // Main orchestration structure, passed to most tokenizer functions to provide "global" functionality such as error reporting.
 struct TokenizerProcess

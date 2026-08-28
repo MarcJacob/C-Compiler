@@ -34,13 +34,13 @@
   - `?` symbol (for the ternary operator). [DONE]
 - Route tokenizer failures (invalid characters, unterminated literals, etc.) through the error handling pipeline. [DONE]
 
-## Step 5 — Parser [WIP]
+## Step 5 — Parser [DONE] (Some related tasks left in backlog)
 
 - Takes any token buffer as input. [DONE]
 - Outputs a syntax tree representing the grammatical structure of the program. [DONE]
 - AST node structures (AST_NODE_TYPE, DatatypeDef, AST_Node) defined in include/compiler.h. [DONE]
 - Parser process skeleton: ParserProcess structure, Parser_Error, Parser_Run entry point, wired into Compiler_Run. [DONE]
-- Grammar / parsing logic to actually build the AST from tokens. [WIP]
+- Grammar / parsing logic to actually build the AST from tokens. [DONE]
   - Datatype parsing (primitive types, specifiers, pointer levels). [DONE]
   - Top-level dispatch loop (function / struct / global variable) wired into Parser_Run. [DONE]
   - Function parsing (identifier, parameters, body). [DONE]
@@ -66,7 +66,8 @@
     - Decreases instances of expressions containing AST_Node pointers directly as much as possible and note down how they will get replaced over the next stage. [DONE]
     - Done so that Expression structures can be reused in other stages. [DONE]
   - Assign procedural name to anonymous user types. [DONE]
-  - Final tidy-up of symbols / implementation files.
+  - Refactor Type system to turn Type Signatures into complete, independent, cross-stage objects. [DONE]
+  - Final tidy-up of symbols / implementation files. [DONE]
 
 ## Step 6 — Integrator [PLANNING WIP]
 

@@ -33,7 +33,7 @@ ui32 Parser_GetLastTokenBufferLoc(struct ParserProcess* Parser)
 	return ((struct Token*)Vector_GetPtr(Parser->SourceTokens, Parser->SourceTokens->Size - 1))->BufferLocation;
 }
 
-struct AST_Node* AllocNewASTNode(enum AST_NODE_TYPE NodeType)
+struct AST_Node* AllocASTNode(enum AST_NODE_TYPE NodeType)
 {
 	struct AST_Node* NewNode = calloc(1, sizeof(struct AST_Node));
 	ASSERT(NewNode != NULL);
@@ -46,6 +46,9 @@ void FreeExpressionVector(struct Vector* Expressions);
 void FreeExpression(struct Expression* Expression)
 {
 	if (Expression == NULL) return;
+
+	FreeTypeSignature(Expression->ResultType);
+
 	switch (Expression->Type)
 	{
 	case EXP_OP:
@@ -63,11 +66,11 @@ void FreeExpression(struct Expression* Expression)
 		String_Free_ANSI(&Expression->Literal.String);
 		break;
 	case EXP_OP_CAST:
-		FreeASTNode(Expression->Cast.Operand);
-		FreeASTNode(Expression->Cast.TargetTypeASTObject);
+		FreeExpression(Expression->Cast.Operand);
+		FreeTypeSignature(Expression->Cast.TypeSignature);
 		break;
 	case EXP_OP_SIZEOF:
-		FreeASTNode(Expression->Sizeof.Operand);
+		FreeExpression(Expression->Sizeof.Operand);
 		break;
 	}
 }
@@ -92,10 +95,11 @@ void FreeASTNode(struct AST_Node* Node)
 	default:
 		break;
 	case AST_NODE_EXPRESSION:
-		FreeExpression(&Node->Expression);
+		FreeExpression(Node->Expression);
 		break;
 	case AST_NODE_OBJ_VAR:
 		String_Free_ANSI(&Node->Obj.Name);
+		FreeTypeSignature(Node->Obj.TypeSignature);
 		if (Node->Obj.Var.InitIsInitializerList)
 			FreeExpressionVector(&Node->Obj.Var.Initializer.List);
 		else
@@ -104,16 +108,17 @@ void FreeASTNode(struct AST_Node* Node)
 		break;
 	case AST_NODE_OBJ_FUNC:
 		String_Free_ANSI(&Node->Obj.Name);
-		FreeNodeVector(&Node->Obj.Func.Params);
+		FreeTypeSignature(Node->Obj.TypeSignature);
+		FreeASTNodeVector(&Node->Obj.Func.Params);
 		FreeASTNode(Node->Obj.Func.StatementsBlock);	
 		break;
 	case AST_NODE_OBJ_STRUCT:
-		String_Free_ANSI(&Node->Obj.ReturnType.TypeName);
-		FreeNodeVector(&Node->Obj.Struct.Members);
+		FreeTypeSignature(Node->Obj.TypeSignature);
+		FreeASTNodeVector(&Node->Obj.Struct.Members);
 		break;
 	case AST_NODE_OBJ_ENUM:
-		String_Free_ANSI(&Node->Obj.ReturnType.TypeName);
-		FreeNodeVector(&Node->Obj.Enum.Members);
+		FreeTypeSignature(Node->Obj.TypeSignature);
+		FreeASTNodeVector(&Node->Obj.Enum.Members);
 		break;
 	case AST_NODE_STATEMENT_EXP:
 		FreeASTNode(Node->Statement.Expression);
@@ -138,17 +143,17 @@ void FreeASTNode(struct AST_Node* Node)
 		FreeASTNode(Node->Statement.For.ExecStatement);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
-		FreeNodeVector(&Node->Statement.Block.Statements);
+		FreeASTNodeVector(&Node->Statement.Block.Statements);
 		break;
 	case AST_NODE_STATEMENT_OBJ_DEC:
-		FreeNodeVector(&Node->Statement.ObjectDeclaration.Objects);
+		FreeASTNodeVector(&Node->Statement.ObjectDeclaration.Objects);
 		break;
 	}
 
 	free(Node);
 }
 
-void FreeNodeVector(struct Vector* NodeVec)
+void FreeASTNodeVector(struct Vector* NodeVec)
 {
 	ASSERT(NodeVec != NULL);
 
@@ -199,7 +204,7 @@ void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Form
 }
 
 
-static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* OutDatatypeDef)
+static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef)
 {
 	ui32 StartIndex = Parser->TokenIndex;
 
@@ -231,14 +236,14 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		return 0;
 	}
 
-	enum DATATYPE_FLAGS Flags = 0;
+	enum TYPE_SIG_FLAGS Flags = 0;
 
 	// Perform various flag checks. TODO: Make it so those keywords can be put in any order.
 
 	// Check for static-ness.
 	if (NextToken->Keyword == KEYWORD_STATIC)
 	{
-		Flags |= DATATYPE_IS_STATIC;
+		Flags |= TYPE_IS_STATIC;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "static"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
@@ -246,7 +251,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Check for extern.
 	if (NextToken->Keyword == KEYWORD_EXTERN)
 	{
-		Flags |= DATATYPE_IS_EXTERN;
+		Flags |= TYPE_IS_EXTERN;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "static"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
@@ -254,7 +259,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Check for const-ness.
 	if (NextToken->Keyword == KEYWORD_CONST)
 	{
-		Flags |= DATATYPE_IS_CONST;
+		Flags |= TYPE_IS_CONST;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "const"
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
@@ -262,7 +267,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Determine volatility.
 	if (NextToken->Keyword == KEYWORD_VOLATILE)
 	{
-		Flags |= DATATYPE_IS_VOLATILE;
+		Flags |= TYPE_IS_VOLATILE;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "volatile"
 		if (NextToken == NULL)
 		{
@@ -273,7 +278,6 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Handle type aliases (must bind to a typedef at Validation time).
 	if (NextToken->Type == TOKEN_IDENTIFIER)
 	{
-		Flags |= DATATYPE_IS_TYPEDEF;
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
 		OutDatatypeDef->Flags = Flags;
 		OutDatatypeDef->TypeName = String_Copy_ANSI(NextToken->Identifier);
@@ -285,8 +289,8 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	// Handle structured / enumerated types...
 	if (NextToken->Keyword == KEYWORD_STRUCT)
 	{
-		Flags |= DATATYPE_IS_STRUCTURED;
-		Flags &= ~DATATYPE_IS_ENUM_OR_UNION;
+		Flags |= TYPE_IS_STRUCTURED;
+		Flags &= ~TYPE_IS_ENUM_OR_UNION;
 
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
@@ -294,7 +298,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 	else if (NextToken->Keyword == KEYWORD_UNION)
 	{
-		Flags |= DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION;
+		Flags |= TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION;
 
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
@@ -302,8 +306,8 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 	else if (NextToken->Keyword == KEYWORD_ENUM)
 	{
-		Flags &= ~DATATYPE_IS_STRUCTURED;
-		Flags |= DATATYPE_IS_ENUM_OR_UNION;
+		Flags &= ~TYPE_IS_STRUCTURED;
+		Flags |= TYPE_IS_ENUM_OR_UNION;
 
 		OutDatatypeDef->Type = DATATYPE_USER_DEFINED;
 		NextToken = (Parser_ConsumeToken(Parser), Parser_PeekToken(Parser)); // Consume "struct"
@@ -311,12 +315,12 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 	}
 
 	// Determine signage.
-	Flags |= DATATYPE_IS_UNSIGNED * (NextToken->Keyword == KEYWORD_UNSIGNED);
+	Flags |= TYPE_IS_UNSIGNED * (NextToken->Keyword == KEYWORD_UNSIGNED);
 	ui8 SignKeywordPresent = 0;
 	if (NextToken->Keyword == KEYWORD_SIGNED
 		|| NextToken->Keyword == KEYWORD_UNSIGNED)
 	{
-		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
+		if (Flags & (TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 			goto PARSE_FAIL;
@@ -332,14 +336,14 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		// If signage keyword is present and next token isn't a primitive type, then the signage alone represents a 32 bits integer.
 		if (NextToken->Type != TOKEN_KEYWORD || !Keyword_IsPrimitiveType(NextToken->Keyword))
 		{
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Int32();
 		}
 	}
 
 	// Next determine size and broad type.
 	if (NextToken->Type == TOKEN_KEYWORD)
 	{
-		if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
+		if (Flags & (TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 			goto PARSE_FAIL;
@@ -354,19 +358,19 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				goto PARSE_FAIL;
 			}
 
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Void();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Void();
 			break;
 		case KEYWORD_CHAR:
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Char();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Char();
 			break;
 		case KEYWORD_SHORT:
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Short();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Short();
 			break;
 		case KEYWORD_INT:
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Int32();
 			break;
 		case KEYWORD_LONG:
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Int64();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Int64();
 			break;
 		case KEYWORD_FLOAT:
 			if (SignKeywordPresent)
@@ -374,7 +378,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Float();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Float();
 			break;
 		case KEYWORD_DOUBLE:
 			if (SignKeywordPresent)
@@ -382,7 +386,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 				Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier combination.");
 				goto PARSE_FAIL;
 			}
-			*OutDatatypeDef = GetPrimitiveDatatypeDef_Double();
+			*OutDatatypeDef = GetPrimitiveTypeSignature_Double();
 			break;
 		default:
 			Parser_Error(Parser, NextToken->BufferLocation, "Unexpected keyword.");
@@ -401,7 +405,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			if (NextToken->Type != TOKEN_KEYWORD || NextToken->Keyword != KEYWORD_LONG)
 			{
 				// Retrograde back to INT32. TODO: Handle long double.
-				*OutDatatypeDef = GetPrimitiveDatatypeDef_Int32();
+				*OutDatatypeDef = GetPrimitiveTypeSignature_Int32();
 			}
 			else
 			{
@@ -409,7 +413,7 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			}
 		}
 	}
-	else if (Flags & (DATATYPE_IS_STRUCTURED | DATATYPE_IS_ENUM_OR_UNION))
+	else if (Flags & (TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION))
 	{
 		if (NextToken->Type == TOKEN_IDENTIFIER)
 		{
@@ -419,9 +423,9 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 		else
 		{
 			// Generate a procedural name for the type.
-			if (Flags & DATATYPE_IS_STRUCTURED)
+			if (Flags & TYPE_IS_STRUCTURED)
 			{
-				if (Flags & DATATYPE_IS_ENUM_OR_UNION)
+				if (Flags & TYPE_IS_ENUM_OR_UNION)
 					OutDatatypeDef->TypeName = String_CreateFormat_ANSI("ANON_UNION_LOC_%d", NextToken->BufferLocation);
 				else
 					OutDatatypeDef->TypeName = String_CreateFormat_ANSI("ANON_STRUCT_LOC_%d", NextToken->BufferLocation);

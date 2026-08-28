@@ -2,16 +2,7 @@
 
 #include "parser.h"
 
-struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar);
 static struct Expression* ParseExpressionableNode(struct ParserProcess* Parser, ui8* ParenthesisLevel);
-struct Expression* ParseRootExpression(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar);
-
-static struct Expression* AllocNewExpressionNode()
-{
-	struct Expression* New = calloc(1, sizeof(struct Expression));
-	ASSERT(New != NULL);
-	return New;
-}
 
 // Attempts to parse the next available token as a literal expression.
 static struct Expression* ParseExpressionable_Literal(struct ParserProcess* Parser)
@@ -19,35 +10,36 @@ static struct Expression* ParseExpressionable_Literal(struct ParserProcess* Pars
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) return NULL;
 
-	struct Expression* LiteralNode = AllocNewExpressionNode();
+	struct Expression* LiteralNode = AllocExpression();
 	LiteralNode->BufferLocation = NextToken->BufferLocation;
+	LiteralNode->ResultType = AllocTypeSignature();
 
 	switch (NextToken->Type)
 	{
 	case TOKEN_LITERAL_CHAR:
 		LiteralNode->Type = EXP_LITERAL_CHAR;
 		LiteralNode->Literal.Character = NextToken->LiteralCharacter;
-		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Char();
+		*LiteralNode->ResultType = GetPrimitiveTypeSignature_Char();
 		break;
 	case TOKEN_LITERAL_NUMBER_INT:
 		LiteralNode->Type = EXP_LITERAL_INT;
 		LiteralNode->Literal.Integer = NextToken->LiteralNumber.Integer;
-		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Int64();
+		*LiteralNode->ResultType = GetPrimitiveTypeSignature_Int64();
 		break;
 	case TOKEN_LITERAL_NUMBER_FLOAT:
 		LiteralNode->Type = EXP_LITERAL_FLOAT;
 		LiteralNode->Literal.Float = NextToken->LiteralNumber.Float;
-		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Float();
+		*LiteralNode->ResultType = GetPrimitiveTypeSignature_Float();
 		break;
 	case TOKEN_LITERAL_NUMBER_DOUBLE:
 		LiteralNode->Type = EXP_LITERAL_DOUBLE;
 		LiteralNode->Literal.Double = NextToken->LiteralNumber.Double;
-		LiteralNode->ResultType = GetPrimitiveDatatypeDef_Double();
+		*LiteralNode->ResultType = GetPrimitiveTypeSignature_Double();
 		break;
 	case TOKEN_LITERAL_STRING:
 		LiteralNode->Type = EXP_LITERAL_STRING;
 		LiteralNode->Literal.String = String_Copy_ANSI(NextToken->LiteralString);
-		LiteralNode->ResultType = GetPrimitiveDatatypeDef_String();
+		*LiteralNode->ResultType = GetPrimitiveTypeSignature_String();
 		break;
 	default:
 		FreeExpression(LiteralNode);
@@ -70,7 +62,7 @@ static struct Expression* ParseExpressionable_Variable(struct ParserProcess* Par
 		return NULL;
 	}
 
-	struct Expression* VarNode = AllocNewExpressionNode();
+	struct Expression* VarNode = AllocExpression();
 	VarNode->BufferLocation = NextToken->BufferLocation;
 
 	VarNode->Type = EXP_VAR_ACCESS;
@@ -96,7 +88,7 @@ static struct Expression* ParseExpressionable_Operator(struct ParserProcess* Par
 	}
 
 	// Parse next token as an operator node.
-	struct Expression* OpExpression = AllocNewExpressionNode();
+	struct Expression* OpExpression = AllocExpression();
 	OpExpression->BufferLocation = NextToken->BufferLocation;
 	OpExpression->Type = EXP_OP;
 	OpExpression->Op.OperatorSymbol = NextToken->Symbol;
@@ -140,7 +132,7 @@ static struct Expression* ParseExpressionable_Function(struct ParserProcess* Par
 		goto PARSE_FAIL;
 	}
 
-	FunctionExpressionableNode = AllocNewExpressionNode();
+	FunctionExpressionableNode = AllocExpression();
 	FunctionExpressionableNode->BufferLocation = IdentifierToken->BufferLocation;
 	FunctionExpressionableNode->Type = EXP_FUNC_CALL;
 	FunctionExpressionableNode->FunctionCall.FunctionName = IdentifierToken->Identifier;
@@ -206,7 +198,7 @@ static struct Expression* ParseExpressionable_Ternary(struct ParserProcess* Pars
 		goto PARSE_FAIL; // Not a ternary.
 	}
 
-	TernaryNode = AllocNewExpressionNode();
+	TernaryNode = AllocExpression();
 	TernaryNode->BufferLocation = NextToken->BufferLocation;
 	TernaryNode->Type = EXP_OP;
 	TernaryNode->Op.OperatorSymbol = SYMBOL_OP_TERNARY_BRANCH;
@@ -244,7 +236,7 @@ static struct Expression* ParseExpressionable_Ternary(struct ParserProcess* Pars
 		goto PARSE_FAIL;
 	}
 
-	DelimNode = AllocNewExpressionNode();
+	DelimNode = AllocExpression();
 	DelimNode->Type = EXP_OP;
 	DelimNode->Op.OperatorSymbol = SYMBOL_OP_TERNARY_DELIM;
 	DelimNode->Op.LeftOperand = TrueExpNode;
@@ -260,7 +252,7 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 	int StartTokenIndex = Parser->TokenIndex;
 
 	struct Expression* SizeofNode = NULL;
-	struct AST_Node* OperandNode = NULL;
+	struct Expression* OperandNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
@@ -269,7 +261,7 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Sizeof expressionable.");
 	PARSE_FAIL:
 		FreeExpression(SizeofNode);
-		FreeASTNode(OperandNode);
+		FreeExpression(OperandNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
@@ -283,9 +275,10 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 	NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-	SizeofNode = AllocNewExpressionNode();
+	SizeofNode = AllocExpression();
 	SizeofNode->Type = EXP_OP_SIZEOF;
-	SizeofNode->ResultType = GetPrimitiveDatatypeDef_Int64();
+	SizeofNode->ResultType = AllocTypeSignature();
+	*SizeofNode->ResultType = GetPrimitiveTypeSignature_Int64();
 
 	// If an opening parenthesis is found, attempt to parse a datatype / declarator pair first.
 	// If that fails, or no parenthesis are found, parse an expression.
@@ -294,27 +287,42 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 	{
 		Parser_ConsumeToken(Parser); // Consume '('.
 
-		struct DatatypeDef Type;
-		if (ParseDatatypeDef(Parser, &Type)
-			&& (OperandNode = ParseObject_VarFunc(Parser, &Type, 1, 0, 0)) != NULL)
+		struct TypeSignature* BaseType = AllocTypeSignature();
+		struct AST_Node* ObjNode = NULL; // "Host object node" to build the full signature with.
+		if (ParseTypeSignature(Parser, BaseType)
+			&& (ObjNode = ParseObject_VarFunc(Parser, BaseType, 1, 0, 0)) != NULL)
 		{
-			if (OperandNode->Obj.Name.Length > 0)
+			if (ObjNode->Obj.Name.Length > 0)
 			{
 				// Deny any named object declarations.
 				Parser_Error(Parser, OperandNode->BufferLocation, "Sizeof operand may not be a declaration.");
 				goto PARSE_FAIL;
 			}
-			if (OperandNode->Type == AST_NODE_OBJ_FUNC)
+			if (ObjNode->Type == AST_NODE_OBJ_FUNC)
 			{
 				// Deny function declarations.
 				Parser_Error(Parser, OperandNode->BufferLocation, "Sizeof operand may not be a function.");
 				goto PARSE_FAIL;
 			}
+
+			// Create "dummy expression" to hold the result type.
+			OperandNode = AllocExpression();
+			OperandNode->Type = EXP_NOP;
+
+			// Extract the type signature from the constructed object and discard it.
+			OperandNode->ResultType = ObjNode->Obj.TypeSignature;
+			ObjNode->Obj.TypeSignature = NULL;
+			FreeASTNode(ObjNode);
 		}
 		else
 		{
-			OperandNode = ParseExpressionASTNode(Parser, 0, 0);
-		}	
+			OperandNode = ParseRootExpression(Parser, 0, 0);
+			if (OperandNode == NULL || OperandNode->Type == EXP_NOP)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Expected expression or type declaration.");
+				goto PARSE_FAIL;
+			}
+		}
 
 		// Check that we have a closing parenthesis after declarator or expression.
 		NextToken = Parser_PeekToken(Parser);
@@ -330,7 +338,7 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 	}
 	else
 	{
-		OperandNode = ParseExpressionASTNode(Parser, 0, 1);
+		OperandNode = ParseRootExpression(Parser, 0, 1);
 		if (OperandNode == NULL)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Expected expression.");
@@ -358,7 +366,7 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing Cast expressionable.");
 	PARSE_FAIL:
 		FreeExpression(CastNode);
-		FreeExpression(ObjNode);
+		FreeASTNode(ObjNode);
 		FreeExpression(OperandNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
@@ -372,13 +380,14 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 
 	Parser_ConsumeToken(Parser); // Consume '('.
 
-	struct DatatypeDef TargetBaseType;
-	if (!ParseDatatypeDef(Parser, &TargetBaseType))
+	struct TypeSignature* TargetTypeSig = AllocTypeSignature();
+	if (!ParseTypeSignature(Parser, TargetTypeSig))
 	{
+		FreeTypeSignature(TargetTypeSig);
 		goto PARSE_FAIL; // Don't error out as this could still be a valid expression.
 	}
 
-	ObjNode = ParseObject_VarFunc(Parser, &TargetBaseType, 1, 0, 0);
+	ObjNode = ParseObject_VarFunc(Parser, TargetTypeSig, 1, 0, 0);
 	if (ObjNode == NULL)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
@@ -438,10 +447,10 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		}
 	}
 
-	CastNode = AllocNewExpressionNode();
+	CastNode = AllocExpression();
 	CastNode->BufferLocation = ObjNode->BufferLocation;
 	CastNode->Type = EXP_OP_CAST;
-	CastNode->Cast.TargetTypeASTObject = ObjNode;
+	CastNode->Cast.TypeSignature = ObjNode->Obj.TypeSignature;
 	CastNode->Cast.Operand = OperandNode;
 
 	return CastNode;
@@ -788,7 +797,7 @@ struct Expression* ParseRootExpression(struct ParserProcess* Parser, ui8 StopAtC
 	// If parsing didn't encounter an error but failed to find anything, just return a NOP expression node.
 	if (ExpressionRootNode == NULL)
 	{
-		ExpressionRootNode = AllocNewExpressionNode();
+		ExpressionRootNode = AllocExpression();
 		ExpressionRootNode->BufferLocation = Parser_PeekToken(Parser)->BufferLocation;
 		ExpressionRootNode->Type = EXP_NOP;
 	}
@@ -801,7 +810,7 @@ struct Expression* ParseRootExpression(struct ParserProcess* Parser, ui8 StopAtC
 // Creates and wraps a NOP expression if no expression could be parsed at all, or NULL if there was a parser error.
 struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAtComma, ui8 ConsumeStopChar)
 {
-	struct AST_Node* ExpressionRootASTNode = AllocNewASTNode(AST_NODE_EXPRESSION);
+	struct AST_Node* ExpressionRootASTNode = AllocASTNode(AST_NODE_EXPRESSION);
 	ExpressionRootASTNode->Expression = ParseRootExpression(Parser, StopAtComma, ConsumeStopChar);
 	if (ExpressionRootASTNode->Expression == NULL)
 	{
@@ -809,11 +818,7 @@ struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAt
 		return NULL;
 	}
 
-	// If parsing was valid but failed to turn up any expression, return a NOP expression.
-	if (ExpressionRootASTNode->Expression == NULL && !Parser->HasError)
-	{
-	}
-	else if (Parser->HasError)
+	if (Parser->HasError)
 	{
 		FreeASTNode(ExpressionRootASTNode);
 		return NULL;
@@ -866,7 +871,7 @@ struct Expression* ParseExpressionable_ArrayAccess(struct ParserProcess* Parser)
 	// Create a new Array Access operator node and assign the index expression as its right operand, and leave
 	// the left operand empty.
 
-	ArrayAccessNode = AllocNewExpressionNode();
+	ArrayAccessNode = AllocExpression();
 	ArrayAccessNode->BufferLocation = NextToken->BufferLocation;
 	ArrayAccessNode->Type = EXP_OP;
 	ArrayAccessNode->Op.OperatorSymbol = SYMBOL_OP_ARRAY_ACCESS;

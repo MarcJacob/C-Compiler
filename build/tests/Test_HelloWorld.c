@@ -1,13 +1,13 @@
 // Single file test.
 // Hello world program.
 
+typedef int (*int_func_ptr)(float, float);
+int sizeof_test = sizeof(int****);
 extern int extern_func(int a);
 
 //float cast_test = (float)5;
-int sizeof_test = sizeof(int****);
 
 typedef int* (*int_func_ptr_array)(float)[10];
-typedef int (*int_func_ptr)(float, float);
 
 int arr[5][10];
 

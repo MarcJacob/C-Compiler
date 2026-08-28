@@ -5,19 +5,9 @@
 
 // AST Printing
 
-static void PrintNode(struct AST_Node* Node, ui32 Depth);
-static void PrintExpression(struct Expression* Expression, ui32 Depth);
-
 static void PrintIndent(ui32 Depth)
 {
 	for (ui32 i = 0; i < Depth; i++) printf("  ");
-}
-
-// Prints a datatype's name followed by one '*' character per pointer level (eg. "int**" for a pointer to pointer to int).
-static void PrintDatatypeName(const struct DatatypeDef* Datatype)
-{
-	printf("%s", Datatype_GetName(Datatype));
-	for (ui8 i = 0; i < Datatype->PointerLevel; i++) printf("*");
 }
 
 // Prints a named header for a sub-node of a complex statement (e.g. an IF's CONDITION / THEN / ELSE) before printing the node itself one level deeper.
@@ -32,24 +22,34 @@ static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Dept
 }
 
 static void PrintParamList(struct Vector* Params);
-static void PrintObj_AsParam(struct AST_Node* Param)
+
+// Prints a type signature inline.
+static void PrintTypeSignature(struct TypeSignature* TypeSig)
 {
-	PrintDatatypeName(&Param->Obj.ReturnType);
-	if (Param->Type == AST_NODE_OBJ_VAR && Param->Obj.Var.FuncPointerLevel > 0)
+	printf("%s", TypeSignature_GetName(TypeSig));
+
+	if (TypeSig == NULL) return;
+
+	for (ui8 i = 0; i < TypeSig->PointerLevel; i++) printf("*");
+
+	if (!TypeSig->IsFunctionPointer) return;
+
+	printf("(");
+	for (ui8 i = 0; i < TypeSig->FuncPtr.PointerLevel; i++) printf("*");
+	printf(")");
+
+	printf("(");
+	for (int i = 0; i < TypeSig->FuncPtr.ParamTypes.Size; i++)
 	{
-		printf(" (");
-		for (i8 j = 0; j < Param->Obj.Var.FuncPointerLevel; j++) printf("*");
-		if (Param->Obj.Name.Length > 0) printf("%s", Param->Obj.Name.Str);
-		printf(")");
-		PrintParamList(&Param->Obj.Var.FuncPointer_Params);
+		if (i > 0) printf(", ");
+
+		struct TypeSignature* ParamType = Vector_GetValueAt(TypeSig->FuncPtr.ParamTypes, struct TypeSignature*, i);
+		PrintTypeSignature(ParamType);
 	}
-	else if (Param->Obj.Name.Length > 0)
-	{
-		printf(" %s", Param->Obj.Name.Str);
-	}
+	printf(")");
 }
 
-// Prints a function / function pointer's parameter list inline, comma-separated and wrapped in
+// Prints a function's parameter list inline, comma-separated and wrapped in
 // parentheses (eg. "(int a, void (*callback)(int x))"). Always emits parens, even when Params is empty,
 // so the declarator still reads as callable rather than looking like a simple pointer.
 static void PrintParamList(struct Vector* Params)
@@ -60,7 +60,7 @@ static void PrintParamList(struct Vector* Params)
 		if (i > 0) printf(", ");
 
 		struct AST_Node* Param = Vector_GetValueAt(*Params, struct AST_Node*, i);
-		PrintObj_AsParam(Param);
+		PrintTypeSignature(Param->Obj.TypeSignature);
 	}
 	printf(")");
 }
@@ -68,28 +68,33 @@ static void PrintParamList(struct Vector* Params)
 static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 {
 	ui8 IsFunc = Node->Type == AST_NODE_OBJ_FUNC;
-	ui8 IsFuncPointer = !IsFunc && Node->Obj.Var.FuncPointerLevel > 0;
+	ui8 IsFuncPointer = !IsFunc && Node->Obj.TypeSignature->IsFunctionPointer;
 
 	printf("<%s: ", IsFunc ? "FUNCTION" : (IsFuncPointer ? "FUNC_POINTER" : "VARIABLE"));
 
 	printf("'%s' : ", Node->Obj.Name.Str);
-	PrintDatatypeName(&Node->Obj.ReturnType);
-	if (IsFuncPointer)
-	{
-		printf(" (");
-		for (i8 i = 0; i < Node->Obj.Var.FuncPointerLevel; i++) printf("*");
-		printf(")");
-	}
+	PrintTypeSignature(Node->Obj.TypeSignature);
 
-	if (IsFuncPointer || IsFunc) PrintParamList(&Node->Obj.Func.Params);
-
-	if (!IsFunc)
-	for (i8 i = 0; i < Node->Obj.Var.ArraySizes.Size; i++)
-	{
-		printf("[]");
-	}
+	if (IsFunc) PrintParamList(&Node->Obj.Func.Params);
+	else
+		for (i8 i = 0; i < Node->Obj.Var.ArraySizes.Size; i++)
+		{
+			printf("[]");
+		}
 
 	printf(">\n");
+
+	// Print array size expressions.
+	if (Node->Type == AST_NODE_OBJ_VAR && Node->Obj.Var.ArraySizes.Size > 0)
+	{
+		PrintIndent(Depth + 1);
+		printf("[ARRAY SIZE]\n");
+		// Parse array index expression(s).
+		for (int ArrIndex = 0; ArrIndex < Node->Obj.Var.ArraySizes.Size; ArrIndex++)
+		{
+			PrintExpression(Vector_GetValueAt(Node->Obj.Var.ArraySizes, struct Expression*, ArrIndex), Depth + 2);
+		}
+	}
 
 	if (IsFunc)
 		PrintLabeledNode("BODY", Node->Obj.Func.StatementsBlock, Depth + 1);
@@ -102,14 +107,14 @@ static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 			struct Expression* ListExpression = Vector_GetValueAt(Node->Obj.Var.Initializer.List, struct Expression*, i);
 			ASSERT(ListExpression != NULL);
 
-			PrintExpression(ListExpression, Depth + 1);
+			PrintExpression(ListExpression, Depth + 2);
 		}
 	}
 	else if (Node->Obj.Var.Initializer.Expression != NULL)
 	{
-		PrintIndent(Depth);
+		PrintIndent(Depth + 1);
 		printf("[INIT EXP]\n");
-		PrintExpression(Node->Obj.Var.Initializer.Expression, Depth + 1);
+		PrintExpression(Node->Obj.Var.Initializer.Expression, Depth + 2);
 	}
 }
 
@@ -139,7 +144,7 @@ static void PrintExpression(struct Expression* Expression, ui32 Depth)
 		break;
 	case EXP_VAR_ACCESS:
 		printf("<VAR_ACCESS: '%s' : ", Expression->Variable.Name.Str);
-		PrintDatatypeName(&Expression->ResultType);
+		PrintTypeSignature(Expression->ResultType);
 		printf(">\n");
 		break;
 	case EXP_OP:
@@ -149,21 +154,24 @@ static void PrintExpression(struct Expression* Expression, ui32 Depth)
 		break;
 	case EXP_FUNC_CALL:
 		printf("<FUNCTION_CALL: '%s' : ", Expression->FunctionCall.FunctionName.Str);
-		PrintDatatypeName(&Expression->ResultType);
+		PrintTypeSignature(Expression->ResultType);
 		printf(">\n");
 		for (int i = 0; i < Expression->FunctionCall.Params.Size; i++)
 			PrintExpression(Vector_GetValueAt(Expression->FunctionCall.Params, struct Expression*, i), Depth + 1);
 		break;
 	case EXP_OP_SIZEOF:
 		printf("<SIZE_OF>\n");
-		PrintNode(Expression->Sizeof.Operand, Depth + 1);
+		PrintExpression(Expression->Sizeof.Operand, Depth + 1);
 		break;
 	case EXP_OP_CAST:
 		printf("<CAST: ");
-		PrintObj_AsParam(Expression->Cast.TargetTypeASTObject);
+		PrintTypeSignature(Expression->Cast.TypeSignature);
 		printf(">\n");
 		PrintExpression(Expression->Cast.Operand, Depth + 1);
 		break;
+	case EXP_NOP:
+		PrintTypeSignature(Expression->ResultType);
+		printf("\n");
 	}
 }
 
@@ -195,14 +203,14 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	{
 	case AST_NODE_OBJ_STRUCT:
 		if (!Node->Obj.Struct.IsUnion)
-			printf("<STRUCT: '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
+			printf("<STRUCT: '%s'>\n", Node->Obj.TypeSignature->TypeName.Str);
 		else
-			printf("<UNION: '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
+			printf("<UNION: '%s'>\n", Node->Obj.TypeSignature->TypeName.Str);
 		for (int i = 0; i < Node->Obj.Struct.Members.Size; i++)
 			PrintNode(Vector_GetValueAt(Node->Obj.Struct.Members, struct AST_Node*, i), Depth + 1);
 		break;
 	case AST_NODE_OBJ_ENUM:
-		printf("<ENUM : '%s'>\n", Node->Obj.ReturnType.TypeName.Str);
+		printf("<ENUM : '%s'>\n", Node->Obj.TypeSignature->TypeName.Str);
 		for (int i = 0; i < Node->Obj.Enum.Members.Size; i++)
 			PrintExpression(Vector_GetValueAt(Node->Obj.Enum.Members, struct Expression*, i), Depth + 1);
 		break;

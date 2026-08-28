@@ -8,13 +8,12 @@
 
 struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser);
 struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser);
-struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty, ui8 AllowInitializer, ui8 AllowBitCount);
 
 struct AST_Node* ParseObject_Enum_Def(struct ParserProcess* Parser)
 {
 	// Expect an opening brace, then start parsing expressions.
 
-	struct AST_Node* EnumNode = AllocNewASTNode(AST_NODE_OBJ_ENUM);
+	struct AST_Node* EnumNode = AllocASTNode(AST_NODE_OBJ_ENUM);
 	EnumNode->Obj.Enum.Members = Vector_Create(struct AST_Node*, 0);
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -81,7 +80,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 {
 	// Expect an opening brace, then start parsing variable, struct / union and enum objects.
 
-	struct AST_Node* StructNode = AllocNewASTNode(AST_NODE_OBJ_STRUCT);
+	struct AST_Node* StructNode = AllocASTNode(AST_NODE_OBJ_STRUCT);
 	StructNode->Obj.Struct.Members = Vector_Create(struct AST_Node*, 2);
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -106,8 +105,8 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 
 	while (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
 	{
-		struct DatatypeDef MemberType;
-		if (!ParseDatatypeDef(Parser, &MemberType))
+		struct TypeSignature* MemberType = AllocTypeSignature();
+		if (!ParseTypeSignature(Parser, MemberType))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration");
 			goto PARSE_FAIL;
@@ -116,24 +115,24 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 		struct AST_Node* SubStructNode = NULL; // Cache any sub struct / enum created so it can be selectively left or not left inside the structure.
 
 		// Recursively parse a sub-structure / enum definition if the member type is structured or an enum.
-		if (MemberType.Flags & DATATYPE_IS_STRUCTURED)
+		if (MemberType->Flags & TYPE_IS_STRUCTURED)
 		{
 			SubStructNode = ParseObject_Struct_Def(Parser);
 			if (SubStructNode != NULL)
 			{
-				SubStructNode->Obj.ReturnType = MemberType;
-				SubStructNode->Obj.Struct.IsUnion = MemberType.Flags & DATATYPE_IS_ENUM_OR_UNION;
+				SubStructNode->Obj.TypeSignature = MemberType;
+				SubStructNode->Obj.Struct.IsUnion = MemberType->Flags & TYPE_IS_ENUM_OR_UNION;
 
 				// Push directly to parser as a root node (structures always exist at the top level).
 				Vector_PushPtr(Parser->RootNodes, &SubStructNode);
 			}
 		}
-		else if (MemberType.Flags & DATATYPE_IS_ENUM_OR_UNION)
+		else if (MemberType->Flags & TYPE_IS_ENUM_OR_UNION)
 		{
 			struct AST_Node* EnumNode = ParseObject_Enum_Def(Parser);
 			if (EnumNode != NULL)
 			{
-				EnumNode->Obj.ReturnType = MemberType;
+				EnumNode->Obj.TypeSignature = MemberType;
 
 				// Push directly to parser as a root node (enums always exist at the top level).
 				Vector_PushPtr(Parser->RootNodes, &EnumNode);
@@ -148,7 +147,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 		// Parse objects using the member type.
 		while (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
 		{
-			struct AST_Node* NextMember = ParseObject_VarFunc(Parser, &MemberType, 0, 0, 1);
+			struct AST_Node* NextMember = ParseObject_VarFunc(Parser, MemberType, 0, 0, 1);
 			if (NextMember == NULL)
 			{
 				Parser_Error(Parser, NextToken->BufferLocation, "Expected ';' token.");
@@ -186,10 +185,11 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 }
 
 // Attempts the parsing process for a single object, either a variable or a function.
+// The passed in Type Signature allocates deep copies of itself for each produced object.
 // If AllowEmpty is set, the function will be able to return an empty declarator that's just a wrapper for the given type.
-struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct DatatypeDef* ReturnType, ui8 AllowEmpty, ui8 AllowInitializer, ui8 AllowBitCount)
+struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSignature* TypeSignature, ui8 AllowEmpty, ui8 AllowInitializer, ui8 AllowBitCount)
 {
-	ASSERT(ReturnType != NULL);
+	ASSERT(TypeSignature != NULL);
 
 	int TokenStartIndex = Parser->TokenIndex;
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -205,9 +205,9 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 	}
 
 	// Initialize new object with a default type of Var.
-	ObjNode = AllocNewASTNode(AST_NODE_OBJ_VAR);
+	ObjNode = AllocASTNode(AST_NODE_OBJ_VAR);
 	ObjNode->BufferLocation = NextToken->BufferLocation;
-	ObjNode->Obj.ReturnType = *ReturnType;
+	ObjNode->Obj.TypeSignature = AllocTypeSignatureCopy(TypeSignature);
 
 	// Check entry conditions: All non-empty declarators have to start with pointer levels,
 	// an identifier or an opening parenthesis (function or function pointer).
@@ -224,7 +224,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 
 	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR))
 	{
-		ObjNode->Obj.ReturnType.PointerLevel++;
+		ObjNode->Obj.TypeSignature->PointerLevel++;
 
 		Parser_ConsumeToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
@@ -241,16 +241,18 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
+		ObjNode->Obj.TypeSignature->IsFunctionPointer = 1;
+
 		while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR) || Token_IsSymbol(NextToken, SYMBOL_OP_DEREF))
 		{
-			ObjNode->Obj.Var.FuncPointerLevel++;
+			ObjNode->Obj.TypeSignature->FuncPtr.PointerLevel++;
 			Parser_ConsumeToken(Parser);
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
 		}	
 		
 		// Handle special case - pre-check for identifier if no stars were found. If no identifier is found either, then skip straight to parsing parameters.
-		if (ObjNode->Obj.Var.FuncPointerLevel == 0
+		if (ObjNode->Obj.TypeSignature->FuncPtr.PointerLevel == 0
 			&& NextToken->Type != TOKEN_IDENTIFIER)
 		{
 			// No star characters and no identifier = skip to parameters.
@@ -287,12 +289,12 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 		// ObjNode is a non-function-pointer variable.
 
 		// Check that we weren't expecting a function pointer, and that the declarator doesn't end up being linked to a void type.
-		if (ObjNode->Obj.Var.FuncPointerLevel > 0)
+		if (ObjNode->Obj.TypeSignature->IsFunctionPointer)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Expected '(' token.");
 			goto PARSE_FAIL;
 		}
-		if (ObjNode->Obj.ReturnType.Type == DATATYPE_VOID && ObjNode->Obj.ReturnType.PointerLevel == 0)
+		if (ObjNode->Obj.TypeSignature->Type == DATATYPE_VOID && ObjNode->Obj.TypeSignature->PointerLevel == 0)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Invalid type specifier.");
 			goto PARSE_FAIL;
@@ -307,8 +309,8 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct Dataty
 		// ObjNode is a function or function pointer variable.
 		// Start recursively parsing datatype + declarator pairs as parameters.
 
-FUNC_PARAMS_PARSING:
-		ObjNode->Type = ObjNode->Obj.Var.FuncPointerLevel > 0 ? AST_NODE_OBJ_VAR : AST_NODE_OBJ_FUNC;
+	FUNC_PARAMS_PARSING:
+		ObjNode->Type = ObjNode->Obj.TypeSignature->FuncPtr.PointerLevel > 0 ? AST_NODE_OBJ_VAR : AST_NODE_OBJ_FUNC;
 
 		struct Vector Params = Vector_Create(struct AST_Node*, 0);
 
@@ -316,14 +318,15 @@ FUNC_PARAMS_PARSING:
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 		while (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
-			struct DatatypeDef ParamDatatype = { 0 };
-			if (!ParseDatatypeDef(Parser, &ParamDatatype))
+			struct TypeSignature* ParamDatatype = AllocTypeSignature();
+			if (!ParseTypeSignature(Parser, ParamDatatype))
 			{
 				// This isn't a function / function ptr declarator. It may be a function call so do not error out.
+				FreeTypeSignature(ParamDatatype);
 				goto PARSE_FAIL;
 			}
 
-			struct AST_Node* ParamObj = ParseObject_VarFunc(Parser, &ParamDatatype, 1, 0, 0);
+			struct AST_Node* ParamObj = ParseObject_VarFunc(Parser, ParamDatatype, 1, 0, 0);
 			if (ParamObj == NULL)
 			{
 				if (Parser->HasError) goto PARSE_FAIL;
@@ -335,7 +338,21 @@ FUNC_PARAMS_PARSING:
 			if (ParamObj->Type == AST_NODE_OBJ_FUNC)
 			{
 				ParamObj->Type = AST_NODE_OBJ_VAR;
-				ParamObj->Obj.Var.FuncPointerLevel = 1;
+				
+				ParamObj->Obj.TypeSignature->IsFunctionPointer = 1;
+				ParamObj->Obj.TypeSignature->FuncPtr.PointerLevel = 1;
+
+				// Extract parameter objects from the function and turn them into function pointer param types.
+				for (int ParamIndex = 0; ParamObj->Obj.Func.Params.Size; ParamIndex++)
+				{
+					// For each param, move the type signature out and into the ParamObj's type signature's function pointer params vector.
+					struct AST_Node* SubParamObj = Vector_GetValueAt(ParamObj->Obj.Func.Params, struct AST_Node*, ParamIndex);
+					Vector_Push(SubParamObj->Obj.TypeSignature->FuncPtr.ParamTypes, struct TypeSignature*, SubParamObj->Obj.TypeSignature);
+					SubParamObj->Obj.TypeSignature = NULL;
+				}
+
+				// Discard param objects.
+				FreeASTNodeVector(&ParamObj->Obj.Func.Params);
 			}
 
 			Vector_Push(Params, struct AST_Node*, ParamObj);
@@ -350,13 +367,25 @@ FUNC_PARAMS_PARSING:
 			}
 		}
 
-		if (ObjNode->Type == AST_NODE_OBJ_VAR)
+		if (ObjNode->Type == AST_NODE_OBJ_FUNC)
 		{
-			ObjNode->Obj.Var.FuncPointer_Params = Params;
+			ObjNode->Obj.Func.Params = Params;
 		}
 		else
 		{
-			ObjNode->Obj.Func.Params = Params;
+			// Extract parameter type signatures to being parameters of the function pointer,
+			// and discard the objects themselves.
+
+			ObjNode->Obj.TypeSignature->FuncPtr.ParamTypes = Vector_Create(struct TypeSignature, 0);
+
+			for (int ParamIndex = 0; ParamIndex < Params.Size; ParamIndex++)
+			{
+				struct AST_Node* ParamObj = Vector_GetValueAt(Params, struct AST_Node*, ParamIndex);
+				Vector_Push(ObjNode->Obj.TypeSignature->FuncPtr.ParamTypes, struct TypeSignature*, ParamObj->Obj.TypeSignature);
+				ParamObj->Obj.TypeSignature = NULL;
+			}
+
+			FreeASTNodeVector(&Params);
 		}
 
 		// Consume closing parenthesis.
@@ -527,30 +556,31 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
-	struct DatatypeDef ObjectsReturnType;
-	if (!ParseDatatypeDef(Parser, &ObjectsReturnType))
+	struct TypeSignature* ObjectsReturnType = AllocTypeSignature();
+	if (!ParseTypeSignature(Parser, ObjectsReturnType))
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Expected type specifier.");
+		FreeTypeSignature(ObjectsReturnType);
 		goto PARSE_FAIL;
 	}
 
 	// If the parsed datatype is structured or an enum, first attempt to parse a definition for it.
-	if (ObjectsReturnType.Flags & DATATYPE_IS_STRUCTURED)
+	if (ObjectsReturnType->Flags & TYPE_IS_STRUCTURED)
 	{
 		struct AST_Node* StructNode = ParseObject_Struct_Def(Parser);
 		if (StructNode != NULL)
 		{
-			StructNode->Obj.ReturnType = ObjectsReturnType;
-			StructNode->Obj.Struct.IsUnion = ObjectsReturnType.Flags & DATATYPE_IS_ENUM_OR_UNION;
+			StructNode->Obj.TypeSignature = ObjectsReturnType;
+			StructNode->Obj.Struct.IsUnion = ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION;
 			Vector_PushPtr(Parser->RootNodes, &StructNode);
 		}
 	}
-	else if (ObjectsReturnType.Flags & DATATYPE_IS_ENUM_OR_UNION)
+	else if (ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION)
 	{
 		struct AST_Node* EnumNode = ParseObject_Enum_Def(Parser);
 		if (EnumNode != NULL)
 		{
-			EnumNode->Obj.ReturnType = ObjectsReturnType;
+			EnumNode->Obj.TypeSignature = ObjectsReturnType;
 			Vector_PushPtr(Parser->RootNodes, &EnumNode);
 		}
 	}
@@ -579,7 +609,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		ObjNode = ParseObject_VarFunc(Parser, &ObjectsReturnType, 0, !IsTypedef, 0);
+		ObjNode = ParseObject_VarFunc(Parser, ObjectsReturnType, 0, !IsTypedef, 0);
 		if (ObjNode == NULL || Parser->HasError)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse object.");
