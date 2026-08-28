@@ -5,6 +5,7 @@
 // Include stage implementations. This also of course includes the stages' specific symbols which is intended.
 #include "tokenizer/tokenizer.c"
 #include "parser/parser.c"
+#include "integrator/integrator.c"
 // ...
 
 void Compiler_Run(struct CompilerProcess* Compiler)
@@ -46,8 +47,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 		}
 	}
 
-	// Stage 2 - Parser.
-
+	// Stage 2 - Parsing.
 	struct Vector ParsedTreeRoots = Vector_Create(struct AST_Node*, 8);
 	{
 		struct ParserProcess Parser = { 0 };
@@ -70,5 +70,29 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 			Parser_PrintTree(&Parser);
 		}
 	}
-	
+
+	// Stage 3 - Integration.
+	struct IntegratedProgramTree ProgramTree = { 0 };
+	{
+		struct IntegratorProcess Integrator = { 0 };
+		Integrator.ASTRootNodes = &ParsedTreeRoots;
+		Integrator.IPT = &ProgramTree;
+
+		Integrator_Run(&Integrator);
+
+		// Handle error, if any.
+		if (Integrator.HasError)
+		{
+			Compiler->ErrorCode_Global = COMPILER_INTEGRATOR_STAGE_ERROR;
+
+			// TODO: Figure out line & col of error instead of raw buffer location + pass filenames to compiler instead of just the source buffers themselves.
+			Compiler->ErrorMsg = String_CreateFormat_ANSI("INTEGRATOR ERROR (%s, Loc = %d) > %s", "<SRC FILENAME>", Integrator.Error.Location, Integrator.Error.Message.Str);
+			return;
+		}
+		else
+		{
+			// ... TODO: Logging for IPT.
+		}
+
+	}
 }

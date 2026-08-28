@@ -1,4 +1,5 @@
 #include "parser.h"
+#include <stdarg.h>
 
 // Core Implementation file of the Parser stage, including all other implementation files.
 
@@ -164,45 +165,6 @@ void FreeASTNodeVector(struct Vector* NodeVec)
 
 	Vector_Destroy(NodeVec);
 }
-
-// Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
-// in the RootNodes vector in the Process.
-void Parser_Run(struct ParserProcess* Parser)
-{
-	ASSERT(Parser->SourceTokens != NULL);
-	ASSERT(Parser->RootNodes != NULL);
-
-	while (Parser_PeekToken(Parser) != NULL)
-	{
-		if (ParseNextRootObjects(Parser))
-		{
-			// Successfully parsed node tree(s).
-		}
-		else
-		{
-			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected variable, function or type declaration.");
-			break;
-		}
-	}
-}
-
-void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...)
-{
-	// Temp: Assert on any parser error while the parser is in active development.
-	ASSERT(0);
-
-	if (Parser->HasError) return; // For now this means we follow a "most specific error only" model.
-	// Later we may want to bubble up the entire "Error hierarchy".
-
-	Parser->HasError = 1;
-	Parser->Error.Location = BufferLoc;
-
-	va_list args;
-	va_start(args, Format);
-	Parser->Error.Message = String_CreateFormatV_ANSI(Format, args);
-	va_end(args);
-}
-
 
 static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef)
 {
@@ -447,4 +409,38 @@ static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature
 
 PARSE_SUCCESS:
 	return 1;
+}
+
+void Parser_Error(struct ParserProcess* Parser, ui32 BufferLoc, const char* Format, ...)
+{
+	if (Parser->HasError) return; // Only keep most specific error.
+
+	Parser->HasError = 1;
+	Parser->Error.Location = BufferLoc;
+
+	va_list args;
+	va_start(args, Format);
+	Parser->Error.Message = String_CreateFormatV_ANSI(Format, args);
+	va_end(args);
+}
+
+// Main Parser Process function. Turns the SourceTokens vector within the Process into a set of Abstract Syntax Trees (ASTs) whose roots will be put
+// in the RootNodes vector in the Process.
+void Parser_Run(struct ParserProcess* Parser)
+{
+	ASSERT(Parser->SourceTokens != NULL);
+	ASSERT(Parser->RootNodes != NULL);
+
+	while (Parser_PeekToken(Parser) != NULL)
+	{
+		if (ParseNextRootObjects(Parser))
+		{
+			// Successfully parsed node tree(s).
+		}
+		else
+		{
+			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected variable, function or type declaration.");
+			break;
+		}
+	}
 }

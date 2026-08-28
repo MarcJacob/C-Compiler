@@ -69,8 +69,9 @@
   - Refactor Type system to turn Type Signatures into complete, independent, cross-stage objects. [DONE]
   - Final tidy-up of symbols / implementation files. [DONE]
 
-## Step 6 — Integrator [PLANNING WIP]
+## Step 6 — Integrator [TO BE DONE]
 
+Objectives:
 - Takes a set of Abstract Syntax Trees as input.
 - Outputs an Integrated Program Tree as output.
 - Resolves symbols to determine:
@@ -81,7 +82,29 @@
 - Re-structures functions into parameters, local variables, and instructions (with local variables being associated to a specific instruction for its scope and specific line).
     - Support for sub-scopes and shadowing.
 
-## Step 7 - Code Generator
+Tasks:
+- Create folder & basic file structure for Integrator stage.
+- Define IntegratorProcess structure and entry function, and input / output mechanism.
+- Create Integrated Program Tree structure to cover:
+    - Symbol definition covering variables, functions, structures, enums.
+    - Type objects generated on demand and  
+    - Every variable and function symbol linked to a type signature.
+    - Instructions built from AST variable initializers and statements. Linked to symbols as declaration sites.
+    - Memory / Address offset for all variables, functions and instructions.
+    - Common Scope system composed into the various symbols that support them.
+- Integrate / Build global scope symbols:
+    - Generate Symbol entries with variables. Size resolution for primitive types.
+    - Generate Symbol entries with each struct, union, enum, typedef. Resolve their size.
+    - Setup type lookup by name / primitive type.
+    - Resolve non-primitive variable sizes.
+- Logging system displaying top-level symbols.
+- Build Struct / Function scopes with variable memory offsets.
+- Determine expressions that are compile-time-resolvable and turn them into the correct final values:
+    - Array sizes & indices
+    - Struct Member Bit counts
+- Function instructions integration.
+
+## Step 7 - Code Generator [TO BE DONE]
 
 - Takes an Integrated Program Tree as input.
 - Turns the tree into a set of program initialization and function instructions in a chosen assembly langage (probably NASM or Intel x64).

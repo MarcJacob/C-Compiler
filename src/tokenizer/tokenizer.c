@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 #include <stdarg.h>
-// Main implementation file for the Tokenizer stage.
+
+// Core Implementation file for the Tokenizer stage.
 
 ui8 ParseKeyword(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
 ui8 ParseIdentifier(struct TokenizerProcess* Tokenizer, struct CharBufferReader_ANSI* EntryReader);
