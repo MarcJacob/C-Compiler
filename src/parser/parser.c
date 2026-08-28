@@ -416,7 +416,21 @@ static ui8 ParseDatatypeDef(struct ParserProcess* Parser, struct DatatypeDef* Ou
 			OutDatatypeDef->TypeName = String_Copy_ANSI(NextToken->Identifier);
 			NextToken = Parser_ConsumeToken(Parser), Parser_PeekToken(Parser); // Consume user defined type identifier.
 		}
-		// Otherwise leave as anonymous structured / enum type.
+		else
+		{
+			// Generate a procedural name for the type.
+			if (Flags & DATATYPE_IS_STRUCTURED)
+			{
+				if (Flags & DATATYPE_IS_ENUM_OR_UNION)
+					OutDatatypeDef->TypeName = String_CreateFormat_ANSI("ANON_UNION_LOC_%d", NextToken->BufferLocation);
+				else
+					OutDatatypeDef->TypeName = String_CreateFormat_ANSI("ANON_STRUCT_LOC_%d", NextToken->BufferLocation);
+			}
+			else
+			{
+				OutDatatypeDef->TypeName = String_CreateFormat_ANSI("ANON_ENUM_LOC_%d", NextToken->BufferLocation);
+			}
+		}
 	}
 	else
 	{

@@ -65,7 +65,8 @@
   - Expression / AST Node decoupling. [DONE]
     - Decreases instances of expressions containing AST_Node pointers directly as much as possible and note down how they will get replaced over the next stage. [DONE]
     - Done so that Expression structures can be reused in other stages. [DONE]
-  - Assign procedural name to anonymous user types so they may be recognized during integration.
+  - Assign procedural name to anonymous user types. [DONE]
+  - Final tidy-up of symbols / implementation files.
 
 ## Step 6 — Integrator [PLANNING WIP]
 
