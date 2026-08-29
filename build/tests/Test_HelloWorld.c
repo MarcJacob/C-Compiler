@@ -1,62 +1,15 @@
 // Single file test.
 // Hello world program.
 
-typedef int (*int_func_ptr)(float, float);
-int sizeof_test = sizeof(int****);
-extern int extern_func(int a);
+int TestPrimitiveVal = 5;
 
-//float cast_test = (float)5;
+int* TestPrimitivePointer = &TestPrimitiveVal;
 
-typedef int* (*int_func_ptr_array)(float)[10];
-
-int arr[5][10];
-
-float* cast_test = (float*)2;
-int_func_ptr funcPtr = (int_func_ptr)4;
-
-typedef struct
-{
-	int member_a;
-	float member_b;
-	int_func_ptr member_c;
-
-	enum nested_enum_test
-	{
-		MEMBER_A,
-		MEMBER_B
-	} enumerated_member;
-} struct_test;
-
-union union_test
-{
-	int member_a : 2;
-	float member_b;
-	int_func_ptr member_c;
-};
-
-enum enum_test
-{
-	MEMBER_A,
-	MEMBER_B,
-	MEMBER_C = 44,
-};
-
-struct a {
-	int b;
-} c, * d, e(int a, int b) { return 0; }
+int TestPrimitiveArray[5] = { 0, 1, 2, 3, 4 };
 
 int main(int argc, char** argv)
 {
-	int init_list_test[] = { 1, 2, 3 };
-	int ternary_test = ((argc > 0) ? 1 : 0) + 1;
-	int a = 4, b = 2, c = 2 + sizeof(argc);
-
-
-
-	if (foo((float)a, b) + (&a + 1)[a + 5] + 3 * 4 + (2 - 1) && d->x == 2 && sizeof(int(*)(float)) > 4)
-	{
-		printf("Hello, World !\n");
-	}
+	printf("Hello, World !\n");
 
 	return 0;
 }

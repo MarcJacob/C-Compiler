@@ -90,7 +90,7 @@ struct AST_Node
 					struct Vector List; // List of expressions corresponding to array members if array, otherwise struct members.
 				} Initializer;
 
-				struct Vector ArraySizes; // Vector type = AST_Node*. Sequence of array size expressions. If empty, this variable isn't an array.
+				struct Vector ArraySizes; // Vector type = Expression*. Sequence of array size expressions. If empty, this variable isn't an array.
 			} Var;
 
 			struct

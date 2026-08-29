@@ -76,7 +76,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 	{
 		struct IntegratorProcess Integrator = { 0 };
 		Integrator.ASTRootNodes = &ParsedTreeRoots;
-		Integrator.IPT = &ProgramTree;
+		Integrator.ProgramTree = &ProgramTree;
 
 		Integrator_Run(&Integrator);
 
@@ -91,7 +91,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 		}
 		else
 		{
-			// ... TODO: Logging for IPT.
+			Integrator_PrintTree(&Integrator);
 		}
 
 	}

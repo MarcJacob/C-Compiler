@@ -83,18 +83,17 @@ Objectives:
     - Support for sub-scopes and shadowing.
 
 Tasks:
-- Create folder & basic file structure for Integrator stage.
-- Define IntegratorProcess structure and entry function, and input / output mechanism.
-- Create Integrated Program Tree structure to cover:
-    - Symbol definition covering variables, functions, structures, enums.
-    - Type objects generated on demand and  
-    - Every variable and function symbol linked to a type signature.
-    - Instructions built from AST variable initializers and statements. Linked to symbols as declaration sites.
-    - Memory / Address offset for all variables, functions and instructions.
-    - Common Scope system composed into the various symbols that support them.
+- Create folder & basic file structure for Integrator stage. [DONE]
+- Define IntegratorProcess structure and entry function, and input / output mechanism. [DONE]
+- Create Integrated Program Tree structure to cover: [WIP]
+    - Symbol definition covering variables, functions, structures, enums. [DONE]
+    - Every variable and function symbol linked to a type signature. [DONE]
+    - Memory / Address offset for all variables, functions. [DONE]
+    - Common Scope system composed into the various symbols that support them. [DONE]
+    - Instructions built from AST variable initializers and statements.
 - Integrate / Build global scope symbols:
-    - Generate Symbol entries with variables. Size resolution for primitive types.
-    - Generate Symbol entries with each struct, union, enum, typedef. Resolve their size.
+    - Generate Symbol entries with variables. Size resolution for primitive types. [WIP]
+    - Generate Symbol entries with each struct, union, enum, typedef. Resolve their size. [WIP]
     - Setup type lookup by name / primitive type.
     - Resolve non-primitive variable sizes.
 - Logging system displaying top-level symbols.

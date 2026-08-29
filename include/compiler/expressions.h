@@ -287,7 +287,7 @@ static inline struct Expression* AllocExpression()
 // Recursively prints expression to standard output.
 // NOTE: Currently implemented in parser_logging.c because some expressions can refer to AST_Node structures.
 // However, this is not ideal as later expressions will also carry Integration process data. We'll need variants of the same function
-// depending on if the expression is printed in the context of an AST or an IPT.
+// depending on if the expression is printed in the context of an AST or an ProgramTree.
 void PrintExpression(struct Expression* Expression, ui32 Depth);
 
 #endif // EXPRESSIONS_INCLUDED

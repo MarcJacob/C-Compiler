@@ -11,7 +11,7 @@ struct IntegratorProcess
 	struct Vector* ASTRootNodes; // Vector type struct AST_Node*. Input Abstract Syntax Trees.
 
 	// Output
-	struct IntegratedProgramTree* IPT; // Output Integrated Program Tree.
+	struct IntegratedProgramTree* ProgramTree; // Output Integrated Program Tree.
 
 	ui8 HasError; // Whether the Integrator is currently in an error state.
 	struct
