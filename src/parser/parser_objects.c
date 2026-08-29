@@ -165,6 +165,12 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 
 			NextToken = Parser_PeekToken(Parser);
 			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+
+			if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
+			{
+				Parser_ConsumeToken(Parser); // Consume ','.
+				NextToken = Parser_PeekToken(Parser);
+			}
 		}
 
 		Parser_ConsumeToken(Parser); // Consume ';'.
@@ -403,6 +409,9 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 			goto PARSE_FAIL;
 		}
 
+		// If any array sizes are provided, disallow bit count assignment.
+		AllowBitCount = 0;
+
 		ObjNode->Obj.Var.ArraySizes = Vector_Create(struct AST_Node*, 0);
 		while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
 		{
@@ -571,7 +580,8 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		if (StructNode != NULL)
 		{
 			StructNode->Obj.TypeSignature = ObjectsReturnType;
-			StructNode->Obj.Struct.IsUnion = ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION;
+			StructNode->Obj.Struct.IsUnion = (ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION) > 0;
+			StructNode->Obj.Name = String_Copy_ANSI(ObjectsReturnType->TypeName);
 			Vector_PushPtr(Parser->RootNodes, &StructNode);
 		}
 	}

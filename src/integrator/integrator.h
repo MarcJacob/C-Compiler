@@ -13,6 +13,8 @@ struct IntegratorProcess
 	// Output
 	struct IntegratedProgramTree* ProgramTree; // Output Integrated Program Tree.
 
+	ui64 StaticMemSize; // Total size of static memory taken by this program.
+
 	ui8 HasError; // Whether the Integrator is currently in an error state.
 	struct
 	{

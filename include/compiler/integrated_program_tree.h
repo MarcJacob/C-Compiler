@@ -37,13 +37,12 @@ struct ProgramSymbol
 
 			ui64 BitSize; // Size of the variable in bits (so it supports bit count specifier).
 			ui64 Offset; // Memory offset (function / structure var) or Address offset (global var) of this variable.
+			ui32 BitOffset; // When non-zero, indicates this variable has a bit count specifier within a structure. The bits are to be added to the standard byte offset.
 		} Variable;
 
 		struct
 		{
-			ui64 ProgAddress; // Program-relative address of this function.
-
-			struct SymbolScope Scope; // Contains VARIABLE symbols.
+			struct SymbolScope* Scope; // Contains VARIABLE symbols.
 
 			// ... TODO: Instructions graph.
 
@@ -53,8 +52,9 @@ struct ProgramSymbol
 		{
 			ui8 IsUnion; // If set, the structure's size will equal the largest member's, and all members will have an offset of 0.
 
-			struct SymbolScope Scope; // Contains VARIABLE symbols.
+			struct SymbolScope* Scope; // Contains VARIABLE symbols.
 			ui64 Size; // Total size of the structure including any alignment / padding concerns.
+			ui32 Alignment; // Memory alignment of the structure as as whole, equal to lowest member size / alignment.
 		} Struct; // Or union.
 
 		struct

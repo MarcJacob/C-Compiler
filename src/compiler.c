@@ -87,6 +87,7 @@ void Compiler_Run(struct CompilerProcess* Compiler)
 
 			// TODO: Figure out line & col of error instead of raw buffer location + pass filenames to compiler instead of just the source buffers themselves.
 			Compiler->ErrorMsg = String_CreateFormat_ANSI("INTEGRATOR ERROR (%s, Loc = %d) > %s", "<SRC FILENAME>", Integrator.Error.Location, Integrator.Error.Message.Str);
+			Integrator_PrintTree(&Integrator); // TEMP Still print tree as it currently exists until all symbol types are supported.
 			return;
 		}
 		else

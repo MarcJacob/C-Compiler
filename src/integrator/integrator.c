@@ -16,11 +16,6 @@ void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, cons
 	va_end(args);
 }
 
-void PrintSymbol(struct ProgramSymbol* ProgramSymbol)
-{
-
-}
-
 void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 {
 	ASSERT(Integrator != NULL);
@@ -28,12 +23,45 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 
 	printf("\n===== INTEGRATOR OUTPUT =====\n\n");
 
+	printf("Total Top-Level Symbols: %lld\n", Integrator->ProgramTree->RootScope->Symbols.Size);
+	printf("Total Static Memory = %lld bytes\n", Integrator->StaticMemSize);
+
+	printf("\n== GLOBAL SCOPE SYMBOLS ==\n");
+
 	// Print root scope symbols.
-	for (int RootSymbolIndex = 0; RootSymbolIndex < Integrator->ProgramTree->RootScope->Symbols.Size; RootSymbolIndex++)
+	for (int GlobalSymbolIndex = 0; GlobalSymbolIndex < Integrator->ProgramTree->RootScope->Symbols.Size; GlobalSymbolIndex++)
 	{
-		
+		struct ProgramSymbol* GlobalSymbol = Vector_GetValueAt(Integrator->ProgramTree->RootScope->Symbols, struct ProgramSymbol*, GlobalSymbolIndex);
+		ASSERT(GlobalSymbol != NULL);
+
+		switch (GlobalSymbol->Type)
+		{
+		case SYMBOL_TYPE_VARIABLE:
+			printf("VAR '%s' : ", GlobalSymbol->Name.Str);
+			PrintTypeSignature(GlobalSymbol->Variable.DeclarationType);
+			for (int i = 0; i < GlobalSymbol->Variable.ArraySizes.Size; i++)
+			{
+				printf("[%lld]", Vector_GetValueAt(GlobalSymbol->Variable.ArraySizes, i64, i));
+			}
+			printf(", Size = %lld bytes, Address = 0x%08llX\n", GlobalSymbol->Variable.BitSize / 8, GlobalSymbol->Variable.Offset);
+			break;
+		case SYMBOL_TYPE_STRUCT:
+		case SYMBOL_TYPE_UNION:
+			GlobalSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
+			printf("'%s', Size = %lld bytes, Align = %d bytes\n", GlobalSymbol->Name.Str, GlobalSymbol->Struct.Size, GlobalSymbol->Struct.Alignment);
+			// TODO: Print sub-symbols.
+			break;
+		case SYMBOL_TYPE_FUNCTION:
+			printf("FUNC '%s'\n", GlobalSymbol->Name.Str);
+			break;
+		default:
+			break;
+		}
 	}
 }
+
+struct SymbolScope* AllocScope();
+void FreeScope(struct SymbolScope* Scope);
 
 struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
 {
@@ -62,6 +90,14 @@ void FreeSymbol(struct ProgramSymbol* Symbol)
 	case SYMBOL_TYPE_VARIABLE:
 		Vector_Destroy(&Symbol->Variable.ArraySizes);
 		break;
+	case SYMBOL_TYPE_FUNCTION:
+		FreeScope(&Symbol->Function.Scope);
+		break;
+	case SYMBOL_TYPE_STRUCT:
+		FreeScope(&Symbol->Struct.Scope);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -75,7 +111,7 @@ struct SymbolScope* AllocScope()
 
 void FreeScope(struct SymbolScope* Scope)
 {
-	if (Scope == NULL);
+	if (Scope == NULL) return;
 
 	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
 	{
@@ -90,46 +126,6 @@ void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol)
 	ASSERT(Symbol != NULL);
 
 	Vector_Push(Scope->Symbols, struct ProgramSymbol*, Symbol);
-}
-
-// Returns the resolved size of a passed in type signature.
-// Returns 0 if trying to use an incomplete type, non-pointer signature.
-// 
-// If the type is primitive or a pointer then this is trivial and just returns the type's size.
-// If not, then the whole program tree as it currently exists will be searched to find a matching symbol.
-// In that case if a symbol is successfuly found, it is returned through the OutTypeSymbol parameter.
-// If not, a new symbol declaration is created, added to the Program Tree's root scope and returned through OutTypeSignature
-// Note: This only happens for pointer type signatures. Non-pointer type signatures that use an undeclared type will trigger an error.
-ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSignature* TypeSig, struct ProgramSymbol* OutTypeSymbol)
-{
-	ASSERT(TypeSig != NULL);
-
-	ui64 TypeSize = 0;
-	if (TypeSig->IsFunctionPointer || TypeSig->PointerLevel)
-	{
-		TypeSize = POINTER_SIZE;
-		if (TypeSig->Type != DATATYPE_USER_DEFINED)
-		{
-			// Type is pointer to primitive.
-			OutTypeSymbol = NULL;
-			return TypeSize;
-		}
-	}
-	else if (TypeSig->Type != DATATYPE_USER_DEFINED)
-	{
-		// Type is non-pointer primitive.
-		TypeSize = TypeSig->Size;
-		OutTypeSymbol = NULL;
-
-		return TypeSize;
-	}
-
-	// From here we're dealing with a non-primitive type.
-	// If it's a pointer, we try to find a matching symbol but may create one from scratch, effectively
-	// making this the declaration site for it.
-	// If not, we MUST find a matching DECLARED / RESOLVED type symbol (Struct / Union, Typedef or Enum).
-
-	return 0; // TEMP Unimplemented handling of complex types.
 }
 
 ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
@@ -147,7 +143,7 @@ ui8 EvalConstantOpExpression(struct IntegratorProcess* Integrator, enum TOKEN_SY
 
 	ui32 BufferLoc = LeftOperand != NULL ? LeftOperand->BufferLocation : RightOperand->BufferLocation;
 
-	i64 LeftOpRes, RightOpRes;
+	i64 LeftOpRes = 0, RightOpRes = 0;
 	enum DATATYPE LeftOpResType, RightOpResType;
 	if (LeftOperand != NULL 
 		&& !EvalConstantExpression(Integrator, LeftOperand, &LeftOpRes, &LeftOpResType)) return 0;
@@ -265,10 +261,50 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expressi
 	}
 }
 
+// Returns the resolved size of a passed in type signature.
+// Returns 0 if trying to use an incomplete type, non-pointer signature.
+// 
+// If the type is primitive or a pointer then this is trivial and just returns the type's size.
+// If not, then the whole program tree as it currently exists will be searched to find a matching symbol.
+// In that case if a symbol is successfuly found, it is returned through the OutTypeSymbol parameter.
+// If not, a new symbol declaration is created, added to the Program Tree's root scope and returned through OutTypeSignature
+// Note: This only happens for pointer type signatures. Non-pointer type signatures that use an undeclared type will trigger an error.
+ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSignature* TypeSig, struct ProgramSymbol* OutTypeSymbol)
+{
+	ASSERT(TypeSig != NULL);
+
+	ui64 TypeSize = 0;
+	if (TypeSig->IsFunctionPointer || TypeSig->PointerLevel)
+	{
+		TypeSize = POINTER_SIZE;
+		if (TypeSig->Type != DATATYPE_USER_DEFINED)
+		{
+			// Type is pointer to primitive.
+			OutTypeSymbol = NULL;
+			return TypeSize;
+		}
+	}
+	else if (TypeSig->Type != DATATYPE_USER_DEFINED)
+	{
+		// Type is non-pointer primitive.
+		TypeSize = TypeSig->Size;
+		OutTypeSymbol = NULL;
+
+		return TypeSize;
+	}
+
+	// From here we're dealing with a non-primitive type.
+	// If it's a pointer, we try to find a matching symbol but may create one from scratch, effectively
+	// making this the declaration site for it.
+	// If not, we MUST find a matching DECLARED / RESOLVED type symbol (Struct / Union, Typedef or Enum).
+
+	return 0; // TEMP Unimplemented handling of complex types.
+}
+
 // Returns an integrated Variable symbol from a corresponding Variable AST object.
 // The variable's type and size is resolved, but its final size (if bit count is specified) and offset must be
 // resolved by the caller according to its context, and its parent scope must be assigned.
-struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode, ui8 IsStructMember)
+struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode)
 {
 	ASSERT(VarASTNode != NULL);
 
@@ -325,6 +361,110 @@ struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator,
 	return VarSymbol;
 }
 
+// Returns an integrated function symbol from an AST Object node.
+// If the node has an accompanying definition, the function is fully parsed along with the instructions.
+// Otherwise the symbol will only feature its signature and parameters until a definition is found.
+struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator, struct AST_Node* FuncASTNode)
+{
+	ASSERT(FuncASTNode != NULL);
+
+	struct ProgramSymbol* FuncSymbol = AllocSymbol(SYMBOL_TYPE_FUNCTION);
+	FuncSymbol->Name = String_Copy_ANSI(FuncASTNode->Obj.Name);
+	FuncSymbol->Function.Scope = AllocScope();
+
+	// TODO: Parse parameters into special vector + underlying scope.
+	// If definition is provided, check that the function isn't already defined and parse instructions & local variables.
+
+	return FuncSymbol;
+}
+
+struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode)
+{
+	ASSERT(StructASTNode != NULL);
+
+	struct ProgramSymbol* StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
+	StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
+	StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
+	StructSymbol->Struct.Scope = AllocScope();
+	StructSymbol->Struct.Size = 0;
+
+	// Parse member variable nodes.
+	ui64 StructBitSize = 0;
+	ui64 LargestMemberBitSize = 0;
+	StructSymbol->Struct.Alignment = 1;
+	for (int MemberVarIndex = 0; MemberVarIndex < StructASTNode->Obj.Struct.Members.Size; MemberVarIndex++)
+	{
+		struct AST_Node* MemberASTNode = Vector_GetValueAt(StructASTNode->Obj.Struct.Members, struct AST_Node*, MemberVarIndex);
+		if (MemberASTNode->Type == AST_NODE_OBJ_STRUCT) continue; // TODO: Support integrating sub-structures.
+
+		struct ProgramSymbol* MemberSymbol = BuildSymbol_Variable(Integrator, MemberASTNode);
+		if (MemberSymbol == NULL)
+		{
+		INTEGRATE_FAIL:
+			FreeSymbol(StructSymbol);
+			return NULL;
+		}
+
+		// Resolve variable offset, check for bit count assignment and update structure size.
+
+		if (MemberASTNode->Obj.Var.Initializer.Expression != NULL)
+		{
+			i64 BitSizeOverride = 0;
+			enum DATATYPE BitSizeType = 0;
+			if (!EvalConstantExpression(Integrator, MemberASTNode->Obj.Var.Initializer.Expression, &BitSizeOverride, &BitSizeType))
+			{
+				goto INTEGRATE_FAIL;
+			}
+
+			if (BitSizeType == DATATYPE_INT32)
+			{
+				BitSizeOverride = (i64)(*(i32*)&BitSizeOverride);
+			}
+
+			if (BitSizeType != DATATYPE_INT64)
+			{
+				Integrator_Error(Integrator, MemberASTNode->Obj.Var.Initializer.Expression->BufferLocation, "Expression must be an integral.");
+				goto INTEGRATE_FAIL;
+			}
+
+			MemberSymbol->Variable.BitSize = BitSizeOverride;
+		}
+
+		if (MemberSymbol->Variable.BitSize % 8 != 0)
+		{
+			// Variable has a custom bit size not based on a multiple of 8 / bytes.
+			// It can be applied on top of current struct bit size, and given a bit offset on top of its byte offset.
+			MemberSymbol->Variable.Offset = StructBitSize / 8;
+			MemberSymbol->Variable.BitOffset = StructBitSize % 8;
+			StructBitSize += MemberSymbol->Variable.BitSize;
+		}
+		else
+		{
+			// Variable has a standard byte size. Ensure it is located on a byte boundary related to
+			// its desired alignment.
+			StructBitSize += StructBitSize % MemberSymbol->Variable.BitSize;
+			MemberSymbol->Variable.Offset = StructBitSize / MemberSymbol->Variable.BitSize;
+			StructBitSize += MemberSymbol->Variable.BitSize;
+		}
+		
+		// Update struct alignment if required.
+		ui32 VarAlign = (MemberSymbol->Variable.BitSize + 7) / 8;
+		StructSymbol->Struct.Alignment = max(VarAlign, StructSymbol->Struct.Alignment);
+
+		LargestMemberBitSize = max(LargestMemberBitSize, MemberSymbol->Variable.BitSize);
+		Scope_AddSymbol(StructSymbol->Struct.Scope, MemberSymbol);
+	}
+
+	// Resolve final struct size. Make sure it reaches an alignment boundary.
+	ui64 BitAlign = StructSymbol->Struct.Alignment * 8;
+	if (!StructSymbol->Struct.IsUnion)
+		StructSymbol->Struct.Size = (StructBitSize + (BitAlign - 1)) / BitAlign * StructSymbol->Struct.Alignment;
+	else
+		StructSymbol->Struct.Size = (LargestMemberBitSize + 7) / 8;
+
+	return StructSymbol;
+}
+
 void IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
 {
 	ASSERT(RootASTNode != NULL);
@@ -334,12 +474,19 @@ void IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node*
 	switch (RootASTNode->Type)
 	{
 	case AST_NODE_OBJ_VAR:
-		NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode, 0);
+		NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode);
 		if (NewSymbol == NULL) goto INTEGRATE_FAIL;
 
-		NewSymbol->Variable.Offset = 0; // TODO: Handle global var offsets.
+		// Assign the global variable an offset corresponding to its place in program static memory.
+		NewSymbol->Variable.Offset = Integrator->StaticMemSize;
+		Integrator->StaticMemSize += NewSymbol->Variable.BitSize / 8;
+
+		break;
+	case AST_NODE_OBJ_FUNC:
+		NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
 		break;
 	case AST_NODE_OBJ_STRUCT:
+		NewSymbol = BuildSymbol_Structure(Integrator, RootASTNode);
 		break;
 	default:
 		// TEMP: Do nothing.
