@@ -347,10 +347,34 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	// If not, we MUST find a matching DECLARED / RESOLVED type symbol (Struct / Union, Typedef or Enum).
 
 	struct ProgramSymbol* TypeSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &TypeSig->TypeName, 0);
+	if (TypeSymbol != NULL)
+	{
+		// .. Check symbol type coherence (struct / union / enum).
+	}
 
 	if (TypeSig->PointerLevel > 0)
 	{
-		if (TypeSymbol == NULL); // TODO: Create new temporary symbol.
+		if (TypeSymbol == NULL)
+		{
+			enum SYMBOL_TYPE SymbolType;
+			switch (TypeSig->Flags & (TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION))
+			{
+			case TYPE_IS_STRUCTURED:
+				SymbolType = SYMBOL_TYPE_STRUCT;
+				break;
+			case TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION:
+				SymbolType = SYMBOL_TYPE_UNION;
+				break;
+			case TYPE_IS_ENUM_OR_UNION:
+				SymbolType = SYMBOL_TYPE_ENUM;
+				break;
+			}
+
+			TypeSymbol = AllocSymbol(SymbolType);
+			TypeSymbol->Name = String_Copy_ANSI(TypeSig->TypeName);
+
+			Scope_AddSymbol(Integrator->ProgramTree->RootScope, TypeSymbol);
+		}
 
 		return TypeSize;
 	}
@@ -491,13 +515,34 @@ ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct P
 	Scope_AddSymbol(StructSymbol->Struct.Scope, MemberSymbol);
 }
 
-struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode)
+// Builds the definition for a structure symbol, resolving its final size, members and their offsets,
+// and adding it to the global scope if necessary.
+// If there is a pre-existing declaration symbol for the struct (with no already-defined size),
+// it will take over as the defined symbol.
+struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode)
 {
 	ASSERT(StructASTNode != NULL);
 
-	struct ProgramSymbol* StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
-	StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
-	StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
+	struct ProgramSymbol* StructSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &StructASTNode->Obj.Name, 0);
+
+	if (StructSymbol == NULL)
+	{
+		StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
+		StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
+		StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
+
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, StructSymbol);
+	}
+	else
+	{
+		// Check for existing definition.
+		if (StructSymbol->Struct.Size > 0)
+		{
+			Integrator_Error(Integrator, StructASTNode->BufferLocation, "Struct symbol '%s' redefinition.", StructASTNode->Obj.Name.Str);
+			return NULL;
+		}
+	}
+
 	StructSymbol->Struct.Scope = AllocScope();
 	StructSymbol->Struct.Size = 1;
 	StructSymbol->Struct.Alignment = 1;
@@ -609,12 +654,15 @@ struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator,
 		NewSymbol->Variable.Offset = Integrator->StaticMemSize;
 		Integrator->StaticMemSize += NewSymbol->Variable.BitSize / 8;
 
+		// Add to global scope.
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, NewSymbol);
+
 		break;
 	case AST_NODE_OBJ_FUNC:
 		NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
 		break;
 	case AST_NODE_OBJ_STRUCT:
-		NewSymbol = BuildSymbol_Structure(Integrator, RootASTNode);
+		NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode);
 		break;
 	default:
 		// TEMP: Do nothing.
@@ -629,7 +677,6 @@ struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator,
 		return NULL;
 	}
 
-	Scope_AddSymbol(Integrator->ProgramTree->RootScope, NewSymbol);
 	return NewSymbol;
 }
 
