@@ -131,6 +131,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 			if (EnumNode != NULL)
 			{
 				EnumNode->Obj.TypeSignature = MemberType;
+				EnumNode->Obj.Name = String_Copy_ANSI(MemberType->TypeName);
 
 				// Push directly to parser as a root node (enums always exist at the top level).
 				Vector_PushPtr(Parser->RootNodes, &EnumNode);
@@ -594,6 +595,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		if (EnumNode != NULL)
 		{
 			EnumNode->Obj.TypeSignature = ObjectsReturnType;
+			EnumNode->Obj.Name = String_Copy_ANSI(ObjectsReturnType->TypeName);
 			Vector_PushPtr(Parser->RootNodes, &EnumNode);
 		}
 	}

@@ -39,7 +39,7 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 		}
 		else
 		{
-			printf(", Size = %lld bits, Offset = %lld (+ %lld bits)\n", MemberSymbol->Variable.BitSize, MemberSymbol->Variable.Offset, MemberSymbol->Variable.BitOffset);
+			printf(", Size = %lld bits, Offset = %lld (+ %d bits)\n", MemberSymbol->Variable.BitSize, MemberSymbol->Variable.Offset, MemberSymbol->Variable.BitOffset);
 		}
 	}
 }
@@ -66,6 +66,13 @@ void PrintSymbol(struct ProgramSymbol* Symbol)
 	case SYMBOL_TYPE_FUNCTION:
 		printf("FUNC '%s'\n", Symbol->Name.Str);
 		break;
+	case SYMBOL_TYPE_ENUM:
+		printf("ENUM '%s', Type Size = %lld\n", Symbol->Name.Str, Symbol->Enum.UnderlyingTypeSize);
+		break;
+	case SYMBOL_TYPE_ENUM_VAL:
+		// It's a little hacky but ENUM VAL symbols should always immediately follow their parent ENUM, so the tab will make that look better.
+		printf("\tENUM VAL '%s' = %lld\n", Symbol->Name.Str, Symbol->Enum_Member.NumericValue);
+		break;
 	default:
 		break;
 	}
@@ -91,7 +98,7 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 	}
 }
 
-struct SymbolScope* AllocScope();
+struct SymbolScope* AllocScope(struct SymbolScope* Parent);
 void FreeScope(struct SymbolScope* Scope);
 
 struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
@@ -104,6 +111,9 @@ struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
 	{
 	case SYMBOL_TYPE_VARIABLE:
 		NewSymbol->Variable.ArraySizes = Vector_Create(ui64, 0);
+		break;
+	case SYMBOL_TYPE_ENUM:
+		NewSymbol->Enum.Values = Vector_Create(struct ProgramSymbol*, 2);
 		break;
 	default:
 		break;
@@ -127,16 +137,20 @@ void FreeSymbol(struct ProgramSymbol* Symbol)
 	case SYMBOL_TYPE_STRUCT:
 		FreeScope(Symbol->Struct.Scope);
 		break;
+	case SYMBOL_TYPE_ENUM:
+		Vector_Destroy(&Symbol->Enum.Values);
+		break;
 	default:
 		break;
 	}
 }
 
-struct SymbolScope* AllocScope()
+struct SymbolScope* AllocScope(struct SymbolScope* Parent)
 {
 	struct SymbolScope* NewScope = calloc(1, sizeof(struct SymbolScope));
 	ASSERT(NewScope != NULL);
 	NewScope->Symbols = Vector_Create(struct ProgramSymbol*, 1);
+	NewScope->Parent = Parent;
 	return NewScope;
 }
 
@@ -164,6 +178,7 @@ void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol)
 struct ProgramSymbol* Scope_FindSymbol(struct SymbolScope* Scope, struct String_ANSI* Name, ui8 SearchParent)
 {
 	ASSERT(Scope != NULL);
+	ASSERT(Name != NULL);
 
 	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
 	{
@@ -464,7 +479,7 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 
 	struct ProgramSymbol* FuncSymbol = AllocSymbol(SYMBOL_TYPE_FUNCTION);
 	FuncSymbol->Name = String_Copy_ANSI(FuncASTNode->Obj.Name);
-	FuncSymbol->Function.Scope = AllocScope();
+	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
 
 	// TODO: Parse parameters into special vector + underlying scope.
 	// If definition is provided, check that the function isn't already defined and parse instructions & local variables.
@@ -543,7 +558,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		}
 	}
 
-	StructSymbol->Struct.Scope = AllocScope();
+	StructSymbol->Struct.Scope = AllocScope(Integrator->ProgramTree->RootScope);
 	StructSymbol->Struct.Size = 1;
 	StructSymbol->Struct.Alignment = 1;
 
@@ -638,6 +653,86 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 	return StructSymbol;
 }
 
+struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, struct AST_Node* EnumASTNode)
+{
+	ASSERT(EnumASTNode != NULL);
+
+	struct ProgramSymbol* EnumSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &EnumASTNode->Obj.Name, 0);
+	if (EnumSymbol == NULL)
+	{
+		EnumSymbol = AllocSymbol(SYMBOL_TYPE_ENUM);
+		EnumSymbol->Name = String_Copy_ANSI(EnumASTNode->Obj.Name);
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, EnumSymbol);
+	}
+	else
+	{
+		// Check for existing definition.
+		if (EnumSymbol->Enum.UnderlyingTypeSize > 0)
+		{
+			Integrator_Error(Integrator, EnumASTNode->BufferLocation, "Enum symbol '%s' redefinition.", EnumASTNode->Obj.Name.Str);
+			return NULL;
+		}
+	}
+
+	// Go over the value expressions and attempt to evaluate them. Keep track of the highest value.
+	i64 NextVal = 0;
+	for (int EnumValIndex = 0; EnumValIndex < EnumASTNode->Obj.Enum.Members.Size; EnumValIndex++)
+	{
+		struct Expression* ValExpression = Vector_GetValueAt(EnumASTNode->Obj.Enum.Members, struct Expression*, EnumValIndex);
+
+		if (ValExpression->Type == EXP_VAR_ACCESS)
+		{
+			// Expression is simple and only specifies a name. Emit a ENUM_VALUE symbol.
+			struct ProgramSymbol* ValSymbol = AllocSymbol(SYMBOL_TYPE_ENUM_VAL);
+			ValSymbol->Name = String_Copy_ANSI(ValExpression->Variable.Name);
+			ValSymbol->Enum_Member.NumericValue = NextVal++;
+
+			// Push value symbol to root scope and to the enum's own values vector.
+			Scope_AddSymbol(Integrator->ProgramTree->RootScope, ValSymbol);
+			Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
+			continue;
+		}
+
+		// ... Otherwise we have a <VAR ACCESS> = <VAL> expression. VAL needs to evaluate to an integral number.
+		
+		ui64 EvalRes;
+		enum DATATYPE EvalType;
+
+		ASSERT(ValExpression->Type == EXP_OP && ValExpression->Op.RightOperand != NULL);
+		ASSERT(ValExpression->Op.LeftOperand != NULL && ValExpression->Op.LeftOperand->Type == EXP_VAR_ACCESS);
+		if (!EvalConstantExpression(Integrator, ValExpression->Op.RightOperand, &EvalRes, &EvalType))
+		{
+			Integrator_Error(Integrator, ValExpression->Op.RightOperand->BufferLocation, "Invalid expression for Enumeration value.");
+			return NULL;
+		}
+	
+		if (EvalType == DATATYPE_INT32)
+		{
+			EvalRes = (i64)(*(i32*)&EvalRes);
+		}
+
+		if (EvalType != DATATYPE_INT64)
+		{
+			Integrator_Error(Integrator, ValExpression->Op.RightOperand->BufferLocation, "Expression must be an integral.");
+			return 0;
+		}
+
+		// Expression is simple and only specifies a name. Emit a ENUM_VALUE symbol.
+		struct ProgramSymbol* ValSymbol = AllocSymbol(SYMBOL_TYPE_ENUM_VAL);
+		ValSymbol->Name = String_Copy_ANSI(ValExpression->Op.LeftOperand->Variable.Name);
+		ValSymbol->Enum_Member.NumericValue = EvalRes;
+		NextVal = EvalRes + 1;
+
+		// Push value symbol to root scope and to the enum's own values vector.
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, ValSymbol);
+		Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
+	}
+
+	EnumSymbol->Enum.UnderlyingTypeSize = 8; // TODO: Reduce to lower size if possible.
+
+	return EnumSymbol;
+}
+
 struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
 {
 	ASSERT(RootASTNode != NULL);
@@ -664,6 +759,8 @@ struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator,
 	case AST_NODE_OBJ_STRUCT:
 		NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode);
 		break;
+	case AST_NODE_OBJ_ENUM:
+		NewSymbol = BuildSymbolDef_Enum(Integrator, RootASTNode);
 	default:
 		// TEMP: Do nothing.
 		break;
@@ -689,7 +786,7 @@ void Integrator_Run(struct IntegratorProcess* Integrator)
 	ASSERT(Integrator->ProgramTree != NULL);
 
 	// Allocate root scope and start repeatedly integrating root scope symbols in order of declaration.
-	Integrator->ProgramTree->RootScope = AllocScope();
+	Integrator->ProgramTree->RootScope = AllocScope(NULL);
 
 	for (int RootNodeIndex = 0; RootNodeIndex < Integrator->ASTRootNodes->Size; RootNodeIndex++)
 	{

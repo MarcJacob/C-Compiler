@@ -23,6 +23,14 @@ struct Test2
 	int B;
 };
 
+enum TestEnum
+{
+	VAL_A,
+	VAL_B,
+	VAL_C = 55,
+	VAL_D,
+};
+
 int main(int argc, char** argv)
 {
 	printf("Hello, World !\n");

@@ -60,13 +60,13 @@ struct ProgramSymbol
 
 		struct
 		{
-			struct SymbolScope Values; // Contains ENUM_VALUE symbols.
+			struct Vector Values; // Vector type = ProgramSymbol*. Contains pointers to ENUM_VALUE Symbols.
 			ui64 UnderlyingTypeSize; // Size of the underlying integral type.
 		} Enum;
 
 		struct
 		{
-			ui64 NumericValue; // Numeric value this enum member resolves to.
+			i64 NumericValue; // Numeric value this enum member resolves to.
 		} Enum_Member;
 
 		struct

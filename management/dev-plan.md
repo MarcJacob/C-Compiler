@@ -93,18 +93,21 @@ Tasks:
     - Instructions built from AST variable initializers and statements.
 - Integrate / Build global scope symbols:
     - Generate Symbol entries with variables. Size resolution for primitive types. [DONE]
-    - Parse structures and unions
+    - Parse structures and unions [DONE]
         - Primitive members. [DONE]
         - Bit count specifiers with correct size & alignment. [DONE]
-        - Sub-structures / unions (with promotion to root scope). [WIP]
-        - Struct & Union type signature integration.
-    - Setup type lookup by name / primitive type.
-    - Resolve non-primitive variable sizes.
-- Logging system displaying top-level symbols.
-- Build Struct / Function scopes with variable memory offsets.
+        - Sub-structures / unions (with promotion to root scope). [DONE]
+        - Struct & Union type signature integration. [DONE]
+    - Setup type lookup by name / primitive type. [DONE]
+    - Resolve non-primitive variable sizes. [DONE]
+- Logging system displaying top-level symbols. [DONE]
+- Build Struct scopes with variable memory offsets (including bit count specifier). [DONE]
+- Build Function scopes with variable memory offsets.
 - Determine expressions that are compile-time-resolvable and turn them into the correct final values:
-    - Array sizes & indices
-    - Struct Member Bit counts
+    - Array sizes & indices [DONE]
+    - Struct Member Bit counts [DONE]
+    - Enum Member Values [DONE]
+- Make Enum values useable in compile-time constant expressions.
 - Function instructions integration.
 
 ## Step 7 - Code Generator [TO BE DONE]
