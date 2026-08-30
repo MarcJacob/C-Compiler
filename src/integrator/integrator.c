@@ -16,6 +16,61 @@ void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, cons
 	va_end(args);
 }
 
+void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
+{
+	StructSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
+	printf("'%s', Size = %lld bytes, Align = %d bytes\n", StructSymbol->Name.Str, StructSymbol->Struct.Size, StructSymbol->Struct.Alignment);
+
+	for (int MemberSymbolIndex = 0; MemberSymbolIndex < StructSymbol->Struct.Scope->Symbols.Size; MemberSymbolIndex++)
+	{
+		struct ProgramSymbol* MemberSymbol = Vector_GetValueAt(StructSymbol->Struct.Scope->Symbols, struct ProgramSymbol*, MemberSymbolIndex);
+		ASSERT(MemberSymbol != NULL);
+		if (MemberSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
+
+		printf("\tVAR '%s' : ", MemberSymbol->Name.Str);
+		PrintTypeSignature(MemberSymbol->Variable.DeclarationType);
+		for (int i = 0; i < MemberSymbol->Variable.ArraySizes.Size; i++)
+		{
+			printf("[%lld]", Vector_GetValueAt(MemberSymbol->Variable.ArraySizes, i64, i));
+		}
+		if (MemberSymbol->Variable.BitSize % 8 == 0)
+		{
+			printf(", Size = %lld bytes, Offset = %lld\n", MemberSymbol->Variable.BitSize / 8, MemberSymbol->Variable.Offset);
+		}
+		else
+		{
+			printf(", Size = %lld bits, Offset = %lld (+ %lld bits)\n", MemberSymbol->Variable.BitSize, MemberSymbol->Variable.Offset, MemberSymbol->Variable.BitOffset);
+		}
+	}
+}
+
+void PrintSymbol(struct ProgramSymbol* Symbol)
+{
+	ASSERT(Symbol != NULL);
+
+	switch (Symbol->Type)
+	{
+	case SYMBOL_TYPE_VARIABLE:
+		printf("VAR '%s' : ", Symbol->Name.Str);
+		PrintTypeSignature(Symbol->Variable.DeclarationType);
+		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
+		{
+			printf("[%lld]", Vector_GetValueAt(Symbol->Variable.ArraySizes, i64, i));
+		}
+		printf(", Size = %lld bytes, Address = 0x%08llX\n", Symbol->Variable.BitSize / 8, Symbol->Variable.Offset);
+		break;
+	case SYMBOL_TYPE_STRUCT:
+	case SYMBOL_TYPE_UNION:
+		PrintStructSymbol(Symbol);
+		break;
+	case SYMBOL_TYPE_FUNCTION:
+		printf("FUNC '%s'\n", Symbol->Name.Str);
+		break;
+	default:
+		break;
+	}
+}
+
 void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 {
 	ASSERT(Integrator != NULL);
@@ -32,31 +87,7 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 	for (int GlobalSymbolIndex = 0; GlobalSymbolIndex < Integrator->ProgramTree->RootScope->Symbols.Size; GlobalSymbolIndex++)
 	{
 		struct ProgramSymbol* GlobalSymbol = Vector_GetValueAt(Integrator->ProgramTree->RootScope->Symbols, struct ProgramSymbol*, GlobalSymbolIndex);
-		ASSERT(GlobalSymbol != NULL);
-
-		switch (GlobalSymbol->Type)
-		{
-		case SYMBOL_TYPE_VARIABLE:
-			printf("VAR '%s' : ", GlobalSymbol->Name.Str);
-			PrintTypeSignature(GlobalSymbol->Variable.DeclarationType);
-			for (int i = 0; i < GlobalSymbol->Variable.ArraySizes.Size; i++)
-			{
-				printf("[%lld]", Vector_GetValueAt(GlobalSymbol->Variable.ArraySizes, i64, i));
-			}
-			printf(", Size = %lld bytes, Address = 0x%08llX\n", GlobalSymbol->Variable.BitSize / 8, GlobalSymbol->Variable.Offset);
-			break;
-		case SYMBOL_TYPE_STRUCT:
-		case SYMBOL_TYPE_UNION:
-			GlobalSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
-			printf("'%s', Size = %lld bytes, Align = %d bytes\n", GlobalSymbol->Name.Str, GlobalSymbol->Struct.Size, GlobalSymbol->Struct.Alignment);
-			// TODO: Print sub-symbols.
-			break;
-		case SYMBOL_TYPE_FUNCTION:
-			printf("FUNC '%s'\n", GlobalSymbol->Name.Str);
-			break;
-		default:
-			break;
-		}
+		PrintSymbol(GlobalSymbol);
 	}
 }
 
@@ -442,8 +473,12 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 		{
 			// Variable has a standard byte size. Ensure it is located on a byte boundary related to
 			// its desired alignment.
-			StructBitSize += StructBitSize % MemberSymbol->Variable.BitSize;
-			MemberSymbol->Variable.Offset = StructBitSize / MemberSymbol->Variable.BitSize;
+
+			// Adjust struct size to match alignment boundary required by this member (TODO: Keep track of padding ?)
+			StructBitSize += (MemberSymbol->Variable.BitSize - StructBitSize % MemberSymbol->Variable.BitSize) % MemberSymbol->Variable.BitSize;
+
+			// Place member, increase struct size.
+			MemberSymbol->Variable.Offset = StructBitSize / 8;
 			StructBitSize += MemberSymbol->Variable.BitSize;
 		}
 		

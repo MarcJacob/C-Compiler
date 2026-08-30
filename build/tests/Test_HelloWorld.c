@@ -14,6 +14,7 @@ struct TestStructure
 	int b : 2;
 	int c : 3;
 	int d : 4;
+	int e, f;
 };
 
 int main(int argc, char** argv)
