@@ -121,10 +121,8 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 			if (SubStructNode != NULL)
 			{
 				SubStructNode->Obj.TypeSignature = MemberType;
+				SubStructNode->Obj.Name = String_Copy_ANSI(MemberType->TypeName);
 				SubStructNode->Obj.Struct.IsUnion = MemberType->Flags & TYPE_IS_ENUM_OR_UNION;
-
-				// Push directly to parser as a root node (structures always exist at the top level).
-				Vector_PushPtr(Parser->RootNodes, &SubStructNode);
 			}
 		}
 		else if (MemberType->Flags & TYPE_IS_ENUM_OR_UNION)
@@ -183,6 +181,11 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 		if (!ParsedVarObject && SubStructNode != NULL)
 		{
 			Vector_Push(StructNode->Obj.Struct.Members, struct AST_Node*, SubStructNode);
+		}
+		// ... Otherwise add the substructure directly to the root nodes of the Parser process output.
+		else if (SubStructNode != NULL)
+		{
+			Vector_PushPtr(Parser->RootNodes, &SubStructNode);
 		}
 	}
 

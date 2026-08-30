@@ -14,7 +14,17 @@ struct TestStructure
 	int b : 2;
 	int c : 3;
 	int d : 4;
-	int e, f;
+	int e;
+
+	struct TestSubStructure
+	{
+		int f, g, h;
+	};
+
+	struct TestSubStructure_2
+	{
+		int i j, k;
+	} SubStructMember;
 };
 
 int main(int argc, char** argv)

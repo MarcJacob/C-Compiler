@@ -92,8 +92,12 @@ Tasks:
     - Common Scope system composed into the various symbols that support them. [DONE]
     - Instructions built from AST variable initializers and statements.
 - Integrate / Build global scope symbols:
-    - Generate Symbol entries with variables. Size resolution for primitive types. [WIP]
-    - Generate Symbol entries with each struct, union, enum, typedef. Resolve their size. [WIP]
+    - Generate Symbol entries with variables. Size resolution for primitive types. [DONE]
+    - Parse structures and unions
+        - Primitive members. [DONE]
+        - Bit count specifiers with correct size & alignment. [DONE]
+        - Sub-structures / unions (with promotion to root scope). [WIP]
+        - Struct & Union type signature integration.
     - Setup type lookup by name / primitive type.
     - Resolve non-primitive variable sizes.
 - Logging system displaying top-level symbols.

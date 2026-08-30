@@ -122,10 +122,10 @@ void FreeSymbol(struct ProgramSymbol* Symbol)
 		Vector_Destroy(&Symbol->Variable.ArraySizes);
 		break;
 	case SYMBOL_TYPE_FUNCTION:
-		FreeScope(&Symbol->Function.Scope);
+		FreeScope(Symbol->Function.Scope);
 		break;
 	case SYMBOL_TYPE_STRUCT:
-		FreeScope(&Symbol->Struct.Scope);
+		FreeScope(Symbol->Struct.Scope);
 		break;
 	default:
 		break;
@@ -332,6 +332,8 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	return 0; // TEMP Unimplemented handling of complex types.
 }
 
+struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode);
+
 // Returns an integrated Variable symbol from a corresponding Variable AST object.
 // The variable's type and size is resolved, but its final size (if bit count is specified) and offset must be
 // resolved by the caller according to its context, and its parent scope must be assigned.
@@ -409,6 +411,51 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 	return FuncSymbol;
 }
 
+ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct ProgramSymbol* StructSymbol, struct ProgramSymbol* MemberSymbol, ui64* StructBitSize)
+{
+	ASSERT(StructSymbol != NULL);
+	ASSERT(MemberSymbol != NULL);
+
+	// Resolve variable size & offset
+
+	if (!StructSymbol->Struct.IsUnion)
+	{
+		if (MemberSymbol->Variable.BitSize % 8 != 0)
+		{
+			// Variable has a custom bit size not based on a multiple of 8 / bytes.
+			// It can be applied on top of current struct bit size, and given a bit offset on top of its byte offset.
+			MemberSymbol->Variable.Offset = *StructBitSize / 8;
+			MemberSymbol->Variable.BitOffset = *StructBitSize % 8;
+			*StructBitSize += MemberSymbol->Variable.BitSize;
+		}
+		else
+		{
+			// Variable has a standard byte size. Ensure it is located on a byte boundary related to
+			// its desired alignment.
+
+			// Adjust struct size to match alignment boundary required by this member (TODO: Keep track of padding ?)
+			*StructBitSize += (MemberSymbol->Variable.BitSize - *StructBitSize % MemberSymbol->Variable.BitSize) % MemberSymbol->Variable.BitSize;
+
+			// Place member, increase struct size.
+			MemberSymbol->Variable.Offset = *StructBitSize / 8;
+			*StructBitSize += MemberSymbol->Variable.BitSize;
+		}		
+
+		// Update struct alignment if required.
+		ui32 VarAlign = (MemberSymbol->Variable.BitSize + 7) / 8;
+		StructSymbol->Struct.Alignment = max(VarAlign, StructSymbol->Struct.Alignment);
+	}
+	else
+	{
+		MemberSymbol->Variable.Offset = 0;
+		*StructBitSize = max(*StructBitSize, MemberSymbol->Variable.BitSize);
+
+		StructSymbol->Struct.Alignment = max(StructSymbol->Struct.Alignment, (*StructBitSize + 7) / 8);
+	}
+
+	Scope_AddSymbol(StructSymbol->Struct.Scope, MemberSymbol);
+}
+
 struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode)
 {
 	ASSERT(StructASTNode != NULL);
@@ -417,16 +464,38 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 	StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
 	StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
 	StructSymbol->Struct.Scope = AllocScope();
-	StructSymbol->Struct.Size = 0;
+	StructSymbol->Struct.Size = 1;
+	StructSymbol->Struct.Alignment = 1;
 
 	// Parse member variable nodes.
 	ui64 StructBitSize = 0;
-	ui64 LargestMemberBitSize = 0;
-	StructSymbol->Struct.Alignment = 1;
 	for (int MemberVarIndex = 0; MemberVarIndex < StructASTNode->Obj.Struct.Members.Size; MemberVarIndex++)
 	{
 		struct AST_Node* MemberASTNode = Vector_GetValueAt(StructASTNode->Obj.Struct.Members, struct AST_Node*, MemberVarIndex);
-		if (MemberASTNode->Type == AST_NODE_OBJ_STRUCT) continue; // TODO: Support integrating sub-structures.
+
+		if (MemberASTNode->Type == AST_NODE_OBJ_STRUCT)
+		{
+			// Integrate any sub-structure found into the program's global scope, then copy their members over.
+			struct ProgramSymbol* SubStructSymbol = IntegrateRootASTNode(Integrator, MemberASTNode);
+			if (Integrator->HasError) goto INTEGRATE_FAIL;
+			ASSERT(SubStructSymbol != NULL);
+
+			for (int SubStructMemberIndex = 0; SubStructMemberIndex < SubStructSymbol->Struct.Scope->Symbols.Size; SubStructMemberIndex++)
+			{
+				struct ProgramSymbol* SubStructVarSymbol = Vector_GetValueAt(SubStructSymbol->Struct.Scope->Symbols, struct ProgramSymbol*, SubStructMemberIndex);
+				
+				// The copy can be shallow, but we still do need a copy so we can give the copy different offsets than its original.
+				struct ProgramSymbol* MemberSymbol = calloc(1, sizeof(struct ProgramSymbol));
+				*MemberSymbol = *SubStructVarSymbol;
+
+				if(!IntegrateStructMemberVariable(Integrator, StructSymbol, MemberSymbol, &StructBitSize))
+				{
+					goto INTEGRATE_FAIL;
+				}
+			}
+			
+			continue;
+		}
 
 		struct ProgramSymbol* MemberSymbol = BuildSymbol_Variable(Integrator, MemberASTNode);
 		if (MemberSymbol == NULL)
@@ -436,15 +505,13 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 			return NULL;
 		}
 
-		// Resolve variable offset, check for bit count assignment and update structure size.
-
 		if (MemberASTNode->Obj.Var.Initializer.Expression != NULL)
 		{
 			i64 BitSizeOverride = 0;
 			enum DATATYPE BitSizeType = 0;
 			if (!EvalConstantExpression(Integrator, MemberASTNode->Obj.Var.Initializer.Expression, &BitSizeOverride, &BitSizeType))
 			{
-				goto INTEGRATE_FAIL;
+				return 0;
 			}
 
 			if (BitSizeType == DATATYPE_INT32)
@@ -454,53 +521,29 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 
 			if (BitSizeType != DATATYPE_INT64)
 			{
-				Integrator_Error(Integrator, MemberASTNode->Obj.Var.Initializer.Expression->BufferLocation, "Expression must be an integral.");
-				goto INTEGRATE_FAIL;
+				Integrator_Error(Integrator,MemberASTNode->Obj.Var.Initializer.Expression->BufferLocation, "Expression must be an integral.");
+				return 0;
 			}
 
 			MemberSymbol->Variable.BitSize = BitSizeOverride;
 		}
 
-		if (MemberSymbol->Variable.BitSize % 8 != 0)
+		if(!IntegrateStructMemberVariable(Integrator, StructSymbol, MemberSymbol, &StructBitSize))
 		{
-			// Variable has a custom bit size not based on a multiple of 8 / bytes.
-			// It can be applied on top of current struct bit size, and given a bit offset on top of its byte offset.
-			MemberSymbol->Variable.Offset = StructBitSize / 8;
-			MemberSymbol->Variable.BitOffset = StructBitSize % 8;
-			StructBitSize += MemberSymbol->Variable.BitSize;
+			goto INTEGRATE_FAIL;
 		}
-		else
-		{
-			// Variable has a standard byte size. Ensure it is located on a byte boundary related to
-			// its desired alignment.
-
-			// Adjust struct size to match alignment boundary required by this member (TODO: Keep track of padding ?)
-			StructBitSize += (MemberSymbol->Variable.BitSize - StructBitSize % MemberSymbol->Variable.BitSize) % MemberSymbol->Variable.BitSize;
-
-			// Place member, increase struct size.
-			MemberSymbol->Variable.Offset = StructBitSize / 8;
-			StructBitSize += MemberSymbol->Variable.BitSize;
-		}
-		
-		// Update struct alignment if required.
-		ui32 VarAlign = (MemberSymbol->Variable.BitSize + 7) / 8;
-		StructSymbol->Struct.Alignment = max(VarAlign, StructSymbol->Struct.Alignment);
-
-		LargestMemberBitSize = max(LargestMemberBitSize, MemberSymbol->Variable.BitSize);
-		Scope_AddSymbol(StructSymbol->Struct.Scope, MemberSymbol);
 	}
 
 	// Resolve final struct size. Make sure it reaches an alignment boundary.
-	ui64 BitAlign = StructSymbol->Struct.Alignment * 8;
+	StructBitSize += (StructBitSize % 8) % 8;
+	StructSymbol->Struct.Size = StructBitSize / 8;
 	if (!StructSymbol->Struct.IsUnion)
-		StructSymbol->Struct.Size = (StructBitSize + (BitAlign - 1)) / BitAlign * StructSymbol->Struct.Alignment;
-	else
-		StructSymbol->Struct.Size = (LargestMemberBitSize + 7) / 8;
+		StructSymbol->Struct.Size += (StructSymbol->Struct.Size % StructSymbol->Struct.Alignment) % StructSymbol->Struct.Alignment;
 
 	return StructSymbol;
 }
 
-void IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
+struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
 {
 	ASSERT(RootASTNode != NULL);
 
@@ -533,9 +576,11 @@ void IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node*
 	INTEGRATE_FAIL:
 		Integrator_Error(Integrator, RootASTNode->BufferLocation, 
 			"Failed to integrate root object symbol. Object type = %d", RootASTNode->Type); // TODO: Add Root node to string converter.
-		return;
+		return NULL;
 	}
+
 	Scope_AddSymbol(Integrator->ProgramTree->RootScope, NewSymbol);
+	return NewSymbol;
 }
 
 // Main Integrator Process function. Turns the SourceASTs vector within the Process into an Integrated Program Tree (ProgramTree).
