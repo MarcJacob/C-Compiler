@@ -7,6 +7,7 @@
 struct ProgramSymbol;
 struct SymbolScope
 {
+	struct SymbolScope* Parent; // Parent Scope. NULL for the Global Scope.
 	struct Vector Symbols; // Vector type = ProgramSymbol* Contains all symbols of this scope in order of declaration.
 };
 
@@ -60,6 +61,7 @@ struct ProgramSymbol
 		struct
 		{
 			struct SymbolScope Values; // Contains ENUM_VALUE symbols.
+			ui64 UnderlyingTypeSize; // Size of the underlying integral type.
 		} Enum;
 
 		struct

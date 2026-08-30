@@ -122,7 +122,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 			{
 				SubStructNode->Obj.TypeSignature = MemberType;
 				SubStructNode->Obj.Name = String_Copy_ANSI(MemberType->TypeName);
-				SubStructNode->Obj.Struct.IsUnion = MemberType->Flags & TYPE_IS_ENUM_OR_UNION;
+				SubStructNode->Obj.Struct.IsUnion = (MemberType->Flags & TYPE_IS_ENUM_OR_UNION) != 0;
 			}
 		}
 		else if (MemberType->Flags & TYPE_IS_ENUM_OR_UNION)

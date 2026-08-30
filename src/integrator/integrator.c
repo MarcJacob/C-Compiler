@@ -159,6 +159,23 @@ void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol)
 	Vector_Push(Scope->Symbols, struct ProgramSymbol*, Symbol);
 }
 
+// Returns the "earliest found" symbol starting from the provided scope.
+// Returns NULL if no symbols were found.
+struct ProgramSymbol* Scope_FindSymbol(struct SymbolScope* Scope, struct String_ANSI* Name, ui8 SearchParent)
+{
+	ASSERT(Scope != NULL);
+
+	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
+	{
+		struct ProgramSymbol* Symbol = Vector_GetValueAt(Scope->Symbols, struct ProgramSymbol*, SymbolIndex);
+		ASSERT(Symbol != NULL);
+
+		if (strcmp(Symbol->Name.Str, Name->Str) == 0) return Symbol;
+	}
+
+	return (Scope->Parent != NULL && SearchParent) ? Scope_FindSymbol(Scope->Parent, Name, 1) : NULL;
+}
+
 ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
 
 // Resolves an operation between two expressions, recursively.
@@ -297,8 +314,8 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expressi
 // 
 // If the type is primitive or a pointer then this is trivial and just returns the type's size.
 // If not, then the whole program tree as it currently exists will be searched to find a matching symbol.
-// In that case if a symbol is successfuly found, it is returned through the OutTypeSymbol parameter.
-// If not, a new symbol declaration is created, added to the Program Tree's root scope and returned through OutTypeSignature
+// In that case if a symbol is successfully found, it is returned through the OutTypeSymbol parameter.
+// If not, a new symbol declaration is created and added to the Program Tree's root scope.
 // Note: This only happens for pointer type signatures. Non-pointer type signatures that use an undeclared type will trigger an error.
 ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSignature* TypeSig, struct ProgramSymbol* OutTypeSymbol)
 {
@@ -329,7 +346,28 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	// making this the declaration site for it.
 	// If not, we MUST find a matching DECLARED / RESOLVED type symbol (Struct / Union, Typedef or Enum).
 
-	return 0; // TEMP Unimplemented handling of complex types.
+	struct ProgramSymbol* TypeSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &TypeSig->TypeName, 0);
+
+	if (TypeSig->PointerLevel > 0)
+	{
+		if (TypeSymbol == NULL); // TODO: Create new temporary symbol.
+
+		return TypeSize;
+	}
+
+	if (TypeSymbol == NULL) return 0; // Unknown
+
+	if (TypeSymbol->Type == SYMBOL_TYPE_STRUCT
+		|| TypeSymbol->Type == SYMBOL_TYPE_UNION)
+		TypeSig->Size = TypeSymbol->Struct.Size;
+	else if (TypeSymbol->Type == SYMBOL_TYPE_ENUM)
+		TypeSig->Size = TypeSymbol->Enum.UnderlyingTypeSize;
+	else if (TypeSymbol->Type == SYMBOL_TYPE_TYPEDEF)
+	{
+		TypeSig->Size = TypeSymbol->Typedef.Type->Size;
+	}
+
+	return TypeSig->Size; // Will be 0 if the type exists but is incomplete.
 }
 
 struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode);
@@ -347,7 +385,7 @@ struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator,
 	// Handle Type Signature.
 	struct ProgramSymbol* TypeSymbol = NULL;
 	VarSymbol->Variable.DeclarationType = AllocTypeSignatureCopy(VarASTNode->Obj.TypeSignature);
-	VarSymbol->Variable.BitSize = IntegrateTypeSignature(Integrator, VarSymbol->Variable.DeclarationType, TypeSymbol);
+	VarSymbol->Variable.BitSize = IntegrateTypeSignature(Integrator, VarSymbol->Variable.DeclarationType, TypeSymbol) * 8;
 
 	// Handle array size(s).
 	// Resolve array size expressions. Error out if any of the expressions cannot be resolved at compile-time.
@@ -386,11 +424,10 @@ struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator,
 
 	if (VarSymbol->Variable.BitSize == 0)
 	{
-		Parser_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", VarSymbol->Variable.DeclarationType->TypeName.Str);
+		Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", VarSymbol->Variable.DeclarationType->TypeName.Str);
 		return NULL;
 	}
 
-	VarSymbol->Variable.BitSize *= 8; // Bytes -> Bits conversion.
 	return VarSymbol;
 }
 
@@ -416,8 +453,7 @@ ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct P
 	ASSERT(StructSymbol != NULL);
 	ASSERT(MemberSymbol != NULL);
 
-	// Resolve variable size & offset
-
+	// Resolve variable offsets, structure size and alignment.
 	if (!StructSymbol->Struct.IsUnion)
 	{
 		if (MemberSymbol->Variable.BitSize % 8 != 0)
@@ -449,7 +485,6 @@ ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct P
 	{
 		MemberSymbol->Variable.Offset = 0;
 		*StructBitSize = max(*StructBitSize, MemberSymbol->Variable.BitSize);
-
 		StructSymbol->Struct.Alignment = max(StructSymbol->Struct.Alignment, (*StructBitSize + 7) / 8);
 	}
 
@@ -480,6 +515,12 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 			if (Integrator->HasError) goto INTEGRATE_FAIL;
 			ASSERT(SubStructSymbol != NULL);
 
+			// Copy all the sub-structure members over to the parent, adjust the offsets (if required) and
+			// treat them as a single whole for alignment.
+
+			// Bring the parent structure to a byte boundary if needed.
+			StructBitSize += (StructBitSize % 8) % 8;
+
 			for (int SubStructMemberIndex = 0; SubStructMemberIndex < SubStructSymbol->Struct.Scope->Symbols.Size; SubStructMemberIndex++)
 			{
 				struct ProgramSymbol* SubStructVarSymbol = Vector_GetValueAt(SubStructSymbol->Struct.Scope->Symbols, struct ProgramSymbol*, SubStructMemberIndex);
@@ -488,12 +529,21 @@ struct ProgramSymbol* BuildSymbol_Structure(struct IntegratorProcess* Integrator
 				struct ProgramSymbol* MemberSymbol = calloc(1, sizeof(struct ProgramSymbol));
 				*MemberSymbol = *SubStructVarSymbol;
 
-				if(!IntegrateStructMemberVariable(Integrator, StructSymbol, MemberSymbol, &StructBitSize))
-				{
-					goto INTEGRATE_FAIL;
-				}
+				// Offset the offset by the parent structure's current size.
+				if (!StructSymbol->Struct.IsUnion)
+					MemberSymbol->Variable.Offset += StructBitSize / 8;
+
+				// Add the member to the parent structure scope directly.
+				Scope_AddSymbol(StructSymbol->Struct.Scope, MemberSymbol);
 			}
-			
+
+			// Update the parent structure size with the substructure's, and update alignment.
+			if (!StructSymbol->Struct.IsUnion)
+				StructBitSize += SubStructSymbol->Struct.Size * 8;
+			else
+				StructBitSize = max(StructBitSize, SubStructSymbol->Struct.Size * 8);
+
+			StructSymbol->Struct.Alignment = max(StructSymbol->Struct.Alignment, SubStructSymbol->Struct.Alignment);
 			continue;
 		}
 
