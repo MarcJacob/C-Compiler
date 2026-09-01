@@ -10,9 +10,75 @@ build/*
 !build/imprint.md
 !build/tests/
 
-# Ignore AI Model-specific files.
+# Ignore Common AI Harness files.
 
+## Cross-tool convention
+AGENTS.md
+SKILL.md
+.agents/
+
+## Claude Code
+.claude/
 CLAUDE.md
+CLAUDE.local.md
+.claudeignore
+.mcp.json
+
+## Kiro
+.kiro/
+
+## Cursor
+.cursor/
+.cursorrules
+.cursorignore
+.cursorindexingignore
+
+## Windsurf
+.windsurf/
+.windsurfrules
+.codeiumignore
+
+## OpenAI Codex CLI
+.codex/
+
+## Gemini CLI
+.gemini/
+GEMINI.md
+
+## GitHub Copilot
+.github/
+
+## Cline / Roo Code
+.clinerules
+.clinerules/
+.roo/
+.roomodes
+
+## Aider
+.aider*
+CONVENTIONS.md
+
+## Goose
+.goose/
+.goosehints
+
+## JetBrains Junie
+.junie/
+
+## Amazon Q Developer
+.amazonq/
+
+## OpenHands
+.openhands/
+
+## opencode / Crush / Warp / Factory
+.opencode/
+.crush/
+WARP.md
+.factory/
+
+## Continue
+.continue/
 
 # Ignore CMake build system files.
 
