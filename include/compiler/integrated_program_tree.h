@@ -37,7 +37,7 @@ struct ProgramSymbol
 			struct Vector ArraySizes; // Vector type = ui64. Array sizes specified.
 
 			ui64 BitSize; // Size of the variable in bits (so it supports bit count specifier).
-			ui64 Offset; // Memory offset (function / structure var) or Address offset (global var) of this variable.
+			ui64 Offset; // Memory offset for struct member variables.
 			ui32 BitOffset; // When non-zero, indicates this variable has a bit count specifier within a structure. The bits are to be added to the standard byte offset.
 		} Variable;
 
@@ -45,6 +45,7 @@ struct ProgramSymbol
 		{
 			struct TypeSignature* ReturnType; // Return type, part of declaration signature.
 			struct Vector ParamTypeSignatures; // Vector type = struct TypeSignature*. Type Signatures of parameters in order of declaration, part of declaration signature.
+
 
 			struct SymbolScope* Scope; // Contains VARIABLE symbols, with both parameters and local variables in order of declaration. Filled in only for defined functions.
 

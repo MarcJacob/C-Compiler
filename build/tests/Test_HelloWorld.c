@@ -31,6 +31,8 @@ enum TestEnum
 	VAL_D,
 };
 
+extern int extern_func_test(int, float, double);
+
 int main(int argc, char** argv)
 {
 	printf("Hello, World !\n");

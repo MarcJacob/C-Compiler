@@ -47,18 +47,61 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 
 void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol)
 {
-	printf("FUNC '%s' : ", FuncSymbol->Name.Str);
-	PrintTypeSignature(FuncSymbol->Function.ReturnType);
-
-	printf("(");
-	for (int ParamIndex = 0; ParamIndex < FuncSymbol->Function.ParamTypeSignatures.Size; ParamIndex++)
+	if (FuncSymbol->Function.Scope == NULL)
 	{
-		if (ParamIndex > 0) printf(", ");
+		// Declaration: no scope to print, so parameters are printed as bare type signatures without names.
+		printf("FUNC DEC '%s' : ", FuncSymbol->Name.Str);
+		PrintTypeSignature(FuncSymbol->Function.ReturnType);
 
-		struct TypeSignature* ParamTypeSig = Vector_GetValueAt(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamIndex);
-		PrintTypeSignature(ParamTypeSig);
+		printf("(");
+		for (int ParamIndex = 0; ParamIndex < FuncSymbol->Function.ParamTypeSignatures.Size; ParamIndex++)
+		{
+			if (ParamIndex > 0) printf(", ");
+
+			struct TypeSignature* ParamTypeSig = Vector_GetValueAt(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamIndex);
+			PrintTypeSignature(ParamTypeSig);
+		}
+		printf(")\n");
 	}
-	printf(")\n");
+	else
+	{
+		// Definition: same header, then the named parameters and local variables from the function's scope.
+		printf("FUNC DEF '%s' : ", FuncSymbol->Name.Str);
+		PrintTypeSignature(FuncSymbol->Function.ReturnType);
+
+		printf("(");
+		for (int ParamIndex = 0; ParamIndex < FuncSymbol->Function.ParamTypeSignatures.Size; ParamIndex++)
+		{
+			if (ParamIndex > 0) printf(", ");
+
+			struct TypeSignature* ParamTypeSig = Vector_GetValueAt(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamIndex);
+			PrintTypeSignature(ParamTypeSig);
+		}
+		printf(")\n");
+
+		for (int ScopeSymbolIndex = 0; ScopeSymbolIndex < FuncSymbol->Function.Scope->Symbols.Size; ScopeSymbolIndex++)
+		{
+			struct ProgramSymbol* ScopeSymbol = Vector_GetValueAt(FuncSymbol->Function.Scope->Symbols, struct ProgramSymbol*, ScopeSymbolIndex);
+			ASSERT(ScopeSymbol != NULL);
+			if (ScopeSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
+
+			if (ScopeSymbolIndex < FuncSymbol->Function.ParamTypeSignatures.Size)
+			{
+				printf("\tPARAM '%s' : ", ScopeSymbol->Name.Str);
+			}
+			else
+			{
+				printf("\tVAR '%s' : ", ScopeSymbol->Name.Str);
+			}
+
+			PrintTypeSignature(ScopeSymbol->Variable.DeclarationType);
+			for (int i = 0; i < ScopeSymbol->Variable.ArraySizes.Size; i++)
+			{
+				printf("[%lld]", Vector_GetValueAt(ScopeSymbol->Variable.ArraySizes, i64, i));
+			}
+			printf("\n", ScopeSymbol->Variable.BitSize / 8);
+		}
+	}
 }
 
 void PrintSymbol(struct ProgramSymbol* Symbol)
@@ -103,7 +146,6 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 	printf("\n===== INTEGRATOR OUTPUT =====\n\n");
 
 	printf("Total Top-Level Symbols: %lld\n", Integrator->ProgramTree->RootScope->Symbols.Size);
-	printf("Total Static Memory = %lld bytes\n", Integrator->StaticMemSize);
 
 	printf("\n== GLOBAL SCOPE SYMBOLS ==\n");
 
@@ -566,9 +608,6 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 		return FuncSymbol;
 	}
 
-	// If a definition is present, create the function's scope and add its parameters to it (with their full names, which are required for a definition).
-	// Then start parsing the statement block, looking for instructions and local variables.
-	
 	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
 	for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
 	{
@@ -586,7 +625,7 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 		Scope_AddSymbol(FuncSymbol->Function.Scope, ParamVarSymbol);
 	}
 
-	// TODO: Parse function definition.
+	// TODO: Parse function definition (instructions and local variables).
 
 	return FuncSymbol;
 }
@@ -854,10 +893,6 @@ struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator,
 	case AST_NODE_OBJ_VAR:
 		NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode);
 		if (NewSymbol == NULL) goto INTEGRATE_FAIL;
-
-		// Assign the global variable an offset corresponding to its place in program static memory.
-		NewSymbol->Variable.Offset = Integrator->StaticMemSize;
-		Integrator->StaticMemSize += NewSymbol->Variable.BitSize / 8;
 
 		// Add to global scope.
 		Scope_AddSymbol(Integrator->ProgramTree->RootScope, NewSymbol);
