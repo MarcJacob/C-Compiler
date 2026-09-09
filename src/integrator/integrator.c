@@ -79,27 +79,27 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol)
 		}
 		printf(")\n");
 
-		for (int ScopeSymbolIndex = 0; ScopeSymbolIndex < FuncSymbol->Function.Scope->Symbols.Size; ScopeSymbolIndex++)
+		for (int LocalVariableIndex = 0; LocalVariableIndex < FuncSymbol->Function.LocalVariables.Size; LocalVariableIndex++)
 		{
-			struct ProgramSymbol* ScopeSymbol = Vector_GetValueAt(FuncSymbol->Function.Scope->Symbols, struct ProgramSymbol*, ScopeSymbolIndex);
-			ASSERT(ScopeSymbol != NULL);
-			if (ScopeSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
+			struct ProgramSymbol* LocalVarSymbol = Vector_GetValueAt(FuncSymbol->Function.LocalVariables, struct ProgramSymbol*, LocalVariableIndex);
+			ASSERT(LocalVarSymbol != NULL);
+			if (LocalVarSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
 
-			if (ScopeSymbolIndex < FuncSymbol->Function.ParamTypeSignatures.Size)
+			if (LocalVariableIndex < FuncSymbol->Function.ParamTypeSignatures.Size)
 			{
-				printf("\tPARAM '%s' : ", ScopeSymbol->Name.Str);
+				printf("\tPARAM '%s' : ", LocalVarSymbol->Name.Str);
 			}
 			else
 			{
-				printf("\tVAR '%s' : ", ScopeSymbol->Name.Str);
+				printf("\tLOCAL VAR '%s' : ", LocalVarSymbol->Name.Str);
 			}
 
-			PrintTypeSignature(ScopeSymbol->Variable.DeclarationType);
-			for (int i = 0; i < ScopeSymbol->Variable.ArraySizes.Size; i++)
+			PrintTypeSignature(LocalVarSymbol->Variable.DeclarationType);
+			for (int i = 0; i < LocalVarSymbol->Variable.ArraySizes.Size; i++)
 			{
-				printf("[%lld]", Vector_GetValueAt(ScopeSymbol->Variable.ArraySizes, i64, i));
+				printf("[%lld]", Vector_GetValueAt(LocalVarSymbol->Variable.ArraySizes, i64, i));
 			}
-			printf("\n", ScopeSymbol->Variable.BitSize / 8);
+			printf("\n", LocalVarSymbol->Variable.BitSize / 8);
 		}
 	}
 }
@@ -531,6 +531,65 @@ struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator,
 	return VarSymbol;
 }
 
+// Integrates all statements inside a block statement AST Node. Adds all found Program Instructions into the function's instructions vector, 
+// and all found local variables declaration into the specified block scope.
+// Check for error after execution.
+void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct ProgramSymbol* FunctionSymbol, struct SymbolScope* BlockScope, struct AST_Node* StatementBlock)
+{
+	ASSERT(FunctionSymbol != NULL);
+	ASSERT(BlockScope != NULL);
+	ASSERT(StatementBlock != NULL && StatementBlock->Type == AST_NODE_STATEMENT_BLOCK);
+
+	for (int StatementIndex = 0; StatementIndex < StatementBlock->Statement.Block.Statements.Size; StatementIndex++)
+	{
+		struct AST_Node* StatementNode = Vector_GetValueAt(StatementBlock->Statement.Block.Statements, struct AST_Node*, StatementIndex);
+		ASSERT(StatementNode != NULL);
+
+		struct SymbolScope* BlockSubScope = NULL;
+		switch (StatementNode->Type)
+		{
+		case AST_NODE_STATEMENT_BLOCK:
+			BlockSubScope = AllocScope(BlockScope);
+			IntegrateStatementBlock(Integrator, FunctionSymbol, BlockSubScope, StatementNode);
+			if (Integrator->HasError) return;
+			break;
+		case AST_NODE_STATEMENT_OBJ_DEC:
+			for (int ObjIndex = 0; ObjIndex < StatementNode->Statement.ObjectDeclaration.Objects.Size; ObjIndex++)
+			{
+				struct AST_Node* ObjDec = Vector_GetValueAt(StatementNode->Statement.ObjectDeclaration.Objects, struct AST_Node*, ObjIndex);
+				ASSERT(ObjDec != NULL);
+
+				if (ObjDec->Type != AST_NODE_OBJ_VAR)
+				{
+					Integrator_Error(Integrator, ObjDec->BufferLocation, "Only variables and typedefs can be declared inside functions.");
+					return;
+				}
+
+				if (ObjDec->Obj.IsTypedef)
+				{
+					// TODO: Handle typedef symbols.
+					continue;
+				}
+
+				struct ProgramSymbol* VarSymbol = BuildSymbol_Variable(Integrator, ObjDec);
+				if (VarSymbol == NULL)
+				{
+					Integrator_Error(Integrator, ObjDec->BufferLocation, "Failed to resolve variable symbol.");
+					return;
+				}
+
+				// Add variable to block scope and function local variables.
+				Scope_AddSymbol(BlockScope, VarSymbol);
+				Vector_Push(FunctionSymbol->Function.LocalVariables, struct ProgramSymbol*, VarSymbol);
+			}
+			break;
+		default:
+			// TODO: Add support for other statement types.
+			break;
+		}
+	}
+}
+
 // Returns an integrated function symbol from an AST Object node.
 // If the node has an accompanying definition, the function is fully parsed along with the instructions.
 // Otherwise the symbol will only feature its signature and parameters until a definition is found.
@@ -609,6 +668,10 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 	}
 
 	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
+	FuncSymbol->Function.LocalVariables = Vector_Create(struct ProgramSymbol*, FuncASTNode->Obj.Func.Params.Size);
+	FuncSymbol->Function.Instructions = Vector_Create(struct ProgramInstruction*, 1);
+
+	// Integrate parameters as variables symbols.
 	for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
 	{
 		struct AST_Node* ParamVarASTNode = Vector_GetValueAt(FuncASTNode->Obj.Func.Params, struct AST_Node*, ParamIndex);
@@ -623,9 +686,16 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 		}
 
 		Scope_AddSymbol(FuncSymbol->Function.Scope, ParamVarSymbol);
+		Vector_Push(FuncSymbol->Function.LocalVariables, struct ProgramSymbol*, ParamVarSymbol);
 	}
 
-	// TODO: Parse function definition (instructions and local variables).
+	// Integrate function block.
+	IntegrateStatementBlock(Integrator, FuncSymbol, FuncSymbol->Function.Scope, FuncASTNode->Obj.Func.StatementsBlock);
+	if (Integrator->HasError)
+	{
+		Integrator_Error(Integrator, FuncASTNode->Obj.Func.StatementsBlock->BufferLocation, "Error parsing function definition block.");
+		return NULL;
+	}
 
 	return FuncSymbol;
 }

@@ -35,6 +35,12 @@ extern int extern_func_test(int, float, double);
 
 int main(int argc, char** argv)
 {
+	int test_local_var = 8;
+
+	{
+		int test_local_var_subscope = 2;
+	}
+
 	printf("Hello, World !\n");
 
 	return 0;

@@ -47,9 +47,11 @@ struct ProgramSymbol
 			struct Vector ParamTypeSignatures; // Vector type = struct TypeSignature*. Type Signatures of parameters in order of declaration, part of declaration signature.
 
 
-			struct SymbolScope* Scope; // Contains VARIABLE symbols, with both parameters and local variables in order of declaration. Filled in only for defined functions.
+			struct SymbolScope* Scope;	// Contains VARIABLE symbols, specifically parameters and top-level local variables in order of declaration. Filled in only for defined functions.
+										// More local variables may exist inside sub-scopes.
 
-			// ... TODO: Instructions graph.
+			struct Vector LocalVariables; // Vector type = struct ProgramSymbol*. Contains VARIABLE symbols, including parameters and ALL local variables including sub-scopes.
+			struct Vector Instructions; // Vector type = struct ProgramInstruction*. All instructions in source order.
 
 		} Function;
 

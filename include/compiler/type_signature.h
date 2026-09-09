@@ -216,8 +216,8 @@ static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const 
 			Equivalent = A->FuncPtr.ParamTypes.Size == B->FuncPtr.ParamTypes.Size;
 			for (int ParamIndex = 0; Equivalent && ParamIndex < A->FuncPtr.ParamTypes.Size; ParamIndex++) 
 			{
-				const struct TypeSignature* AParamType = Vector_GetValueAt(A->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex);
-				const struct TypeSignature* BParamType = Vector_GetValueAt(B->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex);
+				const struct TypeSignature* AParamType = Vector_GetValueAt(A->FuncPtr.ParamTypes, const struct TypeSignature*, ParamIndex);
+				const struct TypeSignature* BParamType = Vector_GetValueAt(B->FuncPtr.ParamTypes, const struct TypeSignature*, ParamIndex);
 				Equivalent = TypeSignaturesEquivalent(AParamType, BParamType);
 			}
 		}

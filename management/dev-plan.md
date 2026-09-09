@@ -103,7 +103,13 @@ Tasks:
     - Resolve non-primitive variable sizes. [DONE]
 - Logging system displaying top-level symbols. [DONE]
 - Build Struct scopes with variable memory offsets (including bit count specifier). [DONE]
-- Build Function scopes with variable memory offsets.
+- Build Function scopes (parameters + local variables). [DONE]
+    - Function declaration vs. definition detection, with redeclaration consistency checks (return type, param count, param types). [DONE]
+    - Function scope creation with parameter symbols added on definition. [DONE]
+    - Local variable declarations parsed into the function scope, with sub-scope / shadowing support (recursive over nested statement blocks). [DONE]
+- Typedefs integration:
+    - Global typedef symbol declaration/definition (SYMBOL_TYPE_TYPEDEF, base symbol + type signature resolution).
+    - Local typedef declarations inside functions.
 - Determine expressions that are compile-time-resolvable and turn them into the correct final values:
     - Array sizes & indices [DONE]
     - Struct Member Bit counts [DONE]
