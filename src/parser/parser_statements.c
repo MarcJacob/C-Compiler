@@ -77,11 +77,11 @@ void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out)
 }
 
 // Attempts to parse a Var Declaration statement node, up until reaching the provided end symbol.
-struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parser, enum TOKEN_SYMBOL EndSymbol)
+struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parser, struct TypeSignature* ObjectsType, enum TOKEN_SYMBOL EndSymbol)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
-	struct AST_Node* VarDecNode = NULL;
+	struct AST_Node* ObjDecNode = NULL;
 
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
@@ -89,59 +89,21 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing variable.");
 	PARSE_FAIL:
-		if (VarDecNode != NULL) FreeASTNode(VarDecNode);
+		if (ObjDecNode != NULL) FreeASTNode(ObjDecNode);
 		Parser->TokenIndex = StartTokenIndex;
 		return NULL;
 	}
 
-	// Get the data type to assign to the returned variable declaration node.
-	// If it fails, then we know we're not dealing with a variable declaration, but it could be something else
-	// hence no error is output.
-	struct TypeSignature* ObjectsType = AllocTypeSignature();
-	if (!ParseTypeSignature(Parser, ObjectsType))
-	{
-		FreeTypeSignature(ObjectsType);
-		goto PARSE_FAIL;
-	}
-
-	NextToken = Parser_PeekToken(Parser);
-	if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
 	// Construct Variable Declaration StatementNode node and return it.
-	VarDecNode = AllocASTNode(AST_NODE_STATEMENT_OBJ_DEC);
-	VarDecNode->BufferLocation = NextToken->BufferLocation;
+	ObjDecNode = AllocASTNode(AST_NODE_STATEMENT_OBJ_DEC);
+	ObjDecNode->BufferLocation = NextToken->BufferLocation;
 
-	VarDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
+	ObjDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
 
-	// Parse objects using the member type.
-	while (!Token_IsSymbol(NextToken, SYMBOL_SEMICOLON))
-	{
-		struct AST_Node* NextObj = ParseObject_VarFunc(Parser, ObjectsType, 0, 1, 1);
-		if (NextObj == NULL)
-		{
-			goto PARSE_FAIL;
-		}
+	ParseNextObjects(Parser, ObjectsType, &ObjDecNode->Statement.ObjectDeclaration.Objects);
+	if (Parser->HasError) goto PARSE_FAIL;
 
-		if (NextObj->Type == AST_NODE_OBJ_FUNC)
-		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Functions are not allowed inside functions.");
-			goto PARSE_FAIL;
-		}
-
-		Vector_Push(VarDecNode->Statement.ObjectDeclaration.Objects, struct AST_Node*, NextObj);
-
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
-
-		if (Token_IsSymbol(NextToken, SYMBOL_OP_COMMA))
-		{
-			Parser_ConsumeToken(Parser); // Consume ','.
-			continue;
-		}
-	}
-
-	Parser_ConsumeToken(Parser); // Consume ';'.
-	return VarDecNode;
+	return ObjDecNode;
 }
 
 struct AST_Node* ParseBlockStatementNode(struct ParserProcess* Parser)
@@ -502,11 +464,14 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	}
 	else
 	{
-		// Attempt to parse a var declaration node.
-		StatementNode = ParseObjectDeclarationStatementNode(Parser, SYMBOL_SEMICOLON);
-		if (StatementNode == NULL)
+		// Otherwise we either have object declarations or an expression, depending on if we find a type signature.
+		struct TypeSignature* ObjectsType = AllocTypeSignature();
+		if (ParseTypeSignature(Parser, ObjectsType))
 		{
-			// ... Otherwise continue on to parsing a free-standing expression.
+			StatementNode = ParseObjectDeclarationStatementNode(Parser, ObjectsType, SYMBOL_SEMICOLON);
+		}
+		else
+		{
 			StatementNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
 		}
 	}

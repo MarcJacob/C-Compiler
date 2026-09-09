@@ -80,7 +80,7 @@ void Vector_Destroy(struct Vector* Vec)
 }
 
 // Returns pointer to element at provided index in the vector.
-void* Vector_GetPtr(struct Vector* Vec, ui64 Index)
+void* Vector_GetPtr(const struct Vector* Vec, ui64 Index)
 {
 	ASSERT(Vec != NULL);
 	ASSERT(Vec->Size > Index);
@@ -89,7 +89,7 @@ void* Vector_GetPtr(struct Vector* Vec, ui64 Index)
 }
 
 // Returns pointer to last element in the vector. The vector must be non-empty !
-void* Vector_GetLastPtr(struct Vector* Vec)
+void* Vector_GetLastPtr(const struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
 	ASSERT(Vec->Size > 0);

@@ -16,8 +16,9 @@ void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, cons
 	va_end(args);
 }
 
-void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
+void PrintStructSymbol(struct ProgramSymbol* StructSymbol, ui32 Depth)
 {
+	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
 	StructSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
 	printf("'%s', Size = %lld bytes, Align = %d bytes\n", StructSymbol->Name.Str, StructSymbol->Struct.Size, StructSymbol->Struct.Alignment);
 
@@ -28,7 +29,8 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 		ASSERT(MemberSymbol != NULL);
 		if (MemberSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
 
-		printf("\tVAR '%s' : ", MemberSymbol->Name.Str);
+		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		printf("VAR '%s' : ", MemberSymbol->Name.Str);
 		PrintTypeSignature(MemberSymbol->Variable.DeclarationType);
 		for (int i = 0; i < MemberSymbol->Variable.ArraySizes.Size; i++)
 		{
@@ -45,8 +47,62 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 	}
 }
 
-void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol)
+void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth);
+
+// Recursively prints a function scope's symbols (parameters, locals, and any locally-declared struct / union / enum / typedef),
+// then recurses into its child scopes (nested statement blocks), one indentation level deeper each time.
+// ParamCount marks how many of THIS scope's own symbols (from the start) are function parameters rather than locals -
+// only meaningful for the function's top scope, pass 0 for any nested (child) scope.
+void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 {
+	ASSERT(Scope != NULL);
+
+	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
+	{
+		struct ProgramSymbol* Symbol = Vector_GetValueAt(Scope->Symbols, struct ProgramSymbol*, SymbolIndex);
+		ASSERT(Symbol != NULL);
+
+		if (Symbol->Type != SYMBOL_TYPE_VARIABLE)
+		{
+			PrintSymbol(Symbol, Depth);
+			continue;
+		}
+
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf(SymbolIndex < ParamCount ? "PARAM '%s' : " : "LOCAL VAR '%s' : ", Symbol->Name.Str);
+		PrintTypeSignature(Symbol->Variable.DeclarationType);
+		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
+		{
+			printf("[%lld]", Vector_GetValueAt(Symbol->Variable.ArraySizes, i64, i));
+		}
+		printf("\n");
+	}
+
+	if (Scope->ChildScopes.Size > 0)
+	{
+		printf("\n");
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf("---------\n\n");
+	}
+	for (int ChildIndex = 0; ChildIndex < Scope->ChildScopes.Size; ChildIndex++)
+	{
+		struct SymbolScope* ChildScope = Vector_GetValueAt(Scope->ChildScopes, struct SymbolScope*, ChildIndex);
+		ASSERT(ChildScope != NULL);
+
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf("SUB SCOPE {\n");
+
+		PrintFunctionScope(ChildScope, Depth + 1, 0);
+
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf("}\n");
+	}
+}
+
+void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
+{
+	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+
 	if (FuncSymbol->Function.Scope == NULL)
 	{
 		// Declaration: no scope to print, so parameters are printed as bare type signatures without names.
@@ -79,38 +135,18 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol)
 		}
 		printf(")\n");
 
-		for (int LocalVariableIndex = 0; LocalVariableIndex < FuncSymbol->Function.LocalVariables.Size; LocalVariableIndex++)
-		{
-			struct ProgramSymbol* LocalVarSymbol = Vector_GetValueAt(FuncSymbol->Function.LocalVariables, struct ProgramSymbol*, LocalVariableIndex);
-			ASSERT(LocalVarSymbol != NULL);
-			if (LocalVarSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
-
-			if (LocalVariableIndex < FuncSymbol->Function.ParamTypeSignatures.Size)
-			{
-				printf("\tPARAM '%s' : ", LocalVarSymbol->Name.Str);
-			}
-			else
-			{
-				printf("\tLOCAL VAR '%s' : ", LocalVarSymbol->Name.Str);
-			}
-
-			PrintTypeSignature(LocalVarSymbol->Variable.DeclarationType);
-			for (int i = 0; i < LocalVarSymbol->Variable.ArraySizes.Size; i++)
-			{
-				printf("[%lld]", Vector_GetValueAt(LocalVarSymbol->Variable.ArraySizes, i64, i));
-			}
-			printf("\n", LocalVarSymbol->Variable.BitSize / 8);
-		}
+		PrintFunctionScope(FuncSymbol->Function.Scope, Depth + 1, FuncSymbol->Function.ParamTypeSignatures.Size);
 	}
 }
 
-void PrintSymbol(struct ProgramSymbol* Symbol)
+void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 {
 	ASSERT(Symbol != NULL);
 
 	switch (Symbol->Type)
 	{
 	case SYMBOL_TYPE_VARIABLE:
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
 		printf("VAR '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Variable.DeclarationType);
 		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
@@ -121,17 +157,19 @@ void PrintSymbol(struct ProgramSymbol* Symbol)
 		break;
 	case SYMBOL_TYPE_STRUCT:
 	case SYMBOL_TYPE_UNION:
-		PrintStructSymbol(Symbol);
+		PrintStructSymbol(Symbol, Depth);
 		break;
 	case SYMBOL_TYPE_FUNCTION:
-		PrintFunctionSymbol(Symbol);
+		PrintFunctionSymbol(Symbol, Depth);
 		break;
 	case SYMBOL_TYPE_ENUM:
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
 		printf("ENUM '%s', Type Size = %lld\n", Symbol->Name.Str, Symbol->Enum.UnderlyingTypeSize);
 		break;
 	case SYMBOL_TYPE_ENUM_VAL:
-		// It's a little hacky but ENUM VAL symbols should always immediately follow their parent ENUM, so the tab will make that look better.
-		printf("\tENUM VAL '%s' = %lld\n", Symbol->Name.Str, Symbol->Enum_Member.NumericValue);
+		// It's a little hacky but ENUM VAL symbols should always immediately follow their parent ENUM, so the extra indent level will make that look better.
+		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		printf("ENUM VAL '%s' = %lld\n", Symbol->Name.Str, Symbol->Enum_Member.NumericValue);
 		break;
 	default:
 		break;
@@ -153,7 +191,7 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator)
 	for (int GlobalSymbolIndex = 0; GlobalSymbolIndex < Integrator->ProgramTree->RootScope->Symbols.Size; GlobalSymbolIndex++)
 	{
 		struct ProgramSymbol* GlobalSymbol = Vector_GetValueAt(Integrator->ProgramTree->RootScope->Symbols, struct ProgramSymbol*, GlobalSymbolIndex);
-		PrintSymbol(GlobalSymbol);
+		PrintSymbol(GlobalSymbol, 0);
 	}
 }
 
@@ -209,13 +247,26 @@ struct SymbolScope* AllocScope(struct SymbolScope* Parent)
 	struct SymbolScope* NewScope = calloc(1, sizeof(struct SymbolScope));
 	ASSERT(NewScope != NULL);
 	NewScope->Symbols = Vector_Create(struct ProgramSymbol*, 1);
+	NewScope->ChildScopes = Vector_Create(struct SymbolScope*, 0);
 	NewScope->Parent = Parent;
+
+	if (Parent != NULL)
+	{
+		Vector_Push(Parent->ChildScopes, struct SymbolScope*, NewScope);
+	}
+
 	return NewScope;
 }
 
 void FreeScope(struct SymbolScope* Scope)
 {
 	if (Scope == NULL) return;
+
+	for (int ChildIndex = 0; ChildIndex < Scope->ChildScopes.Size; ChildIndex++)
+	{
+		FreeScope(Vector_GetValueAt(Scope->ChildScopes, struct SymbolScope*, ChildIndex));
+	}
+	Vector_Destroy(&Scope->ChildScopes);
 
 	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
 	{
@@ -470,7 +521,7 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	return TypeSig->Size; // Will be 0 if the type exists but is incomplete.
 }
 
-struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode);
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode);
 
 // Returns an integrated Variable symbol from a corresponding Variable AST object.
 // The variable's type and size is resolved, but its final size (if bit count is specified) and offset must be
@@ -559,28 +610,27 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 				struct AST_Node* ObjDec = Vector_GetValueAt(StatementNode->Statement.ObjectDeclaration.Objects, struct AST_Node*, ObjIndex);
 				ASSERT(ObjDec != NULL);
 
-				if (ObjDec->Type != AST_NODE_OBJ_VAR)
+				struct ProgramSymbol* LocalSymbol = IntegrateASTObjectNode(Integrator, ObjDec);
+				if (LocalSymbol == NULL)
 				{
-					Integrator_Error(Integrator, ObjDec->BufferLocation, "Only variables and typedefs can be declared inside functions.");
+					Integrator_Error(Integrator, ObjDec->BufferLocation, "Failed to resolve local symbol.");
 					return;
 				}
 
-				if (ObjDec->Obj.IsTypedef)
+				if (LocalSymbol->Type == SYMBOL_TYPE_FUNCTION
+					&& LocalSymbol->Function.Scope != NULL)
 				{
-					// TODO: Handle typedef symbols.
-					continue;
-				}
-
-				struct ProgramSymbol* VarSymbol = BuildSymbol_Variable(Integrator, ObjDec);
-				if (VarSymbol == NULL)
-				{
-					Integrator_Error(Integrator, ObjDec->BufferLocation, "Failed to resolve variable symbol.");
+					Integrator_Error(Integrator, ObjDec->BufferLocation, "Function definition within another function is disallowed.");
 					return;
 				}
 
-				// Add variable to block scope and function local variables.
-				Scope_AddSymbol(BlockScope, VarSymbol);
-				Vector_Push(FunctionSymbol->Function.LocalVariables, struct ProgramSymbol*, VarSymbol);
+				// Add symbol to block scope and function local variables if it is a variable.
+				Scope_AddSymbol(BlockScope, LocalSymbol);
+
+				if (LocalSymbol->Type == SYMBOL_TYPE_VARIABLE)
+				{
+					Vector_Push(FunctionSymbol->Function.LocalVariables, struct ProgramSymbol*, LocalSymbol);
+				}
 			}
 			break;
 		default:
@@ -657,9 +707,6 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 
 			Vector_Push(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, AllocTypeSignatureCopy(ParamASTNode->Obj.TypeSignature));
 		}
-
-		// Add function symbol to global scope.
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, FuncSymbol);
 	}
 
 	if (FuncASTNode->Obj.Func.StatementsBlock == NULL)
@@ -790,7 +837,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		if (MemberASTNode->Type == AST_NODE_OBJ_STRUCT)
 		{
 			// Integrate any sub-structure found into the program's global scope, then copy their members over.
-			struct ProgramSymbol* SubStructSymbol = IntegrateRootASTNode(Integrator, MemberASTNode);
+			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode);
 			if (Integrator->HasError) goto INTEGRATE_FAIL;
 			ASSERT(SubStructSymbol != NULL);
 
@@ -952,40 +999,49 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 	return EnumSymbol;
 }
 
-struct ProgramSymbol* IntegrateRootASTNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
+struct ProgramSymbol* BuildSymbol_Typedef(struct IntegratorProcess* Integrator, struct AST_Node* TypedefASTNode)
+{
+	ASSERT(TypedefASTNode != NULL);
+	Integrator_Error(Integrator, TypedefASTNode->BufferLocation, "Typedefs integration not implemented.");
+	return NULL;
+}
+
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
 {
 	ASSERT(RootASTNode != NULL);
 
 	struct ProgramSymbol* NewSymbol = NULL;
 
-	switch (RootASTNode->Type)
+	if (RootASTNode->Obj.IsTypedef)
 	{
-	case AST_NODE_OBJ_VAR:
-		NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode);
-		if (NewSymbol == NULL) goto INTEGRATE_FAIL;
-
-		// Add to global scope.
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, NewSymbol);
-
-		break;
-	case AST_NODE_OBJ_FUNC:
-		NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
-		break;
-	case AST_NODE_OBJ_STRUCT:
-		NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode);
-		break;
-	case AST_NODE_OBJ_ENUM:
-		NewSymbol = BuildSymbolDef_Enum(Integrator, RootASTNode);
-	default:
-		// TEMP: Do nothing.
-		break;
+		NewSymbol = BuildSymbol_Typedef(Integrator, RootASTNode);
+	}
+	else
+	{
+		switch (RootASTNode->Type)
+		{
+		case AST_NODE_OBJ_VAR:
+			NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode);
+			break;
+		case AST_NODE_OBJ_FUNC:
+			NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
+			break;
+		case AST_NODE_OBJ_STRUCT:
+			NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode);
+			break;
+		case AST_NODE_OBJ_ENUM:
+			NewSymbol = BuildSymbolDef_Enum(Integrator, RootASTNode);
+			break;
+		default:
+			break;
+		}
 	}
 
 	if (NewSymbol == NULL)
 	{
 	INTEGRATE_FAIL:
 		Integrator_Error(Integrator, RootASTNode->BufferLocation, 
-			"Failed to integrate root object symbol. Object type = %d", RootASTNode->Type); // TODO: Add Root node to string converter.
+			"Failed to integrate object symbol. Object type = %d", RootASTNode->Type); // TODO: Add Root node to string converter.
 		return NULL;
 	}
 
@@ -1006,7 +1062,9 @@ void Integrator_Run(struct IntegratorProcess* Integrator)
 	for (int RootNodeIndex = 0; RootNodeIndex < Integrator->ASTRootNodes->Size; RootNodeIndex++)
 	{
 		struct AST_Node* RootNode = *(struct AST_Node**)(Vector_GetPtr(Integrator->ASTRootNodes, RootNodeIndex));
-		IntegrateRootASTNode(Integrator, RootNode);
+		struct ProgramSymbol* IntegratedSymbol = IntegrateASTObjectNode(Integrator, RootNode);
 		if (Integrator->HasError) return;
+
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, IntegratedSymbol);
 	}
 }

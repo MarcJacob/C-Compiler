@@ -198,6 +198,24 @@ static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature
 		return 0;
 	}
 
+	// In the specific case where the first token is an identifier, check that the next token isn't an opening parenthesis so we don't confuse a function call for a type declaration.
+	if (NextToken->Type == TOKEN_IDENTIFIER)
+	{
+		// This is a little hacky but it's the only place in the parser code where we have to do that...
+		Parser_ConsumeToken(Parser);
+		struct Token* NextNextToken = Parser_PeekToken(Parser);
+		if (NextNextToken == NULL) goto PARSE_FAIL_EOF;
+		
+		if (Token_IsSymbol(NextNextToken, SYMBOL_PARENTHESIS_OPEN))
+		{
+			// This is a function call. Fail now without an error.
+			goto PARSE_FAIL;
+		}
+
+		// Otherwise just restore the parser cursor state and pretend nothing's happened...
+		Parser->TokenIndex--;
+	}
+
 	enum TYPE_SIG_FLAGS Flags = 0;
 
 	// Perform various flag checks. TODO: Make it so those keywords can be put in any order.
@@ -433,11 +451,17 @@ void Parser_Run(struct ParserProcess* Parser)
 
 	while (Parser_PeekToken(Parser) != NULL)
 	{
-		if (ParseNextRootObjects(Parser))
+		// Parse next set of objects from a base type.
+		struct TypeSignature* BaseType = AllocTypeSignature();
+		if (!ParseTypeSignature(Parser, BaseType))
 		{
-			// Successfully parsed node tree(s).
+			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected type specifier.");
+			FreeTypeSignature(BaseType);
 		}
-		else
+		ParseNextObjects(Parser, BaseType, Parser->RootNodes);
+
+		// Stop parsing process on error.
+		if (Parser->HasError)
 		{
 			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected variable, function or type declaration.");
 			break;

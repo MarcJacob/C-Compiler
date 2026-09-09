@@ -69,8 +69,8 @@ void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out);
 // The allowed initializers type parameters allow triggering an error when encountering a disallowed type.
 struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSignature* TypeSignature, ui8 AllowEmpty, ui8 AllowInitializer, ui8 AllowBitCount);
 
-// Root parsing function, used to parse the start of ASTs.
+// Main parsing function, used to parse the start of ASTs and Object Declaration statements inside functions.
 // Parses objects until a "break" is reached, usually a semicolon.
-ui8 ParseNextRootObjects(struct ParserProcess* Parser);
+void ParseNextObjects(struct ParserProcess* Parser, struct TypeSignature* BaseType, struct Vector* OutObjects);
 
 #endif // PARSER_INCLUDED

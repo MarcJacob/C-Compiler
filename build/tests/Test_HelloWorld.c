@@ -37,9 +37,16 @@ int main(int argc, char** argv)
 {
 	int test_local_var = 8;
 
+	struct struct_in_func
+	{
+		int foo;
+	} bar;
+
 	{
 		int test_local_var_subscope = 2;
 	}
+
+	int test(int foo, int bar);
 
 	printf("Hello, World !\n");
 

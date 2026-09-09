@@ -15,6 +15,13 @@ int main(int argc, char** argv)
 
 	Compiler_Run(&Compiler);
 
+	struct test
+	{
+		int foo;
+	};
+
+	int foo(int a, int b);
+
 	// Catch and log error if any.
 	if (Compiler.ErrorCode_Global != COMPILER_SUCCESS)
 	{

@@ -9,6 +9,7 @@ struct SymbolScope
 {
 	struct SymbolScope* Parent; // Parent Scope. NULL for the Global Scope.
 	struct Vector Symbols; // Vector type = ProgramSymbol* Contains all symbols of this scope in order of declaration.
+	struct Vector ChildScopes; // Vector type = struct SymbolScope*. Sub-scopes directly nested under this one, in order of creation.
 };
 
 // Enumerates the possible type of any given ProgramSymbol within a ProgramTree.

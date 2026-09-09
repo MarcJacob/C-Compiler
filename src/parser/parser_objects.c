@@ -545,7 +545,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 	return ObjNode;
 }
 
-ui8 ParseNextRootObjects(struct ParserProcess* Parser)
+void ParseNextObjects(struct ParserProcess* Parser, struct TypeSignature* BaseType, struct Vector* OutObjects)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -557,7 +557,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 	PARSE_FAIL:
 		Parser->TokenIndex = TokenStartIndex;
 		if (ObjNode != NULL) FreeASTNode(ObjNode);
-		return 0;
+		return;
 	}
 
 	// Check if this "line" of objects is starting with a typedef keyword, in which case all produced objects will be typedefs.
@@ -572,34 +572,26 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
-	struct TypeSignature* ObjectsReturnType = AllocTypeSignature();
-	if (!ParseTypeSignature(Parser, ObjectsReturnType))
-	{
-		Parser_Error(Parser, NextToken->BufferLocation, "Expected type specifier.");
-		FreeTypeSignature(ObjectsReturnType);
-		goto PARSE_FAIL;
-	}
-
 	// If the parsed datatype is structured or an enum, first attempt to parse a definition for it.
-	if (ObjectsReturnType->Flags & TYPE_IS_STRUCTURED)
+	if (BaseType->Flags & TYPE_IS_STRUCTURED)
 	{
 		struct AST_Node* StructNode = ParseObject_Struct_Def(Parser);
 		if (StructNode != NULL)
 		{
-			StructNode->Obj.TypeSignature = ObjectsReturnType;
-			StructNode->Obj.Struct.IsUnion = (ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION) > 0;
-			StructNode->Obj.Name = String_Copy_ANSI(ObjectsReturnType->TypeName);
-			Vector_PushPtr(Parser->RootNodes, &StructNode);
+			StructNode->Obj.TypeSignature = BaseType;
+			StructNode->Obj.Struct.IsUnion = (BaseType->Flags & TYPE_IS_ENUM_OR_UNION) > 0;
+			StructNode->Obj.Name = String_Copy_ANSI(BaseType->TypeName);
+			Vector_PushPtr(OutObjects, &StructNode);
 		}
 	}
-	else if (ObjectsReturnType->Flags & TYPE_IS_ENUM_OR_UNION)
+	else if (BaseType->Flags & TYPE_IS_ENUM_OR_UNION)
 	{
 		struct AST_Node* EnumNode = ParseObject_Enum_Def(Parser);
 		if (EnumNode != NULL)
 		{
-			EnumNode->Obj.TypeSignature = ObjectsReturnType;
-			EnumNode->Obj.Name = String_Copy_ANSI(ObjectsReturnType->TypeName);
-			Vector_PushPtr(Parser->RootNodes, &EnumNode);
+			EnumNode->Obj.TypeSignature = BaseType;
+			EnumNode->Obj.Name = String_Copy_ANSI(BaseType->TypeName);
+			Vector_PushPtr(OutObjects, &EnumNode);
 		}
 	}
 
@@ -618,7 +610,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		}
 
 		Parser_ConsumeToken(Parser); // Consume ';'.
-		return 1;
+		return;
 	}
 
 	// Loop on the creation and pushing of new variable or function objects until a semicolon or a function definition NOT followed by a comma is encountered.
@@ -627,7 +619,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		NextToken = Parser_PeekToken(Parser);
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
-		ObjNode = ParseObject_VarFunc(Parser, ObjectsReturnType, 0, !IsTypedef, 0);
+		ObjNode = ParseObject_VarFunc(Parser, BaseType, 0, !IsTypedef, 0);
 		if (ObjNode == NULL || Parser->HasError)
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse object.");
@@ -636,7 +628,7 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 
 		ObjNode->Obj.IsTypedef = IsTypedef;
 
-		Vector_PushPtr(Parser->RootNodes, &ObjNode);
+		Vector_PushPtr(OutObjects, &ObjNode);
 
 		NextToken = Parser_PeekToken(Parser);
 
@@ -664,7 +656,6 @@ ui8 ParseNextRootObjects(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 	
-
-	return 1;
+	return;
 }
 

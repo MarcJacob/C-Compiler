@@ -814,18 +814,14 @@ struct AST_Node* ParseExpressionASTNode(struct ParserProcess* Parser, ui8 StopAt
 	ExpressionRootASTNode->Expression = ParseRootExpression(Parser, StopAtComma, ConsumeStopChar);
 	if (ExpressionRootASTNode->Expression == NULL)
 	{
-		Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Error parsing expression.");
-		return NULL;
-	}
-
-	if (Parser->HasError)
-	{
-		FreeASTNode(ExpressionRootASTNode);
+		if (Parser->HasError)
+		{
+			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Error parsing expression.");
+		}
 		return NULL;
 	}
 
 	ExpressionRootASTNode->BufferLocation = ExpressionRootASTNode->Expression->BufferLocation;
-
 	return ExpressionRootASTNode;
 }
 
