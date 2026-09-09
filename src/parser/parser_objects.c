@@ -357,6 +357,9 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 				{
 					// For each param, move the type signature out and into the ParamObj's type signature's function pointer params vector.
 					struct AST_Node* SubParamObj = Vector_GetValueAt(ParamObj->Obj.Func.Params, struct AST_Node*, ParamIndex);
+					ASSERT(SubParamObj != NULL);
+					ASSERT(SubParamObj->Obj.TypeSignature != NULL);
+
 					Vector_Push(SubParamObj->Obj.TypeSignature->FuncPtr.ParamTypes, struct TypeSignature*, SubParamObj->Obj.TypeSignature);
 					SubParamObj->Obj.TypeSignature = NULL;
 				}

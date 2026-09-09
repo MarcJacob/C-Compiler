@@ -45,6 +45,22 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 	}
 }
 
+void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol)
+{
+	printf("FUNC '%s' : ", FuncSymbol->Name.Str);
+	PrintTypeSignature(FuncSymbol->Function.ReturnType);
+
+	printf("(");
+	for (int ParamIndex = 0; ParamIndex < FuncSymbol->Function.ParamTypeSignatures.Size; ParamIndex++)
+	{
+		if (ParamIndex > 0) printf(", ");
+
+		struct TypeSignature* ParamTypeSig = Vector_GetValueAt(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamIndex);
+		PrintTypeSignature(ParamTypeSig);
+	}
+	printf(")\n");
+}
+
 void PrintSymbol(struct ProgramSymbol* Symbol)
 {
 	ASSERT(Symbol != NULL);
@@ -65,7 +81,7 @@ void PrintSymbol(struct ProgramSymbol* Symbol)
 		PrintStructSymbol(Symbol);
 		break;
 	case SYMBOL_TYPE_FUNCTION:
-		printf("FUNC '%s'\n", Symbol->Name.Str);
+		PrintFunctionSymbol(Symbol);
 		break;
 	case SYMBOL_TYPE_ENUM:
 		printf("ENUM '%s', Type Size = %lld\n", Symbol->Name.Str, Symbol->Enum.UnderlyingTypeSize);
@@ -185,6 +201,8 @@ struct ProgramSymbol* Scope_FindSymbol(struct SymbolScope* Scope, struct String_
 	{
 		struct ProgramSymbol* Symbol = Vector_GetValueAt(Scope->Symbols, struct ProgramSymbol*, SymbolIndex);
 		ASSERT(Symbol != NULL);
+		ASSERT(Symbol->Name.Str != NULL);
+		ASSERT(Name->Str != NULL);
 
 		if (strcmp(Symbol->Name.Str, Name->Str) == 0) return Symbol;
 	}
@@ -478,12 +496,97 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 {
 	ASSERT(FuncASTNode != NULL);
 
-	struct ProgramSymbol* FuncSymbol = AllocSymbol(SYMBOL_TYPE_FUNCTION);
-	FuncSymbol->Name = String_Copy_ANSI(FuncASTNode->Obj.Name);
-	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
+	// Look for existing declaration or create one.
+	struct ProgramSymbol* FuncSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &FuncASTNode->Obj.Name, 0);
 
-	// TODO: Parse parameters into special vector + underlying scope.
-	// If definition is provided, check that the function isn't already defined and parse instructions & local variables.
+	if (FuncSymbol != NULL)
+	{
+		// Check consistency on parameters and whether we're running into a redefinition.
+
+		// Check redefinition.
+		if (FuncSymbol->Function.Scope != NULL && FuncASTNode->Obj.Func.StatementsBlock != NULL)
+		{
+			Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Function '%s' redefinition.", FuncASTNode->Obj.Name.Str);
+			return NULL;
+		}
+
+		// Compare return types.
+		if (!TypeSignaturesEquivalent(FuncSymbol->Function.ReturnType, FuncASTNode->Obj.TypeSignature))
+		{
+			Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Inconsistent return type for function '%s' redeclaration.", FuncASTNode->Obj.Name.Str);
+			return NULL;
+		}
+
+		// Compare parameter count.
+		if (FuncSymbol->Function.ParamTypeSignatures.Size != FuncASTNode->Obj.Func.Params.Size)
+		{
+			Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Inconsistent param count for function '%s' redeclaration.", FuncASTNode->Obj.Name.Str);
+			return NULL;
+		}
+
+		// Compare parameter types.
+		for (int ParamIndex = 0; ParamIndex < FuncSymbol->Function.ParamTypeSignatures.Size; ParamIndex++)
+		{
+			struct TypeSignature* SymbolParamTypeSig = Vector_GetValueAt(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamIndex);
+			ASSERT(SymbolParamTypeSig != NULL);
+			struct AST_Node* ASTFuncParamNode = Vector_GetValueAt(FuncASTNode->Obj.Func.Params, struct AST_Node*, ParamIndex);
+			ASSERT(ASTFuncParamNode != NULL);
+			ASSERT(ASTFuncParamNode->Obj.TypeSignature != NULL);
+			if (!TypeSignaturesEquivalent(SymbolParamTypeSig, ASTFuncParamNode->Obj.TypeSignature))
+			{
+				Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Inconsistent param types for function '%s' redeclaration.", FuncASTNode->Obj.Name.Str);
+				return NULL;
+			}
+		}
+	}
+	else
+	{
+		FuncSymbol = AllocSymbol(SYMBOL_TYPE_FUNCTION);
+		FuncSymbol->Name = String_Copy_ANSI(FuncASTNode->Obj.Name);
+
+		// Parse symbol parameters and return type.
+		FuncSymbol->Function.ReturnType = AllocTypeSignatureCopy(FuncASTNode->Obj.TypeSignature);
+
+		FuncSymbol->Function.ParamTypeSignatures = Vector_Create(struct TypeSignature*, 0);
+		for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
+		{
+			struct AST_Node* ParamASTNode = Vector_GetValueAt(FuncASTNode->Obj.Func.Params, struct AST_Node*, ParamIndex);
+			ASSERT(ParamASTNode != NULL);
+			ASSERT(ParamASTNode->Obj.TypeSignature != NULL);
+
+			Vector_Push(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, AllocTypeSignatureCopy(ParamASTNode->Obj.TypeSignature));
+		}
+
+		// Add function symbol to global scope.
+		Scope_AddSymbol(Integrator->ProgramTree->RootScope, FuncSymbol);
+	}
+
+	if (FuncASTNode->Obj.Func.StatementsBlock == NULL)
+	{
+		return FuncSymbol;
+	}
+
+	// If a definition is present, create the function's scope and add its parameters to it (with their full names, which are required for a definition).
+	// Then start parsing the statement block, looking for instructions and local variables.
+	
+	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
+	for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
+	{
+		struct AST_Node* ParamVarASTNode = Vector_GetValueAt(FuncASTNode->Obj.Func.Params, struct AST_Node*, ParamIndex);
+		ASSERT(ParamVarASTNode != NULL);
+		ASSERT(ParamVarASTNode->Type == AST_NODE_OBJ_VAR);
+
+		struct ProgramSymbol* ParamVarSymbol = BuildSymbol_Variable(Integrator, ParamVarASTNode);
+		if (ParamVarSymbol == NULL)
+		{
+			Integrator_Error(Integrator, ParamVarASTNode->BufferLocation, "Failed to build function parameter symbol.");
+			return NULL;
+		}
+
+		Scope_AddSymbol(FuncSymbol->Function.Scope, ParamVarSymbol);
+	}
+
+	// TODO: Parse function definition.
 
 	return FuncSymbol;
 }

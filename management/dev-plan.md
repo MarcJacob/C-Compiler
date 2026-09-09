@@ -98,6 +98,7 @@ Tasks:
         - Bit count specifiers with correct size & alignment. [DONE]
         - Sub-structures / unions (with promotion to root scope). [DONE]
         - Struct & Union type signature integration. [DONE]
+        - Declaration / definition consistency check (struct vs union mismatch). [DONE]
     - Setup type lookup by name / primitive type. [DONE]
     - Resolve non-primitive variable sizes. [DONE]
 - Logging system displaying top-level symbols. [DONE]

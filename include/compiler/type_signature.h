@@ -159,4 +159,69 @@ static inline void FreeTypeSignature(struct TypeSignature* TypeSig)
 	}
 }
 
+// Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
+static inline const char* TypeSignature_GetName(const struct TypeSignature* TypeSig)
+{
+	if (TypeSig == NULL)
+	{
+		return "?";
+	}
+
+	if (TypeSig->Type == DATATYPE_USER_DEFINED)
+	{
+		return TypeSig->TypeName.Length == 0 ? "<anonymous>" : TypeSig->TypeName.Str;
+	}
+
+	switch (TypeSig->Type)
+	{
+	default:
+	case DATATYPE_UNKNOWN: return "?";
+	case DATATYPE_VOID: return "void";
+	case DATATYPE_CHAR: return "char";
+	case DATATYPE_SHORT: return "short";
+	case DATATYPE_INT32: return "int";
+	case DATATYPE_INT64: return "long";
+	case DATATYPE_FLOAT: return "float";
+	case DATATYPE_DOUBLE: return "double";
+	}
+}
+
+// Returns whether the two type signatures are equal / equivalent.
+static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const struct TypeSignature* B)
+{
+	ASSERT(A != NULL && B != NULL);
+
+	// Basic properties check
+	ui8 Equivalent = A->Type == B->Type
+		&& A->Flags == B->Flags
+		&& A->PointerLevel == B->PointerLevel
+		&& A->Size == B->Size
+		&& A->IsFunctionPointer == B->IsFunctionPointer;
+
+	// Type name check, if relevant.
+	if (Equivalent && (A->TypeName.Length > 0 || B->TypeName.Length > 0))
+	{
+		Equivalent = A->TypeName.Length == B->TypeName.Length && (strcmp(A->TypeName.Str, B->TypeName.Str) == 0);
+	}
+
+	// Function pointer properties check, if relevant.
+	if (Equivalent && (A->IsFunctionPointer || B->IsFunctionPointer))
+	{
+		Equivalent = A->IsFunctionPointer && B->IsFunctionPointer
+			&& (A->FuncPtr.PointerLevel == B->FuncPtr.PointerLevel);
+
+		// Compare parameters.
+		if (Equivalent && (A->FuncPtr.ParamTypes.Size > 0 || B->FuncPtr.ParamTypes.Size > 0))
+		{
+			Equivalent = A->FuncPtr.ParamTypes.Size == B->FuncPtr.ParamTypes.Size;
+			for (int ParamIndex = 0; Equivalent && ParamIndex < A->FuncPtr.ParamTypes.Size; ParamIndex++) 
+			{
+				Equivalent = TypeSignaturesEquivalent(Vector_GetValueAt(A->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex), Vector_GetValueAt(B->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex));
+			}
+		}
+	}
+
+	return Equivalent;
+}
+
 #endif // TYPE_SIGNATURE_INCLUDED

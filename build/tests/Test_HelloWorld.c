@@ -17,7 +17,7 @@ union TestStructure
 	double c;
 };
 
-union Test2
+struct Test2
 {
 	union TestStructure A;
 	int B;

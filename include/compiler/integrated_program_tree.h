@@ -43,7 +43,10 @@ struct ProgramSymbol
 
 		struct
 		{
-			struct SymbolScope* Scope; // Contains VARIABLE symbols.
+			struct TypeSignature* ReturnType; // Return type, part of declaration signature.
+			struct Vector ParamTypeSignatures; // Vector type = struct TypeSignature*. Type Signatures of parameters in order of declaration, part of declaration signature.
+
+			struct SymbolScope* Scope; // Contains VARIABLE symbols, with both parameters and local variables in order of declaration. Filled in only for defined functions.
 
 			// ... TODO: Instructions graph.
 

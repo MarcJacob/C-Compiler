@@ -6,33 +6,6 @@
 #include "tokens.h" // TODO: Create a separate "operator" type from token symbols so this doesn't directly depend on tokens.
 #include "type_signature.h"
 
-// Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
-static inline const char* TypeSignature_GetName(const struct TypeSignature* TypeSig)
-{
-	if (TypeSig == NULL)
-	{
-		return "?";
-	}
-
-	if (TypeSig->Type == DATATYPE_USER_DEFINED)
-	{
-		return TypeSig->TypeName.Length == 0 ? "<anonymous>" : TypeSig->TypeName.Str;
-	}
-
-	switch (TypeSig->Type)
-	{
-	default:
-	case DATATYPE_UNKNOWN: return "?";
-	case DATATYPE_VOID: return "void";
-	case DATATYPE_CHAR: return "char";
-	case DATATYPE_SHORT: return "short";
-	case DATATYPE_INT32: return "int";
-	case DATATYPE_INT64: return "long";
-	case DATATYPE_FLOAT: return "float";
-	case DATATYPE_DOUBLE: return "double";
-	}
-}
-
 inline ui8 Keyword_IsPrimitiveType(enum TOKEN_KEYWORD Keyword)
 {
 	return Keyword >= KEYWORD_VOID && Keyword <= KEYWORD_DOUBLE;
