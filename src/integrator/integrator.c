@@ -21,6 +21,7 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol)
 	StructSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
 	printf("'%s', Size = %lld bytes, Align = %d bytes\n", StructSymbol->Name.Str, StructSymbol->Struct.Size, StructSymbol->Struct.Alignment);
 
+	if (StructSymbol->Struct.Size > 0)
 	for (int MemberSymbolIndex = 0; MemberSymbolIndex < StructSymbol->Struct.Scope->Symbols.Size; MemberSymbolIndex++)
 	{
 		struct ProgramSymbol* MemberSymbol = Vector_GetValueAt(StructSymbol->Struct.Scope->Symbols, struct ProgramSymbol*, MemberSymbolIndex);
@@ -542,6 +543,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 
 	if (StructSymbol == NULL)
 	{
+		// Symbol didn't previously exist. Create it.
 		StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
 		StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
 		StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
@@ -550,7 +552,12 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 	}
 	else
 	{
-		// Check for existing definition.
+		// Check for existing definition & type compatibility.
+		if (StructSymbol->Struct.IsUnion != StructASTNode->Obj.Struct.IsUnion)
+		{
+			Integrator_Error(Integrator, StructASTNode->BufferLocation, "Inconsistent struct / union '%s' redeclaration.", StructASTNode->Obj.Name.Str);
+			return NULL;
+		}
 		if (StructSymbol->Struct.Size > 0)
 		{
 			Integrator_Error(Integrator, StructASTNode->BufferLocation, "Struct symbol '%s' redefinition.", StructASTNode->Obj.Name.Str);
