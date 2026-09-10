@@ -171,6 +171,12 @@ void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
 		printf("ENUM VAL '%s' = %lld\n", Symbol->Name.Str, Symbol->Enum_Member.NumericValue);
 		break;
+	case SYMBOL_TYPE_TYPEDEF:
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf("TYPEDEF '%s' : ", Symbol->Name.Str);
+		PrintTypeSignature(Symbol->Typedef.Type);
+		printf("\n");
+		break;
 	default:
 		break;
 	}
@@ -285,7 +291,7 @@ void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol)
 
 // Returns the "earliest found" symbol starting from the provided scope.
 // Returns NULL if no symbols were found.
-struct ProgramSymbol* Scope_FindSymbol(struct SymbolScope* Scope, struct String_ANSI* Name, ui8 SearchParent)
+struct ProgramSymbol* Scope_FindSymbol(const struct SymbolScope* Scope, const struct String_ANSI* Name, ui8 SearchParent)
 {
 	ASSERT(Scope != NULL);
 	ASSERT(Name != NULL);
@@ -444,9 +450,10 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expressi
 // In that case if a symbol is successfully found, it is returned through the OutTypeSymbol parameter.
 // If not, a new symbol declaration is created and added to the Program Tree's root scope.
 // Note: This only happens for pointer type signatures. Non-pointer type signatures that use an undeclared type will trigger an error.
-ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSignature* TypeSig, struct ProgramSymbol* OutTypeSymbol)
+ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct TypeSignature* TypeSig, struct ProgramSymbol** OutTypeSymbol)
 {
 	ASSERT(TypeSig != NULL);
+	ASSERT(OutTypeSymbol != NULL);
 
 	ui64 TypeSize = 0;
 	if (TypeSig->IsFunctionPointer || TypeSig->PointerLevel)
@@ -455,7 +462,6 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 		if (TypeSig->Type != DATATYPE_USER_DEFINED)
 		{
 			// Type is pointer to primitive.
-			OutTypeSymbol = NULL;
 			return TypeSize;
 		}
 	}
@@ -463,8 +469,6 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	{
 		// Type is non-pointer primitive.
 		TypeSize = TypeSig->Size;
-		OutTypeSymbol = NULL;
-
 		return TypeSize;
 	}
 
@@ -473,16 +477,27 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	// making this the declaration site for it.
 	// If not, we MUST find a matching DECLARED / RESOLVED type symbol (Struct / Union, Typedef or Enum).
 
-	struct ProgramSymbol* TypeSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &TypeSig->TypeName, 0);
+	struct ProgramSymbol* TypeSymbol = Scope_FindSymbol(Scope, &TypeSig->TypeName, 1);
+	*OutTypeSymbol = TypeSymbol;
+
+	// If Type Symbol is found, check compatibility.
 	if (TypeSymbol != NULL)
 	{
-		// .. Check symbol type coherence (struct / union / enum).
+		if ((TypeSig->Flags & TYPE_IS_STRUCTURED && TypeSig->Flags & TYPE_IS_ENUM_OR_UNION == 0 && TypeSymbol->Type != SYMBOL_TYPE_STRUCT)
+			|| (TypeSig->Flags & TYPE_IS_STRUCTURED && TypeSig->Flags & TYPE_IS_ENUM_OR_UNION && !TypeSymbol->Struct.IsUnion)
+			|| (TypeSig->Flags & TYPE_IS_STRUCTURED == 0 && TypeSig->Flags & TYPE_IS_ENUM_OR_UNION && TypeSymbol->Type != SYMBOL_TYPE_ENUM))
+		{
+			return 0; // Incompatible types. The OutTypeSymbol pointer remains populated as an indication of the exact problem.
+		}
 	}
 
+	// If type sig is a pointer, return pointer size after first creating a declaration symbol for the type if required.
 	if (TypeSig->PointerLevel > 0)
 	{
 		if (TypeSymbol == NULL)
 		{
+			// We have a pointer to a undeclared type. Create a declaration for it now.
+
 			enum SYMBOL_TYPE SymbolType;
 			switch (TypeSig->Flags & (TYPE_IS_STRUCTURED | TYPE_IS_ENUM_OR_UNION))
 			{
@@ -506,7 +521,9 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 		return TypeSize;
 	}
 
-	if (TypeSymbol == NULL) return 0; // Unknown
+	// At this point we know we're dealing with a value. Find out the size of the Type Symbol, if any.
+
+	if (TypeSymbol == NULL) return 0; // Undeclared type.
 
 	if (TypeSymbol->Type == SYMBOL_TYPE_STRUCT
 		|| TypeSymbol->Type == SYMBOL_TYPE_UNION)
@@ -526,20 +543,60 @@ struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrato
 // Returns an integrated Variable symbol from a corresponding Variable AST object.
 // The variable's type and size is resolved, but its final size (if bit count is specified) and offset must be
 // resolved by the caller according to its context, and its parent scope must be assigned.
-struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode)
+struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(VarASTNode != NULL);
+	ASSERT(Scope != NULL);
 
-	struct ProgramSymbol* VarSymbol = AllocSymbol(SYMBOL_TYPE_VARIABLE);
-	VarSymbol->Name = String_Copy_ANSI(VarASTNode->Obj.Name);
+	struct ProgramSymbol* VarSymbol = Scope_FindSymbol(Scope, &VarASTNode->Obj.Name, 0);
+	if (VarSymbol != NULL)
+	{
+		// Check type coherence and redefinition.
+		if (!TypeSignaturesEquivalent(VarSymbol->Variable.DeclarationType, VarASTNode->Obj.TypeSignature))
+		{
+			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent types in variable '%s' redeclaration.", VarASTNode->Obj.Name.Str);
+			return NULL;
+		}
+		
+		if (VarASTNode->Obj.Var.Initializer.Expression != NULL && VarSymbol->Variable.HasInitializer
+			|| VarASTNode->Obj.Var.ArraySizes.Size != VarSymbol->Variable.ArraySizes.Size)
+		{
+			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Variable '%s' redefinition.", VarASTNode->Obj.Name.Str);
+			return NULL;
+		}
+	}
 
-	// Handle Type Signature.
-	struct ProgramSymbol* TypeSymbol = NULL;
-	VarSymbol->Variable.DeclarationType = AllocTypeSignatureCopy(VarASTNode->Obj.TypeSignature);
-	VarSymbol->Variable.BitSize = IntegrateTypeSignature(Integrator, VarSymbol->Variable.DeclarationType, TypeSymbol) * 8;
+	struct TypeSignature* TypeSig = NULL;
+	ui64 VarBitSize = 0;
+
+	if (VarSymbol == NULL)
+	{
+		struct ProgramSymbol* TypeSymbol = NULL;
+		TypeSig = VarASTNode->Obj.TypeSignature;
+		VarBitSize = IntegrateTypeSignature(Integrator, Scope, TypeSig, &TypeSymbol) * 8;
+
+		if (VarBitSize == 0)
+		{
+			if (TypeSymbol != NULL)
+			{
+				Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent usage of type '%s'.", TypeSig->TypeName.Str);
+				goto INTEGRATE_FAIL;
+			}
+
+			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", TypeSig->TypeName.Str);
+			goto INTEGRATE_FAIL;
+		}
+	}
+	else
+	{
+		TypeSig = VarSymbol->Variable.DeclarationType;
+		VarBitSize = VarSymbol->Variable.BitSize;
+	}
 
 	// Handle array size(s).
 	// Resolve array size expressions. Error out if any of the expressions cannot be resolved at compile-time.
+	// If the Var Symbol already exists, also error out if the array sizes differ from original declaration.
+	struct Vector ArraySizes = Vector_Create(ui64, 0);
 	for (int ArraySizeExpIndex = 0; ArraySizeExpIndex < VarASTNode->Obj.Var.ArraySizes.Size; ArraySizeExpIndex++)
 	{
 		struct Expression* ArraySizeExp = Vector_GetValueAt(VarASTNode->Obj.Var.ArraySizes, struct Expression*, ArraySizeExpIndex);
@@ -568,15 +625,43 @@ struct ProgramSymbol* BuildSymbol_Variable(struct IntegratorProcess* Integrator,
 			goto INTEGRATE_FAIL;
 		}
 
-		Vector_Push(VarSymbol->Variable.ArraySizes, ui64, EvalResult);
+		// Compare result against original var symbol's corresponding array size.
+		if (VarSymbol != NULL && Vector_GetValueAt(VarSymbol->Variable.ArraySizes, i64, ArraySizeExpIndex) != EvalResult)
+		{
+			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Incoherent array subscripts with existing declaration.");
+			goto INTEGRATE_FAIL;
+		}
+
+		Vector_Push(ArraySizes, i64, EvalResult);
 		// Multiply size by each array layer's resolved size.
-		VarSymbol->Variable.BitSize *= EvalResult;
+		VarBitSize *= EvalResult;
 	}
 
-	if (VarSymbol->Variable.BitSize == 0)
+	// If Var Symbol doesn't already exist, create it now.
+	if (VarSymbol == NULL)
 	{
-		Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", VarSymbol->Variable.DeclarationType->TypeName.Str);
-		return NULL;
+		VarSymbol = AllocSymbol(SYMBOL_TYPE_VARIABLE);
+		VarSymbol->Name = String_Copy_ANSI(VarASTNode->Obj.Name);
+		VarSymbol->Variable.ArraySizes = ArraySizes;
+		VarSymbol->Variable.DeclarationType = TypeSig;
+		VarSymbol->Variable.BitSize = VarBitSize;
+		
+		Scope_AddSymbol(Scope, VarSymbol);
+	}
+
+	// Check for initializer.
+	if (VarASTNode->Obj.Var.Initializer.Expression != NULL)
+	{
+		VarSymbol->Variable.HasInitializer = 1;
+		if (VarASTNode->Obj.Var.InitIsInitializerList)
+		{
+			VarSymbol->Variable.InitializerList = Vector_Create(struct Expression*, 0);
+			Vector_Append(&VarSymbol->Variable.InitializerList, &VarASTNode->Obj.Var.Initializer.List);
+		}
+		else
+		{
+			VarSymbol->Variable.InitExpression = VarASTNode->Obj.Var.Initializer.Expression;
+		}
 	}
 
 	return VarSymbol;
@@ -640,12 +725,12 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 // Returns an integrated function symbol from an AST Object node.
 // If the node has an accompanying definition, the function is fully parsed along with the instructions.
 // Otherwise the symbol will only feature its signature and parameters until a definition is found.
-struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator, struct AST_Node* FuncASTNode)
+struct ProgramSymbol* IntegrateObj_Function(struct IntegratorProcess* Integrator, struct AST_Node* FuncASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(FuncASTNode != NULL);
 
 	// Look for existing declaration or create one.
-	struct ProgramSymbol* FuncSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &FuncASTNode->Obj.Name, 0);
+	struct ProgramSymbol* FuncSymbol = Scope_FindSymbol(Scope, &FuncASTNode->Obj.Name, 0);
 
 	if (FuncSymbol != NULL)
 	{
@@ -693,7 +778,7 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 		FuncSymbol->Name = String_Copy_ANSI(FuncASTNode->Obj.Name);
 
 		// Parse symbol parameters and return type.
-		FuncSymbol->Function.ReturnType = AllocTypeSignatureCopy(FuncASTNode->Obj.TypeSignature);
+		FuncSymbol->Function.ReturnType = FuncASTNode->Obj.TypeSignature;
 
 		FuncSymbol->Function.ParamTypeSignatures = Vector_Create(struct TypeSignature*, 0);
 		for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
@@ -702,8 +787,10 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 			ASSERT(ParamASTNode != NULL);
 			ASSERT(ParamASTNode->Obj.TypeSignature != NULL);
 
-			Vector_Push(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, AllocTypeSignatureCopy(ParamASTNode->Obj.TypeSignature));
+			Vector_Push(FuncSymbol->Function.ParamTypeSignatures, struct TypeSignature*, ParamASTNode->Obj.TypeSignature);
 		}
+
+		Scope_AddSymbol(Scope, FuncSymbol);
 	}
 
 	if (FuncASTNode->Obj.Func.StatementsBlock == NULL)
@@ -722,7 +809,7 @@ struct ProgramSymbol* BuildSymbol_Function(struct IntegratorProcess* Integrator,
 		ASSERT(ParamVarASTNode != NULL);
 		ASSERT(ParamVarASTNode->Type == AST_NODE_OBJ_VAR);
 
-		struct ProgramSymbol* ParamVarSymbol = BuildSymbol_Variable(Integrator, ParamVarASTNode);
+		struct ProgramSymbol* ParamVarSymbol = IntegrateObj_Variable(Integrator, ParamVarASTNode, FuncSymbol->Function.Scope);
 		if (ParamVarSymbol == NULL)
 		{
 			Integrator_Error(Integrator, ParamVarASTNode->BufferLocation, "Failed to build function parameter symbol.");
@@ -791,11 +878,11 @@ ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct P
 // and adding it to the global scope if necessary.
 // If there is a pre-existing declaration symbol for the struct (with no already-defined size),
 // it will take over as the defined symbol.
-struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode, struct SymbolScope* ParentScope)
+struct ProgramSymbol* IntegrateObj_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(StructASTNode != NULL);
 
-	struct ProgramSymbol* StructSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &StructASTNode->Obj.Name, 0);
+	struct ProgramSymbol* StructSymbol = Scope_FindSymbol(Scope, &StructASTNode->Obj.Name, 0);
 
 	if (StructSymbol == NULL)
 	{
@@ -803,6 +890,8 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
 		StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
 		StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
+
+		Scope_AddSymbol(Scope, StructSymbol);
 	}
 	else
 	{
@@ -819,7 +908,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		}
 	}
 
-	StructSymbol->Struct.Scope = AllocScope(ParentScope);
+	StructSymbol->Struct.Scope = AllocScope(Scope);
 	StructSymbol->Struct.Size = 1;
 	StructSymbol->Struct.Alignment = 1;
 
@@ -833,7 +922,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		{
 			// Integrate any sub-structure found into the program's global scope, then copy their members over.
 
-			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode, ParentScope); // Integrate into the same parent scope.
+			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode, Scope); // Integrate into the same parent scope.
 			if (Integrator->HasError) goto INTEGRATE_FAIL;
 			ASSERT(SubStructSymbol != NULL);
 
@@ -869,7 +958,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 			continue;
 		}
 
-		struct ProgramSymbol* MemberSymbol = BuildSymbol_Variable(Integrator, MemberASTNode);
+		struct ProgramSymbol* MemberSymbol = IntegrateObj_Variable(Integrator, MemberASTNode, StructSymbol->Struct.Scope);
 		if (MemberSymbol == NULL)
 		{
 		INTEGRATE_FAIL:
@@ -915,15 +1004,16 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 	return StructSymbol;
 }
 
-struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, struct AST_Node* EnumASTNode)
+struct ProgramSymbol* IntegrateObj_Enum(struct IntegratorProcess* Integrator, struct AST_Node* EnumASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(EnumASTNode != NULL);
 
-	struct ProgramSymbol* EnumSymbol = Scope_FindSymbol(Integrator->ProgramTree->RootScope, &EnumASTNode->Obj.Name, 0);
+	struct ProgramSymbol* EnumSymbol = Scope_FindSymbol(Scope, &EnumASTNode->Obj.Name, 0);
 	if (EnumSymbol == NULL)
 	{
 		EnumSymbol = AllocSymbol(SYMBOL_TYPE_ENUM);
 		EnumSymbol->Name = String_Copy_ANSI(EnumASTNode->Obj.Name);
+		Scope_AddSymbol(Scope, EnumSymbol);
 	}
 	else
 	{
@@ -950,6 +1040,9 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 
 			// Push value symbol to enum's values vector.
 			Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
+
+			// Also add to enum's own scope.
+			Scope_AddSymbol(Scope, ValSymbol);
 			continue;
 		}
 
@@ -985,6 +1078,9 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 
 		// Push value symbol to enum's values vector.
 		Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
+
+		// Also add to enum's own scope.
+		Scope_AddSymbol(Scope, ValSymbol);
 	}
 
 	EnumSymbol->Enum.UnderlyingTypeSize = 8; // TODO: Reduce to lower size if possible.
@@ -992,39 +1088,62 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 	return EnumSymbol;
 }
 
-struct ProgramSymbol* BuildSymbol_Typedef(struct IntegratorProcess* Integrator, struct AST_Node* TypedefASTNode)
+struct ProgramSymbol* IntegrateObj_Typedef(struct IntegratorProcess* Integrator, struct AST_Node* TypedefASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(TypedefASTNode != NULL);
-	Integrator_Error(Integrator, TypedefASTNode->BufferLocation, "Typedefs integration not implemented.");
-	return NULL;
+
+	// The underlying type of the node can be any kind of object. The point of the Typedef symbol is to "concatenate" itself to whatever other object is declared
+	// to use it as a type.
+
+	struct ProgramSymbol* NewSymbol = Scope_FindSymbol(Scope, &TypedefASTNode->Obj.Name, 0);
+	if (NewSymbol != NULL)
+	{
+		// Redefinition error.
+		// TODO: Allow redefinition if it exactly matches existing symbol.
+		Integrator_Error(Integrator, TypedefASTNode->BufferLocation, "Typedef '%s' redefinition.", TypedefASTNode->Obj.Name.Str);
+		return NULL;
+	}
+
+	NewSymbol = AllocSymbol(SYMBOL_TYPE_TYPEDEF);
+	NewSymbol->Name = String_Copy_ANSI(TypedefASTNode->Obj.Name);
+	NewSymbol->Typedef.Type = TypedefASTNode->Obj.TypeSignature;
+
+	if (!IntegrateTypeSignature(Integrator, Scope, NewSymbol->Typedef.Type, &NewSymbol->Typedef.BaseSymbol))
+	{
+		Integrator_Error(Integrator, TypedefASTNode->BufferLocation, "Invalid type use with typedef '%s'.", NewSymbol->Name.Str);
+		return NULL;
+	}
+
+	Scope_AddSymbol(Scope, NewSymbol);
+	return NewSymbol;
 }
 
 // Integrates one or more new symbol(s) from an AST Object Node and places them within the specified Scope.
-struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode, struct SymbolScope* Scope)
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* ObjASTNode, struct SymbolScope* Scope)
 {
-	ASSERT(RootASTNode != NULL);
+	ASSERT(ObjASTNode != NULL);
 
 	struct ProgramSymbol* NewSymbol = NULL;
 
-	if (RootASTNode->Obj.IsTypedef)
+	if (ObjASTNode->Obj.IsTypedef)
 	{
-		NewSymbol = BuildSymbol_Typedef(Integrator, RootASTNode);
+		NewSymbol = IntegrateObj_Typedef(Integrator, ObjASTNode, Scope);
 	}
 	else
 	{
-		switch (RootASTNode->Type)
+		switch (ObjASTNode->Type)
 		{
 		case AST_NODE_OBJ_VAR:
-			NewSymbol = BuildSymbol_Variable(Integrator, RootASTNode);
+			NewSymbol = IntegrateObj_Variable(Integrator, ObjASTNode, Scope);
 			break;
 		case AST_NODE_OBJ_FUNC:
-			NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
+			NewSymbol = IntegrateObj_Function(Integrator, ObjASTNode, Scope);
 			break;
 		case AST_NODE_OBJ_STRUCT:
-			NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode, Scope);
+			NewSymbol = IntegrateObj_Structure(Integrator, ObjASTNode, Scope);
 			break;
 		case AST_NODE_OBJ_ENUM:
-			NewSymbol = BuildSymbolDef_Enum(Integrator, RootASTNode);
+			NewSymbol = IntegrateObj_Enum(Integrator, ObjASTNode, Scope);
 			break;
 		default:
 			break;
@@ -1034,23 +1153,9 @@ struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrato
 	if (NewSymbol == NULL)
 	{
 	INTEGRATE_FAIL:
-		Integrator_Error(Integrator, RootASTNode->BufferLocation, 
-			"Failed to integrate object symbol. Object type = %d", RootASTNode->Type); // TODO: Add Root node to string converter.
+		Integrator_Error(Integrator, ObjASTNode->BufferLocation, 
+			"Failed to integrate object symbol. Object type = %d", ObjASTNode->Type); // TODO: Add Root node to string converter.
 		return NULL;
-	}
-
-	Scope_AddSymbol(Scope, NewSymbol);
-
-	// Special case: Enum value symbols must belong to the same scope as the enum itself.
-	if (NewSymbol->Type == SYMBOL_TYPE_ENUM)
-	{
-		for (int ValueIndex = 0; ValueIndex < NewSymbol->Enum.Values.Size; ValueIndex++)
-		{
-			struct ProgramSymbol* ValueSymbol = Vector_GetValueAt(NewSymbol->Enum.Values, struct ProgramSymbol*, ValueIndex);
-			ASSERT(ValueSymbol != NULL);
-
-			Scope_AddSymbol(Scope, ValueSymbol);
-		}
 	}
 
 	return NewSymbol;

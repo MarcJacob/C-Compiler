@@ -35,11 +35,19 @@ struct ProgramSymbol
 		struct
 		{
 			struct TypeSignature* DeclarationType; // Type signature this variable was resolved to have.
-			struct Vector ArraySizes; // Vector type = ui64. Array sizes specified.
+			struct Vector ArraySizes; // Vector type = i64. Array sizes specified.
 
 			ui64 BitSize; // Size of the variable in bits (so it supports bit count specifier).
 			ui64 Offset; // Memory offset for struct member variables.
 			ui32 BitOffset; // When non-zero, indicates this variable has a bit count specifier within a structure. The bits are to be added to the standard byte offset.
+
+			ui8 HasInitializer;
+			union
+			{
+				struct Expression* InitExpression;
+				struct Vector InitializerList; // Vector type = struct Expression*. Contains the initializer expressions of array or struct members.
+			};
+
 		} Variable;
 
 		struct

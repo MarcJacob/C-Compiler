@@ -110,8 +110,8 @@ Tasks:
 - Local struct / union / enum / typedef definitions inside functions (previously only parsed/integrated at global scope): [DONE]
     - Parser: unified root-level object parsing (struct/union/enum bodies, typedef keyword) with local declaration-statement parsing via a shared `ParseNextObjects`, so they can now be found inside function bodies too. [DONE]
     - Integrator: generalized object integration (`IntegrateASTObjectNode`, formerly `IntegrateRootASTNode`) to no longer assume the global scope; the caller now decides which scope (root vs. enclosing block) the resulting symbol is added to. [DONE]
-- Typedefs integration:
-    - Typedef symbol declaration/definition (SYMBOL_TYPE_TYPEDEF, base symbol + type signature resolution).
+- Typedefs integration: [DONE]
+    - Typedef symbol declaration/definition (SYMBOL_TYPE_TYPEDEF, base symbol + type signature resolution). [DONE]
 - Determine expressions that are compile-time-resolvable and turn them into the correct final values:
     - Array sizes & indices [DONE]
     - Struct Member Bit counts [DONE]

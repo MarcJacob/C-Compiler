@@ -451,6 +451,17 @@ void Parser_Run(struct ParserProcess* Parser)
 
 	while (Parser_PeekToken(Parser) != NULL)
 	{
+		// Check if this "line" of objects is starting with a typedef keyword, in which case all produced objects will be typedefs.
+		// This forbids any initializer but does allow structure / enum definitions.
+
+		ui8 IsTypedef = 0;
+		if (Token_IsKeyword(Parser_PeekToken(Parser), KEYWORD_TYPEDEF))
+		{
+			IsTypedef = 1;
+			Parser_ConsumeToken(Parser); // Consume 'typedef'.
+			if (Parser_PeekToken(Parser) == NULL) break;
+		}
+
 		// Parse next set of objects from a base type.
 		struct TypeSignature* BaseType = AllocTypeSignature();
 		if (!ParseTypeSignature(Parser, BaseType))
@@ -458,7 +469,7 @@ void Parser_Run(struct ParserProcess* Parser)
 			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected type specifier.");
 			FreeTypeSignature(BaseType);
 		}
-		ParseNextObjects(Parser, BaseType, Parser->RootNodes);
+		ParseNextObjects(Parser, IsTypedef, BaseType, Parser->RootNodes);
 
 		// Stop parsing process on error.
 		if (Parser->HasError)

@@ -545,7 +545,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 	return ObjNode;
 }
 
-void ParseNextObjects(struct ParserProcess* Parser, struct TypeSignature* BaseType, struct Vector* OutObjects)
+void ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* BaseType, struct Vector* OutObjects)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -558,18 +558,6 @@ void ParseNextObjects(struct ParserProcess* Parser, struct TypeSignature* BaseTy
 		Parser->TokenIndex = TokenStartIndex;
 		if (ObjNode != NULL) FreeASTNode(ObjNode);
 		return;
-	}
-
-	// Check if this "line" of objects is starting with a typedef keyword, in which case all produced objects will be typedefs.
-	// This forbids any initializer but does allow structure / enum definitions.
-
-	ui8 IsTypedef = 0;
-	if (Token_IsKeyword(NextToken, KEYWORD_TYPEDEF))
-	{
-		IsTypedef = 1;
-		Parser_ConsumeToken(Parser); // Consume 'typedef'.
-		NextToken = Parser_PeekToken(Parser);
-		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 	}
 
 	// If the parsed datatype is structured or an enum, first attempt to parse a definition for it.

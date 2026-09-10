@@ -31,11 +31,18 @@ enum TestEnum
 	VAL_D,
 };
 
+int a, a, a, a, a;
+int a = 5;
+
+typedef TestEnum TypedefTest;
+
 extern int extern_func_test(int, float, double);
 
 int main(int argc, char** argv)
 {
 	int test_local_var = 8;
+
+	TypedefTest Typedefed_Var;
 
 	struct struct_in_func
 	{

@@ -77,7 +77,7 @@ void GetAllStatements(struct AST_Node* RootStatement, struct Vector* Out)
 }
 
 // Attempts to parse a Var Declaration statement node, up until reaching the provided end symbol.
-struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parser, struct TypeSignature* ObjectsType, enum TOKEN_SYMBOL EndSymbol)
+struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* ObjectsType, enum TOKEN_SYMBOL EndSymbol)
 {
 	int StartTokenIndex = Parser->TokenIndex;
 
@@ -100,7 +100,7 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 
 	ObjDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
 
-	ParseNextObjects(Parser, ObjectsType, &ObjDecNode->Statement.ObjectDeclaration.Objects);
+	ParseNextObjects(Parser, IsTypedef, ObjectsType, &ObjDecNode->Statement.ObjectDeclaration.Objects);
 	if (Parser->HasError) goto PARSE_FAIL;
 
 	return ObjDecNode;
@@ -432,8 +432,9 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	struct Token* NextToken = Parser_PeekToken(Parser);
 	if (NextToken == NULL)
 	{
+	PARSE_FAIL_EOF:
 		Parser_Error(Parser, Parser_GetLastTokenBufferLoc(Parser), "Unexpected EOF while parsing block.");
-		return 0;
+		return NULL;
 	}
 
 	if (Token_IsSymbol(NextToken, SYMBOL_BRACE_OPEN))
@@ -465,13 +466,26 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 	else
 	{
 		// Otherwise we either have object declarations or an expression, depending on if we find a type signature.
+		ui8 IsTypedef = Token_IsKeyword(NextToken, KEYWORD_TYPEDEF);
+		if (IsTypedef)
+		{
+			Parser_ConsumeToken(Parser);
+			NextToken = Parser_PeekToken(Parser);
+			if (NextToken == NULL) goto PARSE_FAIL_EOF;
+		}
+
 		struct TypeSignature* ObjectsType = AllocTypeSignature();
 		if (ParseTypeSignature(Parser, ObjectsType))
 		{
-			StatementNode = ParseObjectDeclarationStatementNode(Parser, ObjectsType, SYMBOL_SEMICOLON);
+			StatementNode = ParseObjectDeclarationStatementNode(Parser, IsTypedef, ObjectsType, SYMBOL_SEMICOLON);
 		}
 		else
 		{
+			if (IsTypedef)
+			{
+				Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
+				return NULL;
+			}
 			StatementNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
 		}
 	}
