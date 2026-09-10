@@ -153,7 +153,7 @@ void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 		{
 			printf("[%lld]", Vector_GetValueAt(Symbol->Variable.ArraySizes, i64, i));
 		}
-		printf(", Size = %lld bytes, Address = 0x%08llX\n", Symbol->Variable.BitSize / 8, Symbol->Variable.Offset);
+		printf(", Size = %lld bytes\n", Symbol->Variable.BitSize / 8, Symbol->Variable.Offset);
 		break;
 	case SYMBOL_TYPE_STRUCT:
 	case SYMBOL_TYPE_UNION:
@@ -521,7 +521,7 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct TypeSig
 	return TypeSig->Size; // Will be 0 if the type exists but is incomplete.
 }
 
-struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode);
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode, struct SymbolScope* Scope);
 
 // Returns an integrated Variable symbol from a corresponding Variable AST object.
 // The variable's type and size is resolved, but its final size (if bit count is specified) and offset must be
@@ -610,7 +610,7 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 				struct AST_Node* ObjDec = Vector_GetValueAt(StatementNode->Statement.ObjectDeclaration.Objects, struct AST_Node*, ObjIndex);
 				ASSERT(ObjDec != NULL);
 
-				struct ProgramSymbol* LocalSymbol = IntegrateASTObjectNode(Integrator, ObjDec);
+				struct ProgramSymbol* LocalSymbol = IntegrateASTObjectNode(Integrator, ObjDec, BlockScope);
 				if (LocalSymbol == NULL)
 				{
 					Integrator_Error(Integrator, ObjDec->BufferLocation, "Failed to resolve local symbol.");
@@ -623,9 +623,6 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 					Integrator_Error(Integrator, ObjDec->BufferLocation, "Function definition within another function is disallowed.");
 					return;
 				}
-
-				// Add symbol to block scope and function local variables if it is a variable.
-				Scope_AddSymbol(BlockScope, LocalSymbol);
 
 				if (LocalSymbol->Type == SYMBOL_TYPE_VARIABLE)
 				{
@@ -794,7 +791,7 @@ ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct P
 // and adding it to the global scope if necessary.
 // If there is a pre-existing declaration symbol for the struct (with no already-defined size),
 // it will take over as the defined symbol.
-struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode)
+struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integrator, struct AST_Node* StructASTNode, struct SymbolScope* ParentScope)
 {
 	ASSERT(StructASTNode != NULL);
 
@@ -806,8 +803,6 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		StructSymbol = AllocSymbol(StructASTNode->Obj.Struct.IsUnion ? SYMBOL_TYPE_UNION : SYMBOL_TYPE_STRUCT);
 		StructSymbol->Name = String_Copy_ANSI(StructASTNode->Obj.Name);
 		StructSymbol->Struct.IsUnion = StructSymbol->Type == SYMBOL_TYPE_UNION;
-
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, StructSymbol);
 	}
 	else
 	{
@@ -824,7 +819,7 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		}
 	}
 
-	StructSymbol->Struct.Scope = AllocScope(Integrator->ProgramTree->RootScope);
+	StructSymbol->Struct.Scope = AllocScope(ParentScope);
 	StructSymbol->Struct.Size = 1;
 	StructSymbol->Struct.Alignment = 1;
 
@@ -837,7 +832,8 @@ struct ProgramSymbol* BuildSymbolDef_Structure(struct IntegratorProcess* Integra
 		if (MemberASTNode->Type == AST_NODE_OBJ_STRUCT)
 		{
 			// Integrate any sub-structure found into the program's global scope, then copy their members over.
-			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode);
+
+			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode, ParentScope); // Integrate into the same parent scope.
 			if (Integrator->HasError) goto INTEGRATE_FAIL;
 			ASSERT(SubStructSymbol != NULL);
 
@@ -928,7 +924,6 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 	{
 		EnumSymbol = AllocSymbol(SYMBOL_TYPE_ENUM);
 		EnumSymbol->Name = String_Copy_ANSI(EnumASTNode->Obj.Name);
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, EnumSymbol);
 	}
 	else
 	{
@@ -953,8 +948,7 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 			ValSymbol->Name = String_Copy_ANSI(ValExpression->Variable.Name);
 			ValSymbol->Enum_Member.NumericValue = NextVal++;
 
-			// Push value symbol to root scope and to the enum's own values vector.
-			Scope_AddSymbol(Integrator->ProgramTree->RootScope, ValSymbol);
+			// Push value symbol to enum's values vector.
 			Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
 			continue;
 		}
@@ -989,8 +983,7 @@ struct ProgramSymbol* BuildSymbolDef_Enum(struct IntegratorProcess* Integrator, 
 		ValSymbol->Enum_Member.NumericValue = EvalRes;
 		NextVal = EvalRes + 1;
 
-		// Push value symbol to root scope and to the enum's own values vector.
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, ValSymbol);
+		// Push value symbol to enum's values vector.
 		Vector_Push(EnumSymbol->Enum.Values, struct ProgramSymbol*, ValSymbol);
 	}
 
@@ -1006,7 +999,8 @@ struct ProgramSymbol* BuildSymbol_Typedef(struct IntegratorProcess* Integrator, 
 	return NULL;
 }
 
-struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode)
+// Integrates one or more new symbol(s) from an AST Object Node and places them within the specified Scope.
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* RootASTNode, struct SymbolScope* Scope)
 {
 	ASSERT(RootASTNode != NULL);
 
@@ -1027,7 +1021,7 @@ struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrato
 			NewSymbol = BuildSymbol_Function(Integrator, RootASTNode);
 			break;
 		case AST_NODE_OBJ_STRUCT:
-			NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode);
+			NewSymbol = BuildSymbolDef_Structure(Integrator, RootASTNode, Scope);
 			break;
 		case AST_NODE_OBJ_ENUM:
 			NewSymbol = BuildSymbolDef_Enum(Integrator, RootASTNode);
@@ -1043,6 +1037,20 @@ struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrato
 		Integrator_Error(Integrator, RootASTNode->BufferLocation, 
 			"Failed to integrate object symbol. Object type = %d", RootASTNode->Type); // TODO: Add Root node to string converter.
 		return NULL;
+	}
+
+	Scope_AddSymbol(Scope, NewSymbol);
+
+	// Special case: Enum value symbols must belong to the same scope as the enum itself.
+	if (NewSymbol->Type == SYMBOL_TYPE_ENUM)
+	{
+		for (int ValueIndex = 0; ValueIndex < NewSymbol->Enum.Values.Size; ValueIndex++)
+		{
+			struct ProgramSymbol* ValueSymbol = Vector_GetValueAt(NewSymbol->Enum.Values, struct ProgramSymbol*, ValueIndex);
+			ASSERT(ValueSymbol != NULL);
+
+			Scope_AddSymbol(Scope, ValueSymbol);
+		}
 	}
 
 	return NewSymbol;
@@ -1062,9 +1070,7 @@ void Integrator_Run(struct IntegratorProcess* Integrator)
 	for (int RootNodeIndex = 0; RootNodeIndex < Integrator->ASTRootNodes->Size; RootNodeIndex++)
 	{
 		struct AST_Node* RootNode = *(struct AST_Node**)(Vector_GetPtr(Integrator->ASTRootNodes, RootNodeIndex));
-		struct ProgramSymbol* IntegratedSymbol = IntegrateASTObjectNode(Integrator, RootNode);
+		struct ProgramSymbol* IntegratedSymbol = IntegrateASTObjectNode(Integrator, RootNode, Integrator->ProgramTree->RootScope);
 		if (Integrator->HasError) return;
-
-		Scope_AddSymbol(Integrator->ProgramTree->RootScope, IntegratedSymbol);
 	}
 }

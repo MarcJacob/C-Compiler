@@ -44,6 +44,8 @@ int main(int argc, char** argv)
 
 	{
 		int test_local_var_subscope = 2;
+
+		int mega_deep_func(double);
 	}
 
 	int test(int foo, int bar);
