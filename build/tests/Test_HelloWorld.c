@@ -32,7 +32,9 @@ enum TestEnum
 };
 
 int a, a, a, a, a;
-int a = 5;
+int a = VAL_A;
+
+int test_arr[VAL_C];
 
 typedef TestEnum TypedefTest;
 

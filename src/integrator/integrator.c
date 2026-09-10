@@ -309,10 +309,10 @@ struct ProgramSymbol* Scope_FindSymbol(const struct SymbolScope* Scope, const st
 	return (Scope->Parent != NULL && SearchParent) ? Scope_FindSymbol(Scope->Parent, Name, 1) : NULL;
 }
 
-ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
+ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
 
 // Resolves an operation between two expressions, recursively.
-ui8 EvalConstantOpExpression(struct IntegratorProcess* Integrator, enum TOKEN_SYMBOL Op, struct Expression* LeftOperand, struct Expression* RightOperand,
+ui8 EvalConstantOpExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, enum TOKEN_SYMBOL Op, struct Expression* LeftOperand, struct Expression* RightOperand,
 	ui64* OutResult, enum DATATYPE* OutResultType)
 {
 	ASSERT(OutResult != NULL);
@@ -326,10 +326,10 @@ ui8 EvalConstantOpExpression(struct IntegratorProcess* Integrator, enum TOKEN_SY
 
 	i64 LeftOpRes = 0, RightOpRes = 0;
 	enum DATATYPE LeftOpResType, RightOpResType;
-	if (LeftOperand != NULL 
-		&& !EvalConstantExpression(Integrator, LeftOperand, &LeftOpRes, &LeftOpResType)) return 0;
-	if (RightOperand != NULL 
-		&& !EvalConstantExpression(Integrator, RightOperand, &RightOpRes, &RightOpResType)) return 0;
+	if (LeftOperand != NULL
+		&& !EvalConstantExpression(Integrator, Scope, LeftOperand, &LeftOpRes, &LeftOpResType)) return 0;
+	if (RightOperand != NULL
+		&& !EvalConstantExpression(Integrator, Scope, RightOperand, &RightOpRes, &RightOpResType)) return 0;
 
 	// TODO: Check compatibility between result types & perform appropriate casts.
 	// For now we just error out if we ever get anything other than an INT64.
@@ -412,8 +412,9 @@ ui8 EvalConstantOpExpression(struct IntegratorProcess* Integrator, enum TOKEN_SY
 
 // Resolves a constant expression and returns its result within the 8 bytes pointer provided.
 // Returns 1 if successful, returns 0 if there was an error.
-ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType)
+ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType)
 {
+	ASSERT(Scope != NULL);
 	ASSERT(Expression != NULL);
 	ASSERT(OutResult != NULL);
 
@@ -428,17 +429,34 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct Expressi
 		*OutResult = Expression->Literal.Integer;
 		*OutResultType = DATATYPE_INT64;
 		return 1;
+	case EXP_VAR_ACCESS:
+	{
+		struct ProgramSymbol* Symbol = Scope_FindSymbol(Scope, &Expression->Variable.Name, 1);
+		if (Symbol == NULL)
+		{
+			Integrator_Error(Integrator, Expression->BufferLocation, "Undeclared identifier '%s' in constant expression.", Expression->Variable.Name.Str);
+			return 0;
+		}
+		if (Symbol->Type != SYMBOL_TYPE_ENUM_VAL)
+		{
+			Integrator_Error(Integrator, Expression->BufferLocation, "'%s' is not usable in a constant expression.", Expression->Variable.Name.Str);
+			return 0;
+		}
+
+		*OutResult = Symbol->Enum_Member.NumericValue;
+		*OutResultType = DATATYPE_INT64;
+		return 1;
+	}
 		// Invalid base cases
 	case EXP_LITERAL_STRING:
 	case EXP_NOP:
 	case EXP_FUNC_CALL:
-	case EXP_VAR_ACCESS: // TODO: This can work if the "variable" is actually an enum value name.
 	default:
 		Integrator_Error(Integrator, Expression->BufferLocation, "Expression must be constant integral.");
 		return 0;
 		// Complex cases
 	case EXP_OP:
-		return EvalConstantOpExpression(Integrator, Expression->Op.OperatorSymbol, Expression->Op.LeftOperand, Expression->Op.RightOperand, OutResult, OutResultType);
+		return EvalConstantOpExpression(Integrator, Scope, Expression->Op.OperatorSymbol, Expression->Op.LeftOperand, Expression->Op.RightOperand, OutResult, OutResultType);
 	}
 }
 
@@ -604,7 +622,7 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 
 		i64 EvalResult;
 		enum DATATYPE EvalType;
-		if (!EvalConstantExpression(Integrator, ArraySizeExp, &EvalResult, &EvalType))
+		if (!EvalConstantExpression(Integrator, Scope, ArraySizeExp, &EvalResult, &EvalType))
 		{
 			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Array size expression must be constant value.");
 		INTEGRATE_FAIL:
@@ -970,7 +988,7 @@ struct ProgramSymbol* IntegrateObj_Structure(struct IntegratorProcess* Integrato
 		{
 			i64 BitSizeOverride = 0;
 			enum DATATYPE BitSizeType = 0;
-			if (!EvalConstantExpression(Integrator, MemberASTNode->Obj.Var.Initializer.Expression, &BitSizeOverride, &BitSizeType))
+			if (!EvalConstantExpression(Integrator, Scope, MemberASTNode->Obj.Var.Initializer.Expression, &BitSizeOverride, &BitSizeType))
 			{
 				return 0;
 			}
@@ -1053,7 +1071,7 @@ struct ProgramSymbol* IntegrateObj_Enum(struct IntegratorProcess* Integrator, st
 
 		ASSERT(ValExpression->Type == EXP_OP && ValExpression->Op.RightOperand != NULL);
 		ASSERT(ValExpression->Op.LeftOperand != NULL && ValExpression->Op.LeftOperand->Type == EXP_VAR_ACCESS);
-		if (!EvalConstantExpression(Integrator, ValExpression->Op.RightOperand, &EvalRes, &EvalType))
+		if (!EvalConstantExpression(Integrator, Scope, ValExpression->Op.RightOperand, &EvalRes, &EvalType))
 		{
 			Integrator_Error(Integrator, ValExpression->Op.RightOperand->BufferLocation, "Invalid expression for Enumeration value.");
 			return NULL;

@@ -116,7 +116,7 @@ Tasks:
     - Array sizes & indices [DONE]
     - Struct Member Bit counts [DONE]
     - Enum Member Values [DONE]
-- Make Enum values useable in compile-time constant expressions.
+- Make Enum values useable in compile-time constant expressions. [DONE]
 - Function instructions integration.
 
 ## Step 7 - Code Generator [TO BE DONE]
