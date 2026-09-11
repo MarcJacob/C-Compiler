@@ -1,6 +1,4 @@
-IMPRINT \<Root>/src/parser/
-
-Stamp 2026-08-24 | (GIT SHA 9cbefe956748e22c2cb260faa37356b45a8fdfb2) | Marc Jacob
+# Parser source folder
 
 # Structure
 

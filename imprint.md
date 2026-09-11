@@ -1,8 +1,6 @@
-This is the root AI documentation file for this project, human-written, made for consumption by AI agents to understand the structure of the project.
+# The Imprint System
 
-When starting an AI prompt targeting this project, ensure the model parses this file as part of its prompt or thinking.
-
-Every folder in the project may contain an imprint.md file. This file will contain anything from special instructions, general documentation, statements of intent, future tasks to be structured and executed on, and so on.
+Every folder in the project may contain an imprint.md file. The file will contain anything from special instructions, general documentation, statements of intent, future tasks to be structured and executed on, and so on.
 
 imprint.md files at a lower level of the folder hierarchy are to be considered HIGHER priority than higher levels.
 The contents of imprint.md files apply for their folder and sub-folders recursively, and NOWHERE ELSE.
@@ -17,20 +15,17 @@ imprint.md files do not follow any strict structure. It is up to the human / ai-
 
 imprint.md files are Markdown, following the name's ".md" extension.
 
+AI Agents should prioritize using imprint files to discover the project's structure and contents before exploring further, looking at the code directly only on what is needed for the task.
+
+# Project Root
+
 A general description of the project and its goals is available in README.md
 
-
-
-Top-level folder structure breakdown:
 *management* contains planning and work management data and further instructions for how a work session can be organized.
 
 *include* and *src* contain the project's *global headers* and *implementation* respectively.
 
-
-
 Greater detail about each folder's content can be found in their respective imprint.md files.
-
-
 
 When starting a work session on any subject, make sure to check out the management folder to know what is to be done next.
 

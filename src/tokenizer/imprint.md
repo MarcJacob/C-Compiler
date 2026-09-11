@@ -1,3 +1,5 @@
+# Tokenizer source folder
+
 This folder contains the full implementation of the Tokenizer Process, which from the outside is basically one large function call that turns a buffer of characters into a vector of tokens.
 
 Stage description:
