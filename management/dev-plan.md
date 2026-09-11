@@ -117,7 +117,11 @@ Tasks:
     - Struct Member Bit counts [DONE]
     - Enum Member Values [DONE]
 - Make Enum values useable in compile-time constant expressions. [DONE]
-- Function instructions integration.
+- Function instructions integration: [WIP]
+    - `ProgramInstruction` representation covering expression, unconditional jump, conditional jump, and return kinds (jump targets stored as an index during Integration, resolved to a direct pointer once the owning function is fully integrated). [DONE]
+    - Expression-statement instructions. [DONE]
+    - Logging for a function's integrated instructions. [DONE]
+    - `if` / `while` / `for` / `break` / `continue` / `return` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 
 ## Step 7 - Code Generator [TO BE DONE]
 
