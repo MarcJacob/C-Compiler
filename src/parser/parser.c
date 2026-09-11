@@ -457,8 +457,14 @@ void Parser_Run(struct ParserProcess* Parser)
 		{
 			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected type specifier.");
 			FreeTypeSignature(BaseType);
+			break;
 		}
-		ParseNextObjects(Parser, IsTypedef, BaseType, Parser->RootNodes);
+		if (!ParseNextObjects(Parser, IsTypedef, BaseType, Parser->RootNodes))
+		{
+			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected declaration.");
+			FreeTypeSignature(BaseType);
+			break;
+		}
 
 		// Stop parsing process on error.
 		if (Parser->HasError)
