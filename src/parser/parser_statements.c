@@ -100,8 +100,8 @@ struct AST_Node* ParseObjectDeclarationStatementNode(struct ParserProcess* Parse
 
 	ObjDecNode->Statement.ObjectDeclaration.Objects = Vector_Create(struct AST_Node*, 1);
 
-	ParseNextObjects(Parser, IsTypedef, ObjectsType, &ObjDecNode->Statement.ObjectDeclaration.Objects);
-	if (Parser->HasError) goto PARSE_FAIL;
+	if (!ParseNextObjects(Parser, IsTypedef, ObjectsType, &ObjDecNode->Statement.ObjectDeclaration.Objects))
+		goto PARSE_FAIL;
 
 	return ObjDecNode;
 }
@@ -486,7 +486,11 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 				Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
 				return NULL;
 			}
-			StatementNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
+
+			struct AST_Node* ExpressionNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
+			StatementNode = AllocASTNode(AST_NODE_STATEMENT_EXP);
+			StatementNode->BufferLocation = NextToken->BufferLocation;
+			StatementNode->Statement.Expression = ExpressionNode;
 		}
 	}
 

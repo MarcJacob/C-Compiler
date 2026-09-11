@@ -198,22 +198,11 @@ static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature
 		return 0;
 	}
 
-	// In the specific case where the first token is an identifier, check that the next token isn't an opening parenthesis so we don't confuse a function call for a type declaration.
-	if (NextToken->Type == TOKEN_IDENTIFIER)
+	// Check that, in the specific case where the first token is an identifier, that it is followed by a whitespace, indicating that it is indeed a type name.
+	// If it doesn't have a whitespace afterwards then it is likely a variable or function name.
+	if (NextToken->Type == TOKEN_IDENTIFIER && !NextToken->PrecedesWhitespace)
 	{
-		// This is a little hacky but it's the only place in the parser code where we have to do that...
-		Parser_ConsumeToken(Parser);
-		struct Token* NextNextToken = Parser_PeekToken(Parser);
-		if (NextNextToken == NULL) goto PARSE_FAIL_EOF;
-		
-		if (Token_IsSymbol(NextNextToken, SYMBOL_PARENTHESIS_OPEN))
-		{
-			// This is a function call. Fail now without an error.
-			goto PARSE_FAIL;
-		}
-
-		// Otherwise just restore the parser cursor state and pretend nothing's happened...
-		Parser->TokenIndex--;
+		goto PARSE_FAIL;
 	}
 
 	enum TYPE_SIG_FLAGS Flags = 0;

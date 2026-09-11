@@ -7,7 +7,7 @@
 
 static void PrintIndent(ui32 Depth)
 {
-	for (ui32 i = 0; i < Depth; i++) printf("  ");
+	for (ui32 i = 0; i < Depth; i++) printf("\t");
 }
 
 // Prints a named header for a sub-node of a complex statement (e.g. an IF's CONDITION / THEN / ELSE) before printing the node itself one level deeper.

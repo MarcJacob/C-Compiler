@@ -2,14 +2,68 @@
 
 #include "integrator.h"
 
+
+struct ProgramInstruction* AllocInstruction(struct ProgramSymbol* FunctionSymbol, enum INSTRUCTION_TYPE Type)
+{
+	ASSERT(FunctionSymbol != NULL);
+	ASSERT(FunctionSymbol->Function.Instructions._ItemSize > 0);
+
+	Vector_PushZero(&FunctionSymbol->Function.Instructions);
+
+	struct ProgramInstruction* NewInstruction = Vector_GetLastPtr(&FunctionSymbol->Function.Instructions);
+	ASSERT(NewInstruction);
+
+	NewInstruction->Type = Type;
+	return NewInstruction;
+}
+
+// Tracks the state of instructions integration over a function.
+struct InstructionsIntegrator
+{
+	struct ProgramSymbol* FunctionSymbol; // Function symbol we're integrating instructions into.
+	struct SymbolScope* Scope; // Current scope we're located in for the purpose of finding usable symbols.
+
+	struct Vector IfStack;	// Vector type = ProgramInstruction*. FIFO container of instructions related to an IF statement whose block we haven't left yet.
+							// Leaves the stack once their Exec Statement has been integrated.
+
+	struct Vector LoopStack;	// Vector type = ProgramInstruction*. FIFO container of instructions related to a FOR or WHILE statement whose block we haven't left yet.
+								// Leaves the stack once their Exec statement has been integrated. Used to pair with break / continue statements.
+};
+
+void IntegrateStatementNode(struct IntegratorProcess* Integrator, struct InstructionsIntegrator* InstructionsIntegrator, struct AST_Node* InstructionASTNode)
+{
+	ASSERT(InstructionsIntegrator != NULL);
+	ASSERT(InstructionASTNode != NULL);
+
+	struct ProgramInstruction* NewInstruction = NULL;
+	switch (InstructionASTNode->Type)
+	{
+	case AST_NODE_STATEMENT_EXP:
+		NewInstruction = AllocInstruction(InstructionsIntegrator->FunctionSymbol, INSTRUCTION_TYPE_EXPRESSION);
+		NewInstruction->Exp = InstructionASTNode->Statement.Expression->Expression;
+	default:
+		// TEMP: Do nothing.
+		break;
+	}
+
+	if (NewInstruction == NULL)
+	{
+		// TODO: Emit error.
+	}
+}
+
 // Integrates all statements inside a block statement AST Node. Adds all found Program Instructions into the function's instructions vector, 
 // and all found local variables declaration into the specified block scope.
 // Check for error after execution.
-void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct ProgramSymbol* FunctionSymbol, struct SymbolScope* BlockScope, struct AST_Node* StatementBlock)
+void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct InstructionsIntegrator* InstructionsIntegrator, struct SymbolScope* BlockScope, struct AST_Node* StatementBlock)
 {
-	ASSERT(FunctionSymbol != NULL);
+	ASSERT(InstructionsIntegrator != NULL);
 	ASSERT(BlockScope != NULL);
 	ASSERT(StatementBlock != NULL && StatementBlock->Type == AST_NODE_STATEMENT_BLOCK);
+
+	// Set Instructions Integrator's scope to this block's scope.
+	struct SymbolScope* PreviousScope = InstructionsIntegrator->Scope;
+	InstructionsIntegrator->Scope = BlockScope;
 
 	for (int StatementIndex = 0; StatementIndex < StatementBlock->Statement.Block.Statements.Size; StatementIndex++)
 	{
@@ -21,7 +75,7 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 		{
 		case AST_NODE_STATEMENT_BLOCK:
 			BlockSubScope = AllocScope(BlockScope);
-			IntegrateStatementBlock(Integrator, FunctionSymbol, BlockSubScope, StatementNode);
+			IntegrateStatementBlock(Integrator, InstructionsIntegrator, BlockSubScope, StatementNode);
 			if (Integrator->HasError) return;
 			break;
 		case AST_NODE_STATEMENT_OBJ_DEC:
@@ -46,15 +100,22 @@ void IntegrateStatementBlock(struct IntegratorProcess* Integrator, struct Progra
 
 				if (LocalSymbol->Type == SYMBOL_TYPE_VARIABLE)
 				{
-					Vector_Push(FunctionSymbol->Function.LocalVariables, struct ProgramSymbol*, LocalSymbol);
+					Vector_Push(InstructionsIntegrator->FunctionSymbol->Function.LocalVariables, struct ProgramSymbol*, LocalSymbol);
 				}
 			}
 			break;
 		default:
-			// TODO: Add support for other statement types.
+			IntegrateStatementNode(Integrator, InstructionsIntegrator, StatementNode);
+			if (Integrator->HasError)
+			{
+				return;
+			}
 			break;
 		}
 	}
+
+	// Restore entry scope to instructions integrator.
+	InstructionsIntegrator->Scope = PreviousScope;
 }
 
 // Returns an integrated function symbol from an AST Object node.
@@ -135,7 +196,7 @@ struct ProgramSymbol* IntegrateObj_Function(struct IntegratorProcess* Integrator
 
 	FuncSymbol->Function.Scope = AllocScope(Integrator->ProgramTree->RootScope);
 	FuncSymbol->Function.LocalVariables = Vector_Create(struct ProgramSymbol*, FuncASTNode->Obj.Func.Params.Size);
-	FuncSymbol->Function.Instructions = Vector_Create(struct ProgramInstruction*, 1);
+	FuncSymbol->Function.Instructions = Vector_Create(struct ProgramInstruction, 1);
 
 	// Integrate parameters as variables symbols.
 	for (int ParamIndex = 0; ParamIndex < FuncASTNode->Obj.Func.Params.Size; ParamIndex++)
@@ -156,7 +217,11 @@ struct ProgramSymbol* IntegrateObj_Function(struct IntegratorProcess* Integrator
 	}
 
 	// Integrate function block.
-	IntegrateStatementBlock(Integrator, FuncSymbol, FuncSymbol->Function.Scope, FuncASTNode->Obj.Func.StatementsBlock);
+
+	struct InstructionsIntegrator InstructionsIntegrator = { 0 };
+	InstructionsIntegrator.FunctionSymbol = FuncSymbol;
+
+	IntegrateStatementBlock(Integrator, &InstructionsIntegrator, FuncSymbol->Function.Scope, FuncASTNode->Obj.Func.StatementsBlock);
 	if (Integrator->HasError)
 	{
 		Integrator_Error(Integrator, FuncASTNode->Obj.Func.StatementsBlock->BufferLocation, "Error parsing function definition block.");

@@ -545,7 +545,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 	return ObjNode;
 }
 
-void ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* BaseType, struct Vector* OutObjects)
+ui8 ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* BaseType, struct Vector* OutObjects)
 {
 	int TokenStartIndex = Parser->TokenIndex;
 	struct Token* NextToken = Parser_PeekToken(Parser);
@@ -608,9 +608,11 @@ void ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSi
 		if (NextToken == NULL) goto PARSE_FAIL_EOF;
 
 		ObjNode = ParseObject_VarFunc(Parser, BaseType, 0, !IsTypedef, 0);
-		if (ObjNode == NULL || Parser->HasError)
+		if (ObjNode == NULL)
 		{
-			Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse object.");
+			// Emit error if this isn't the first object we're parsing here.
+			if (Parser->HasError || OutObjects->Size > 0)
+				Parser_Error(Parser, NextToken->BufferLocation, "Failed to parse object.");
 			goto PARSE_FAIL;
 		}
 

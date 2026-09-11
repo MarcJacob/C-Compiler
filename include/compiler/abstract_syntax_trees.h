@@ -92,58 +92,54 @@ struct AST_Node
 		} Obj;
 
 		// Root type for any statement found inside functions.
-		struct
+		union
 		{
-			struct AST_Node* Parent; // Parent node / "scoping" node. NULL = Global scope.
-			union
+			struct
 			{
-				struct
-				{
-					struct AST_Node* EntryCondition; // Expression node that should resolve to > 0 for initial entry into the block.
+				struct AST_Node* EntryCondition; // Expression node that should resolve to > 0 for initial entry into the block.
 
-					struct AST_Node* ExecStatement; // Statement to be executed on successful entry.
-					struct AST_Node* ExecStatement_Else;	// Statement to be executed on entry failure.
-				} If;
+				struct AST_Node* ExecStatement; // Statement to be executed on successful entry.
+				struct AST_Node* ExecStatement_Else;	// Statement to be executed on entry failure.
+			} If;
 
-				struct
-				{
-					struct AST_Node* EntryCondition; // If non-NULL, expression node that should resolve to > 0 for initial entry into the block.
-					struct AST_Node* LoopCondition; // Expression node that should resolve to > 0 for re-entry.
+			struct
+			{
+				struct AST_Node* EntryCondition; // If non-NULL, expression node that should resolve to > 0 for initial entry into the block.
+				struct AST_Node* LoopCondition; // Expression node that should resolve to > 0 for re-entry.
 
-					struct AST_Node* ExecStatement; // Statement executed on each loop.
-				} While;
+				struct AST_Node* ExecStatement; // Statement executed on each loop.
+			} While;
 
-				struct
-				{
-					struct AST_Node* InitExpression; // Initial expression statement to be ran regardless before initial entry is attempted.
-					struct AST_Node* LoopCondition; // Expression statement that should resolve to > 0 for initial and repeated entry.
-					struct AST_Node* PostLoopExpression; // Expression statement to be executed after each loop before re-entry is attempted.
+			struct
+			{
+				struct AST_Node* InitExpression; // Initial expression statement to be ran regardless before initial entry is attempted.
+				struct AST_Node* LoopCondition; // Expression statement that should resolve to > 0 for initial and repeated entry.
+				struct AST_Node* PostLoopExpression; // Expression statement to be executed after each loop before re-entry is attempted.
 
-					struct AST_Node* ExecStatement; // Statement executed on each loop.
-				} For;
+				struct AST_Node* ExecStatement; // Statement executed on each loop.
+			} For;
 
-				// Container for an indefinite amount of sub-instructions.
-				struct
-				{
-					struct Vector Statements; // Sub-instructions contained in the block, in order of declaration.
-				} Block;
+			// Container for an indefinite amount of sub-instructions.
+			struct
+			{
+				struct Vector Statements; // Sub-instructions contained in the block, in order of declaration.
+			} Block;
 
-				// "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
-				// Links a keyword to a sub-expression (if relevant).
-				struct
-				{
-					enum TOKEN_KEYWORD Keyword;
-					struct AST_Node* Expression;
-				} Control;
+			// "Flow Control" statement affecting the program's execution flow (goto, return, break, continue...).
+			// Links a keyword to a sub-expression (if relevant).
+			struct
+			{
+				enum TOKEN_KEYWORD Keyword;
+				struct AST_Node* Expression;
+			} Control;
 
-				// Container for a set of objects being declared in the context of a block.
-				struct
-				{
-					struct Vector Objects; // Vector type AST_Node*. Collection of Object nodes.
-				} ObjectDeclaration;
+			// Container for a set of objects being declared in the context of a block.
+			struct
+			{
+				struct Vector Objects; // Vector type AST_Node*. Collection of Object nodes.
+			} ObjectDeclaration;
 
-				struct AST_Node* Expression; // Free-standing expression to be executed.
-			};
+			struct AST_Node* Expression; // Free-standing expression to be executed.
 		} Statement;
 
 		struct Expression* Expression;

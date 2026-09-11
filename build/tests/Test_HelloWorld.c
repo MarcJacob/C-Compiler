@@ -61,5 +61,8 @@ int main(int argc, char** argv)
 
 	printf("Hello, World !\n");
 
+	test_local_var++;
+	bar.foo = test_local_var;
+
 	return 0;
 }

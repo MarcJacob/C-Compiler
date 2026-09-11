@@ -71,6 +71,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 
 // Main parsing function, used to parse the start of ASTs and Object Declaration statements inside functions.
 // Parses objects until a "break" is reached, usually a semicolon.
-void ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* BaseType, struct Vector* OutObjects);
+// Returns whether anything was parsed successfully (including "no objects" with a proper terminator). Will give up without error if no object is parsed and none can be parsed.
+ui8 ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSignature* BaseType, struct Vector* OutObjects);
 
 #endif // PARSER_INCLUDED

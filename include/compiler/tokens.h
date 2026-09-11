@@ -430,6 +430,7 @@ struct Token
 {
 	enum TOKEN_TYPE Type; // Type of token this is.
 	ui32 BufferLocation; // Location of token in character index.
+	ui8 PrecedesWhitespace; // Whether this token has any whitespaces after it.
 
 	// Main Value union, giving type-specific information about the token.
 	union

@@ -88,17 +88,33 @@ void* Vector_GetPtr(const struct Vector* Vec, ui64 Index)
 	return Vec->_Mem + Vec->_ItemSize * Index;
 }
 
-// Returns pointer to last element in the vector. The vector must be non-empty !
+// Returns pointer to last element in the vector if any. Returns NULL otherwise.
 void* Vector_GetLastPtr(const struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
-	ASSERT(Vec->Size > 0);
 
+	if (Vec->Size == 0) return NULL;
 	return Vec->_Mem + Vec->_ItemSize * (Vec->Size - 1);
 }
 
 // Adds a new element to the tip of the vector. Re-allocates vector if necessary.
 void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
+{
+	ASSERT(Vec != NULL);
+
+	if (Vec->Size >= Vec->_Capacity)
+	{
+		// Re-allocate vector, doubling its capacity.
+		Vector_SetCapacity(Vec, max(1, Vec->_Capacity * 2));
+	}
+
+	// Add element by copying the new item ptr, assuming its actual size is correct.
+	memcpy(Vec->_Mem + Vec->Size * Vec->_ItemSize, NewItemPtr, Vec->_ItemSize);
+	Vec->Size++;
+}
+
+// Adds a new zeroed-out element to the tip of the vector. Re-allocates vector if necessary.
+void Vector_PushZero(struct Vector* Vec)
 {
 	ASSERT(Vec != NULL);
 	ASSERT(Vec->_ItemSize > 0);
@@ -110,7 +126,7 @@ void Vector_PushPtr(struct Vector* Vec, void* NewItemPtr)
 	}
 
 	// Add element by copying the new item ptr, assuming its actual size is correct.
-	memcpy(Vec->_Mem + Vec->Size * Vec->_ItemSize, NewItemPtr, Vec->_ItemSize);
+	memset(Vec->_Mem + Vec->Size * Vec->_ItemSize, 0, Vec->_ItemSize);
 	Vec->Size++;
 }
 
@@ -142,19 +158,20 @@ void Vector_Pop(struct Vector* Vec)
 	Vec->Size--;
 }
 
-#define Vector_Create(Type, StartCapacity) (Vector_New(StartCapacity, sizeof(Type)))
+#define Vector_Create(Type, StartCapacity) (Vector_New((StartCapacity), sizeof(Type)))
 
-#define Vector_GetValueAt(Vec, Type, Index) (*(Type*)Vector_GetPtr(&Vec, Index))
-#define Vector_GetPtrAt(Vec, Type, Index) ((Type*)Vector_GetPtr(&Vec, Index))
+#define Vector_GetValueAt(Vec, Type, Index) (*(Type*)Vector_GetPtr(&(Vec), (Index)))
+#define Vector_GetPtrAt(Vec, Type, Index) ((Type*)Vector_GetPtr(&(Vec), (Index)))
 
 #define Vector_Push(Vec, Type, Val) {	\
-		Type ValWrap = Val;					\
-		Vector_PushPtr(&Vec, &ValWrap);		\
+		Type ValWrap = (Val);					\
+		Vector_PushPtr(&(Vec), &ValWrap);		\
 	}
 
 #define Vector_PopVal(Vec, Type, Dest) {			\
-		*Dest = *(Type*)Vector_GetLastPtr(&Vec);	\
-		Vector_Pop(&Vec);							\
+		ASSERT((Vec)._ItemSize > 0);					\
+		*Dest = *(Type*)Vector_GetLastPtr(&(Vec));	\
+		Vector_Pop(&(Vec));							\
 	}
 	
 #endif // VECTOR_INCLUDED

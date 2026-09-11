@@ -45,4 +45,7 @@ void FreeScope(struct SymbolScope* Scope);
 void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol);
 struct ProgramSymbol* Scope_FindSymbol(const struct SymbolScope* Scope, const struct String_ANSI* Name, ui8 SearchParent);
 
+// Allocates a new program instruction within the passed function symbol's internal instructions buffer and returns it.
+struct ProgramInstruction* AllocInstruction(struct ProgramSymbol* FunctionSymbol, enum INSTRUCTION_TYPE Type);
+
 #endif // INTEGRATOR_INCLUDED

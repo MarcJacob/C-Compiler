@@ -84,6 +84,78 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 	}
 }
 
+// Returns the index of a target instruction within a function's Instructions vector, or -1 if the target is NULL (fallthrough / not applicable).
+int FindInstructionIndex(struct ProgramSymbol* FuncSymbol, struct ProgramInstruction* TargetInstruction)
+{
+	if (TargetInstruction == NULL) return -1;
+
+	for (int InstructionIndex = 0; InstructionIndex < FuncSymbol->Function.Instructions.Size; InstructionIndex++)
+	{
+		if (Vector_GetPtrAt(FuncSymbol->Function.Instructions, struct ProgramInstruction, InstructionIndex) == TargetInstruction) return InstructionIndex;
+	}
+	return -1;
+}
+
+// Prints all instructions integrated for a function, in source order, indexed so jump instructions can reference their targets by number.
+void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
+{
+	ASSERT(FuncSymbol != NULL);
+
+	for (int InstructionIndex = 0; InstructionIndex < FuncSymbol->Function.Instructions.Size; InstructionIndex++)
+	{
+		struct ProgramInstruction* Instruction = Vector_GetPtrAt(FuncSymbol->Function.Instructions, struct ProgramInstruction, InstructionIndex);
+		ASSERT(Instruction != NULL);
+
+		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		printf("[%d] ", InstructionIndex);
+
+		switch (Instruction->Type)
+		{
+		case INSTRUCTION_TYPE_EXPRESSION:
+			printf("EXPR:\n");
+			PrintExpression(Instruction->Exp, Depth + 1);
+			break;
+		case INSTRUCTION_TYPE_RETURN:
+			if (Instruction->Exp == NULL)
+			{
+				printf("RETURN\n");
+			}
+			else
+			{
+				printf("RETURN:\n");
+				PrintExpression(Instruction->Exp, Depth + 1);
+			}
+			break;
+		case INSTRUCTION_TYPE_JUMP:
+		{
+			// Assumes the owning function's instruction indices have already been resolved into pointers (see union InstructionRef).
+			int TargetIndex = FindInstructionIndex(FuncSymbol, Instruction->Jump.JumpTarget.Ptr);
+			if (TargetIndex >= 0) printf("JUMP -> [%d]\n", TargetIndex);
+			else printf("JUMP -> <end>\n");
+			break;
+		}
+		case INSTRUCTION_TYPE_COND_JUMP:
+		{
+			// Assumes the owning function's instruction indices have already been resolved into pointers (see union InstructionRef).
+			int NonZeroIndex = FindInstructionIndex(FuncSymbol, Instruction->ConditionalJump.IfNonZero.Ptr);
+			int ZeroIndex = FindInstructionIndex(FuncSymbol, Instruction->ConditionalJump.IfZero.Ptr);
+
+			printf("IF NON-ZERO -> ");
+			if (NonZeroIndex >= 0) printf("[%d]", NonZeroIndex); else printf("<end>");
+			printf(" ELSE -> ");
+			if (ZeroIndex >= 0) printf("[%d]", ZeroIndex); else printf("<end>");
+			printf(":\n");
+
+			PrintExpression(Instruction->Exp, Depth + 1);
+			break;
+		}
+		default:
+			printf("?\n");
+			break;
+		}
+	}
+}
+
 void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 {
 	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
@@ -121,6 +193,10 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		printf(")\n");
 
 		PrintFunctionScope(FuncSymbol->Function.Scope, Depth + 1, FuncSymbol->Function.ParamTypeSignatures.Size);
+
+		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		printf("INSTRUCTIONS:\n");
+		PrintFunctionInstructions(FuncSymbol, Depth + 2);
 	}
 }
 

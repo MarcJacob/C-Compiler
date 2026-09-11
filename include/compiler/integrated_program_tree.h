@@ -4,6 +4,51 @@
 
 #include "core.h"
 
+// All possible types of Program Instruction.
+enum INSTRUCTION_TYPE
+{
+	INSTRUCTION_TYPE_EXPRESSION,	// Instruction executes an expression node / tree.
+	INSTRUCTION_TYPE_JUMP,			// Non-conditional jump to another instruction.
+	INSTRUCTION_TYPE_COND_JUMP,		// Conditional jump to another instruction (or, optionally, another instruction if conditional is not met).
+
+	INSTRUCTION_TYPE_RETURN,		// Return from current function, optionally featuring an expression whose value is to be returned.
+};
+
+// A reference to another instruction within the same function's Instructions vector.
+// During Integration, a function's instructions are still being appended to that (growable) vector, so any
+// struct ProgramInstruction* taken at that point can be invalidated by a later reallocation: Index is used instead.
+// Once the owning function is fully integrated, every Index is resolved back into a Ptr for direct, easier access from then on.
+union InstructionRef
+{
+	ui32 Index;
+	struct ProgramInstruction* Ptr;
+};
+
+// Defines a single instruction in the program, either an expression or a special control flow instruction within a function / statement block.
+// Contains the necessary information to know what is referenced when encountering a symbol or where to jump to.
+// Usually does not map to a single assembly code instruction, but rather to a single "atomic thing the program does" which must be translated to 0 .. N assembly code instructions at code generation time.
+struct ProgramInstruction
+{
+	enum INSTRUCTION_TYPE Type;
+
+	struct Expression* Exp; // Expression to execute. What is done with the result after execution, if anything, depends on instruction type.
+
+	// Control flow instruction data.
+	union
+	{
+		struct
+		{
+			union InstructionRef IfNonZero; // Instruction to jump to if expression is non-zero.
+			union InstructionRef IfZero; // Instruction to jump to if expression is zero.
+		} ConditionalJump;
+
+		struct
+		{
+			union InstructionRef JumpTarget; // Instruction to jump to regardless of expression result.
+		} Jump;
+	};
+};
+
 struct ProgramSymbol;
 struct SymbolScope
 {
@@ -60,7 +105,7 @@ struct ProgramSymbol
 										// More local variables may exist inside sub-scopes.
 
 			struct Vector LocalVariables; // Vector type = struct ProgramSymbol*. Contains VARIABLE symbols, including parameters and ALL local variables including sub-scopes.
-			struct Vector Instructions; // Vector type = struct ProgramInstruction*. All instructions in source order.
+			struct Vector Instructions; // Vector type = struct ProgramInstruction. All instructions in source order.
 
 		} Function;
 

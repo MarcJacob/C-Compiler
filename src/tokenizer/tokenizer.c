@@ -28,6 +28,13 @@ void Tokenizer_Run(struct TokenizerProcess* Tokenizer)
 		// Discard newlines, whitespaces and any other character which are meaningless at this point.
 		while (NextSourceChar == ' ' || NextSourceChar == '\n' || NextSourceChar == '\t')
 		{
+			if (NextSourceChar == ' ')
+			{
+				// Flag the latest token if any that it precedes at least one whitespace.
+				struct Token* LatestToken = Vector_GetLastPtr(Tokenizer->Tokens);
+				if (LatestToken != NULL) LatestToken->PrecedesWhitespace = 1;
+			}
+
 			CharBufferReader_ReadNext(&SourceReader);
 			NextSourceChar = CharBufferReader_PeekNext(&SourceReader);
 			if (NextSourceChar == EOF) goto TOKENIZER_END;
