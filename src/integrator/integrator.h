@@ -25,4 +25,24 @@ struct IntegratorProcess
 // From there on the Integrator Process should finish as soon as possible.
 void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, const char* MsgFormat, ...);
 
+void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth);
+
+// Prints the contents of an IST to standard out.
+void Integrator_PrintTree(struct IntegratorProcess* Integrator);
+
+// Attempts to evaluate an expression as a constant expression. Outputs the value (using OutResult as an 8-bytes as memory to be correctly interpreted) and the value type.
+ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
+
+struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode, struct SymbolScope* Scope);
+
+// Creates a new Program Symbol from an AST Object Node object and adds it to the passed scope.
+struct ProgramSymbol* IntegrateASTObjectNode(struct IntegratorProcess* Integrator, struct AST_Node* ObjASTNode, struct SymbolScope* Scope);
+
+struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type);
+struct SymbolScope* AllocScope(struct SymbolScope* Parent);
+void FreeScope(struct SymbolScope* Scope);
+
+void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol);
+struct ProgramSymbol* Scope_FindSymbol(const struct SymbolScope* Scope, const struct String_ANSI* Name, ui8 SearchParent);
+
 #endif // INTEGRATOR_INCLUDED
