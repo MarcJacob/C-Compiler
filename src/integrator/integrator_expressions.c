@@ -186,6 +186,8 @@ ui8 ResolveOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integ
 	ASSERT(OpExpression != NULL);
 	ASSERT(OpExpression->Op.LeftOperand != NULL && OpExpression->Op.RightOperand != NULL);
 
+	// TODO: Handle assignment operators as a special case (left operand has to be an lvalue).
+
 	if (TypeSignaturesEquivalent(OpExpression->Op.LeftOperand->ResultType, OpExpression->Op.RightOperand->ResultType))
 	{
 		OpExpression->ResultType = OpExpression->Op.LeftOperand->ResultType;

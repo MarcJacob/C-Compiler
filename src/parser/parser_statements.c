@@ -475,16 +475,26 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 		}
 
 		struct TypeSignature* ObjectsType = AllocTypeSignature();
+
+		int TypeTokenIndex = Parser->TokenIndex;
 		if (ParseTypeSignature(Parser, ObjectsType))
 		{
 			StatementNode = ParseObjectDeclarationStatementNode(Parser, IsTypedef, ObjectsType, SYMBOL_SEMICOLON);
 		}
-		else
+
+		if (StatementNode == NULL)
 		{
 			if (IsTypedef)
 			{
-				Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration.");
+				Parser_Error(Parser, NextToken->BufferLocation, "Expected declaration.");
 				return NULL;
+			}
+
+			// Free previous allocated Objects type signature if parsing *that* was successful.
+			if (ObjectsType != NULL)
+			{
+				FreeTypeSignature(ObjectsType);
+				Parser->TokenIndex = TypeTokenIndex; // Restore correct token since we now don't want the type signature parsed.
 			}
 
 			struct AST_Node* ExpressionNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);

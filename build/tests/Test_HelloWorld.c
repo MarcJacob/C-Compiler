@@ -3,6 +3,11 @@
 
 void printf(const char* MsgFormat);
 
+void foo(float in, int* out)
+{
+	return;
+}
+
 int main(int argc, char** argv)
 {
 	long long a = 5;

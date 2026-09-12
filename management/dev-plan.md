@@ -120,7 +120,8 @@ Tasks:
 - Function instructions integration: [WIP]
     - `ProgramInstruction` representation covering expression, unconditional jump, conditional jump, and return kinds (jump targets stored as an index during Integration, resolved to a direct pointer once the owning function is fully integrated). [DONE]
     - Expression-statement instructions. [DONE]
-    - `return` statement integration. [DONE]
+    - `return` statement integration. [WIP]
+        - Check the returned expression's type against the function's declared return type.
     - Logging for a function's integrated instructions, including integrated expressions with resolved symbol links (`PrintIntegratedExpression`). [DONE]
     - `if` / `while` / `for` / `break` / `continue` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 - Expression integration: symbol linking (variable access / function call expressions resolved to their symbol) and result type resolution, attempting constant-folding first. [WIP]

@@ -193,7 +193,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 			PrintIntegratedExpression(Instruction->Exp, Depth + 1);
 			break;
 		case INSTRUCTION_TYPE_RETURN:
-			if (Instruction->Exp == NULL)
+			if (Instruction->Exp == NULL || Instruction->Exp->Type == EXP_NOP)
 			{
 				printf("RETURN\n");
 			}
@@ -278,6 +278,7 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
 		printf("INSTRUCTIONS:\n");
 		PrintFunctionInstructions(FuncSymbol, Depth + 2);
+		printf("\n");
 	}
 }
 
