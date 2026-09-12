@@ -130,7 +130,7 @@ struct AST_Node
 			struct
 			{
 				enum TOKEN_KEYWORD Keyword;
-				struct AST_Node* Expression;
+				struct Expression* Expression; // Value expression to return if any.
 			} Control;
 
 			// Container for a set of objects being declared in the context of a block.

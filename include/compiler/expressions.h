@@ -197,8 +197,8 @@ enum EXPRESSION_TYPE
 	EXP_LITERAL_INT,	// Expression is a literal whole number.
 	EXP_LITERAL_FLOAT,	// Expression is a literal floating-point number.
 	EXP_LITERAL_DOUBLE, // Expression is a literal double-precision floating-point number.
-	EXP_LITERAL_STRING, // Expression is a literal string.
 	EXP_LITERAL_CHAR,	// Expression is a literal character.
+	EXP_LITERAL_STRING, // Expression is a literal string.
 
 	EXP_VAR_ACCESS,		// Expression accesses a variable value (for reading or writing).
 
@@ -236,7 +236,7 @@ struct Expression
 			enum TOKEN_SYMBOL OperatorSymbol;
 		} Op;
 
-		struct
+		union
 		{
 			i64 Integer;
 			float Float;
@@ -245,14 +245,20 @@ struct Expression
 			struct String_ANSI String;
 		} Literal;
 
-		struct
+		union
 		{
-			struct String_ANSI Name;
+			struct String_ANSI Name; // Name of the variable symbol this expression references. Resolved to a symbol pointer during Integration.
+			struct ProgramSymbol* Symbol; // Variable symbol referenced by this expression.
 		} Variable;
 
 		struct
 		{
-			struct String_ANSI FunctionName;
+			union
+			{
+				struct String_ANSI FunctionName; // Name of the function symbol this expression references. Resolved to a symbol pointer during Integration.
+				struct ProgramSymbol* Symbol; // Function symbol referenced by this expression.
+			};
+
 			struct Vector Params; // Vector of sub-expressions corresponding to expected function parameters.
 		} FunctionCall;
 
@@ -263,10 +269,11 @@ struct Expression
 			struct Expression* Operand;	// Expression to resolve to get to a Type Signature we want the size of.
 		} Sizeof;
 
+		// Special expression type that simply "signals" we need some specific code to convert the operand expression's result type
+		// to this expression's result type.
 		struct
 		{
 			struct Expression* Operand;
-			struct TypeSignature* TypeSignature;
 		} Cast;
 	};
 
@@ -284,10 +291,9 @@ static inline struct Expression* AllocExpression()
 	return New;
 }
 
-// Recursively prints expression to standard output.
-// NOTE: Currently implemented in parser_logging.c because some expressions can refer to AST_Node structures.
-// However, this is not ideal as later expressions will also carry Integration process data. We'll need variants of the same function
-// depending on if the expression is printed in the context of an AST or an ProgramTree.
-void PrintExpression(struct Expression* Expression, ui32 Depth);
+// Recursively prints a freshly-parsed expression (pre-Integration) to standard output, referring to variables / functions by their
+// parsed name rather than a resolved symbol. Implemented in parser_logging.c because some expressions can refer to AST_Node structures.
+// See PrintIntegratedExpression (integrator.h) for the post-Integration variant, which resolves symbol links instead.
+void PrintParsedExpression(struct Expression* Expression, ui32 Depth);
 
 #endif // EXPRESSIONS_INCLUDED

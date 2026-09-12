@@ -450,7 +450,7 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	CastNode = AllocExpression();
 	CastNode->BufferLocation = ObjNode->BufferLocation;
 	CastNode->Type = EXP_OP_CAST;
-	CastNode->Cast.TypeSignature = ObjNode->Obj.TypeSignature;
+	CastNode->ResultType = ObjNode->Obj.TypeSignature;
 	CastNode->Cast.Operand = OperandNode;
 
 	return CastNode;

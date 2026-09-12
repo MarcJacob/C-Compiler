@@ -84,6 +84,83 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 	}
 }
 
+// Prints an integrated Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
+// Mirrors PrintParsedExpression (parser_logging.c), except VAR_ACCESS / FUNCTION_CALL expressions print their resolved symbol's name
+// instead of the parsed name, since both fields share the same union slot and the parsed name is no longer valid once Integration has run.
+void PrintIntegratedExpression(struct Expression* Expression, ui32 Depth)
+{
+	if (Expression == NULL) return;
+
+	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+
+	switch (Expression->Type)
+	{
+	case EXP_LITERAL_INT:
+		printf("<LITERAL_INT: %lld : ", Expression->Literal.Integer);
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_LITERAL_FLOAT:
+		printf("<LITERAL_FLOAT: %f : ", Expression->Literal.Float);
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_LITERAL_DOUBLE:
+		printf("<LITERAL_DOUBLE: %lf : ", Expression->Literal.Double);
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_LITERAL_STRING:
+		printf("<LITERAL_STRING: \"");
+		PrintEscapedString(Expression->Literal.String.Str);
+		printf("\" : ");
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_LITERAL_CHAR:
+		printf("<LITERAL_CHAR: '");
+		PrintEscapedChar(Expression->Literal.Character);
+		printf("' : ");
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_VAR_ACCESS:
+		printf("<VAR_ACCESS: '%s' : ", Expression->Variable.Symbol->Name.Str);
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		break;
+	case EXP_OP:
+		printf("<OP: '%s' : ", Symbol_ToString(Expression->Op.OperatorSymbol));
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		PrintIntegratedExpression(Expression->Op.LeftOperand, Depth + 1);
+		PrintIntegratedExpression(Expression->Op.RightOperand, Depth + 1);
+		break;
+	case EXP_FUNC_CALL:
+		printf("<FUNCTION_CALL: '%s' : ", Expression->FunctionCall.Symbol->Name.Str);
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		for (int i = 0; i < Expression->FunctionCall.Params.Size; i++)
+			PrintIntegratedExpression(Vector_GetValueAt(Expression->FunctionCall.Params, struct Expression*, i), Depth + 1);
+		break;
+	case EXP_OP_SIZEOF:
+		printf("<SIZE_OF : ");
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		PrintIntegratedExpression(Expression->Sizeof.Operand, Depth + 1);
+		break;
+	case EXP_OP_CAST:
+		printf("<CAST: ");
+		PrintTypeSignature(Expression->ResultType);
+		printf(">\n");
+		PrintIntegratedExpression(Expression->Cast.Operand, Depth + 1);
+		break;
+	case EXP_NOP:
+		PrintTypeSignature(Expression->ResultType);
+		printf("\n");
+	}
+}
+
 // Returns the index of a target instruction within a function's Instructions vector, or -1 if the target is NULL (fallthrough / not applicable).
 int FindInstructionIndex(struct ProgramSymbol* FuncSymbol, struct ProgramInstruction* TargetInstruction)
 {
@@ -113,7 +190,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		{
 		case INSTRUCTION_TYPE_EXPRESSION:
 			printf("EXPR:\n");
-			PrintExpression(Instruction->Exp, Depth + 1);
+			PrintIntegratedExpression(Instruction->Exp, Depth + 1);
 			break;
 		case INSTRUCTION_TYPE_RETURN:
 			if (Instruction->Exp == NULL)
@@ -123,7 +200,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 			else
 			{
 				printf("RETURN:\n");
-				PrintExpression(Instruction->Exp, Depth + 1);
+				PrintIntegratedExpression(Instruction->Exp, Depth + 1);
 			}
 			break;
 		case INSTRUCTION_TYPE_JUMP:
@@ -146,7 +223,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 			if (ZeroIndex >= 0) printf("[%d]", ZeroIndex); else printf("<end>");
 			printf(":\n");
 
-			PrintExpression(Instruction->Exp, Depth + 1);
+			PrintIntegratedExpression(Instruction->Exp, Depth + 1);
 			break;
 		}
 		default:
@@ -193,6 +270,10 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		printf(")\n");
 
 		PrintFunctionScope(FuncSymbol->Function.Scope, Depth + 1, FuncSymbol->Function.ParamTypeSignatures.Size);
+
+		printf("\n");
+		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		printf("---------\n\n");
 
 		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
 		printf("INSTRUCTIONS:\n");

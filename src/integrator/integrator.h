@@ -25,7 +25,15 @@ struct IntegratorProcess
 // From there on the Integrator Process should finish as soon as possible.
 void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, const char* MsgFormat, ...);
 
+// Sometimes we may call a function that can output an error knowing that it might, without it being a critical failure (usually just an attempt).
+// This allows forgetting about the error and moving on.
+void Integrator_DiscardError(struct IntegratorProcess* Integrator);
+
 void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth);
+
+// Recursively prints an integrated (post-Integration) expression to standard output, referring to variables / functions by their
+// resolved symbol's name rather than the parsed name. See PrintParsedExpression (expressions.h) for the pre-Integration variant.
+void PrintIntegratedExpression(struct Expression* Expression, ui32 Depth);
 
 // Prints the contents of an IST to standard out.
 void Integrator_PrintTree(struct IntegratorProcess* Integrator);

@@ -68,7 +68,7 @@ void FreeExpression(struct Expression* Expression)
 		break;
 	case EXP_OP_CAST:
 		FreeExpression(Expression->Cast.Operand);
-		FreeTypeSignature(Expression->Cast.TypeSignature);
+		FreeTypeSignature(Expression->ResultType);
 		break;
 	case EXP_OP_SIZEOF:
 		FreeExpression(Expression->Sizeof.Operand);
@@ -125,7 +125,7 @@ void FreeASTNode(struct AST_Node* Node)
 		FreeASTNode(Node->Statement.Expression);
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
-		FreeASTNode(Node->Statement.Control.Expression);
+		FreeExpression(Node->Statement.Control.Expression);
 		break;
 	case AST_NODE_STATEMENT_IF:
 		FreeASTNode(Node->Statement.If.EntryCondition);

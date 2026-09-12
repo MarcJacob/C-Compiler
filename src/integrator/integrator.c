@@ -20,6 +20,15 @@ void Integrator_Error(struct IntegratorProcess* Integrator, ui32 BufferLoc, cons
 	va_end(args);
 }
 
+void Integrator_DiscardError(struct IntegratorProcess* Integrator)
+{
+	if (!Integrator->HasError) return;
+
+	Integrator->HasError = 0;
+	Integrator->Error.Location = 0;
+	String_Free_ANSI(&Integrator->Error.Message);
+}
+
 struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
 {
 	struct ProgramSymbol* NewSymbol = calloc(1, sizeof(struct ProgramSymbol));

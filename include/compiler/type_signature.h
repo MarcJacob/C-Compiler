@@ -159,6 +159,43 @@ static inline void FreeTypeSignature(struct TypeSignature* TypeSig)
 	}
 }
 
+// Returns a newly-allocated type signature from the specified primitive DATATYPE enum value.
+static inline struct TypeSignature* AllocPrimitiveTypeSignature(enum DATATYPE PrimitiveType)
+{
+	struct TypeSignature* Def = AllocTypeSignature();
+	ASSERT(Def != NULL);
+
+	switch (PrimitiveType)
+	{
+	case DATATYPE_VOID:
+		*Def = GetPrimitiveTypeSignature_Void();
+		break;
+	case DATATYPE_CHAR:
+		*Def = GetPrimitiveTypeSignature_Char();
+		break;
+	case DATATYPE_SHORT:
+		*Def = GetPrimitiveTypeSignature_Short();
+		break;
+	case DATATYPE_INT32:
+		*Def = GetPrimitiveTypeSignature_Int32();
+		break;
+	case DATATYPE_INT64:
+		*Def = GetPrimitiveTypeSignature_Int64();
+		break;
+	case DATATYPE_FLOAT:
+		*Def = GetPrimitiveTypeSignature_Float();
+		break;
+	case DATATYPE_DOUBLE:
+		*Def = GetPrimitiveTypeSignature_Double();
+		break;
+	default:
+		ASSERT_MSG(0, "Attempted to get a primitive type signature for a non-primitive DATATYPE value.");
+		break;
+	}
+
+	return Def;
+}
+
 // Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
 static inline const char* TypeSignature_GetName(const struct TypeSignature* TypeSig)
 {
@@ -187,6 +224,8 @@ static inline const char* TypeSignature_GetName(const struct TypeSignature* Type
 }
 
 // Returns whether the two type signatures are equal / equivalent.
+// "Equivalent" in this case means that the types are exactly the same memory size and interpretation. This is NOT a compatibility test, IE two pointers
+// of different types or levels will NOT be considered equivalent.
 static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const struct TypeSignature* B)
 {
 	ASSERT(A != NULL && B != NULL);

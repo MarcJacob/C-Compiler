@@ -235,6 +235,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 	while (Token_IsSymbol(NextToken, SYMBOL_OP_AMB_STAR))
 	{
 		ObjNode->Obj.TypeSignature->PointerLevel++;
+		ObjNode->Obj.TypeSignature->Size = POINTER_SIZE;
 
 		Parser_ConsumeToken(Parser);
 		NextToken = Parser_PeekToken(Parser);
@@ -557,7 +558,7 @@ ui8 ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSig
 	PARSE_FAIL:
 		Parser->TokenIndex = TokenStartIndex;
 		if (ObjNode != NULL) FreeASTNode(ObjNode);
-		return;
+		return 0;
 	}
 
 	// If the parsed datatype is structured or an enum, first attempt to parse a definition for it.
@@ -598,7 +599,7 @@ ui8 ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSig
 		}
 
 		Parser_ConsumeToken(Parser); // Consume ';'.
-		return;
+		return 1;
 	}
 
 	// Loop on the creation and pushing of new variable or function objects until a semicolon or a function definition NOT followed by a comma is encountered.
@@ -646,6 +647,6 @@ ui8 ParseNextObjects(struct ParserProcess* Parser, ui8 IsTypedef, struct TypeSig
 		goto PARSE_FAIL;
 	}
 	
-	return;
+	return 1;
 }
 

@@ -402,7 +402,7 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 	ControlStatementNode->Statement.Control.Keyword = NextToken->Keyword;
 
 	// Parse following expression. No expression is expected for BREAK and CONTINUE. For RETURN, whatever is parsed gets assigned and will be checked by Symbolizer.
-	struct AST_Node* ExpressionNode = ParseExpressionASTNode(Parser, SYMBOL_SEMICOLON, 1);
+	struct Expression* ReturnExpression = ParseRootExpression(Parser, SYMBOL_SEMICOLON, 1);
 	if (Parser->HasError)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Error while parsing control keyword expression.");
@@ -411,12 +411,12 @@ struct AST_Node* ParseControlStatementNode(struct ParserProcess* Parser)
 
 	if (NextToken->Keyword == KEYWORD_RETURN)
 	{
-		ControlStatementNode->Statement.Control.Expression = ExpressionNode;
+		ControlStatementNode->Statement.Control.Expression = ReturnExpression;
 	}
-	else if (ExpressionNode != NULL)
+	else if (ReturnExpression != NULL)
 	{
-		Parser_Error(Parser, ExpressionNode->BufferLocation, "Unexpected expression following keyword.");
-		FreeASTNode(ExpressionNode);
+		Parser_Error(Parser, ReturnExpression->BufferLocation, "Unexpected expression following keyword.");
+		FreeExpression(ReturnExpression);
 		goto PARSE_FAIL;
 	}
 

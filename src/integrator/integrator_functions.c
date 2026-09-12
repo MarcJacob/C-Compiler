@@ -41,6 +41,17 @@ void IntegrateStatementNode(struct IntegratorProcess* Integrator, struct Instruc
 	case AST_NODE_STATEMENT_EXP:
 		NewInstruction = AllocInstruction(InstructionsIntegrator->FunctionSymbol, INSTRUCTION_TYPE_EXPRESSION);
 		NewInstruction->Exp = InstructionASTNode->Statement.Expression->Expression;
+
+		NewInstruction->Exp = IntegrateExpression(Integrator, InstructionsIntegrator->Scope, NewInstruction->Exp);
+		break;
+	case AST_NODE_STATEMENT_CONTROL:
+		if (InstructionASTNode->Statement.Control.Keyword == KEYWORD_RETURN)
+		{
+			NewInstruction = AllocInstruction(InstructionsIntegrator->FunctionSymbol, INSTRUCTION_TYPE_RETURN);
+			NewInstruction->Exp = InstructionASTNode->Statement.Control.Expression;
+			if (NewInstruction->Exp != NULL)
+				NewInstruction->Exp = IntegrateExpression(Integrator, InstructionsIntegrator->Scope, NewInstruction->Exp);
+		}
 	default:
 		// TEMP: Do nothing.
 		break;

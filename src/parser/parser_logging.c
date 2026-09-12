@@ -10,6 +10,34 @@ static void PrintIndent(ui32 Depth)
 	for (ui32 i = 0; i < Depth; i++) printf("\t");
 }
 
+// Prints a single character, escaping it (eg. '\n' -> "\n") if it is a common special / non-printable character. Shared between
+// Parser and Integrator expression logging so literal char / string contents always stay on one readable line.
+static void PrintEscapedChar(char C)
+{
+	switch (C)
+	{
+	case '\n': fputs("\\n", stdout); break;
+	case '\t': fputs("\\t", stdout); break;
+	case '\r': fputs("\\r", stdout); break;
+	case '\0': fputs("\\0", stdout); break;
+	case '\\': fputs("\\\\", stdout); break;
+	case '\"': fputs("\\\"", stdout); break;
+	case '\'': fputs("\\\'", stdout); break;
+	default: putchar(C); break;
+	}
+}
+
+// Prints every character of a string through PrintEscapedChar, so special characters within it don't break the output onto multiple lines.
+static void PrintEscapedString(const char* Str)
+{
+	if (Str == NULL) return;
+
+	for (const char* CharPtr = Str; *CharPtr != '\0'; CharPtr++)
+	{
+		PrintEscapedChar(*CharPtr);
+	}
+}
+
 // Prints a named header for a sub-node of a complex statement (e.g. an IF's CONDITION / THEN / ELSE) before printing the node itself one level deeper.
 // Skipped entirely if Node is NULL, so optional sub-nodes don't leave a dangling, empty-looking header.
 static void PrintLabeledNode(const char* Label, struct AST_Node* Node, ui32 Depth)
@@ -92,7 +120,7 @@ static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 		// Parse array index expression(s).
 		for (int ArrIndex = 0; ArrIndex < Node->Obj.Var.ArraySizes.Size; ArrIndex++)
 		{
-			PrintExpression(Vector_GetValueAt(Node->Obj.Var.ArraySizes, struct Expression*, ArrIndex), Depth + 2);
+			PrintParsedExpression(Vector_GetValueAt(Node->Obj.Var.ArraySizes, struct Expression*, ArrIndex), Depth + 2);
 		}
 	}
 
@@ -107,19 +135,19 @@ static void PrintObjNode(struct AST_Node* Node, ui32 Depth)
 			struct Expression* ListExpression = Vector_GetValueAt(Node->Obj.Var.Initializer.List, struct Expression*, i);
 			ASSERT(ListExpression != NULL);
 
-			PrintExpression(ListExpression, Depth + 2);
+			PrintParsedExpression(ListExpression, Depth + 2);
 		}
 	}
 	else if (Node->Obj.Var.Initializer.Expression != NULL)
 	{
 		PrintIndent(Depth + 1);
 		printf("[INIT EXP]\n");
-		PrintExpression(Node->Obj.Var.Initializer.Expression, Depth + 2);
+		PrintParsedExpression(Node->Obj.Var.Initializer.Expression, Depth + 2);
 	}
 }
 
 // Prints an Expression node's specific data and, for operator / function call expressions, recurses into its sub-expressions.
-static void PrintExpression(struct Expression* Expression, ui32 Depth)
+static void PrintParsedExpression(struct Expression* Expression, ui32 Depth)
 {
 	if (Expression == NULL) return;
 
@@ -137,10 +165,14 @@ static void PrintExpression(struct Expression* Expression, ui32 Depth)
 		printf("<LITERAL_DOUBLE: %lf>\n", Expression->Literal.Double);
 		break;
 	case EXP_LITERAL_STRING:
-		printf("<LITERAL_STRING: \"%s\">\n", Expression->Literal.String.Str);
+		printf("<LITERAL_STRING: \"");
+		PrintEscapedString(Expression->Literal.String.Str);
+		printf("\">\n");
 		break;
 	case EXP_LITERAL_CHAR:
-		printf("<LITERAL_CHAR: '%c'>\n", Expression->Literal.Character);
+		printf("<LITERAL_CHAR: '");
+		PrintEscapedChar(Expression->Literal.Character);
+		printf("'>\n");
 		break;
 	case EXP_VAR_ACCESS:
 		printf("<VAR_ACCESS: '%s' : ", Expression->Variable.Name.Str);
@@ -149,25 +181,25 @@ static void PrintExpression(struct Expression* Expression, ui32 Depth)
 		break;
 	case EXP_OP:
 		printf("<OP: '%s'>\n", Symbol_ToString(Expression->Op.OperatorSymbol));
-		PrintExpression(Expression->Op.LeftOperand, Depth + 1);
-		PrintExpression(Expression->Op.RightOperand, Depth + 1);
+		PrintParsedExpression(Expression->Op.LeftOperand, Depth + 1);
+		PrintParsedExpression(Expression->Op.RightOperand, Depth + 1);
 		break;
 	case EXP_FUNC_CALL:
 		printf("<FUNCTION_CALL: '%s' : ", Expression->FunctionCall.FunctionName.Str);
 		PrintTypeSignature(Expression->ResultType);
 		printf(">\n");
 		for (int i = 0; i < Expression->FunctionCall.Params.Size; i++)
-			PrintExpression(Vector_GetValueAt(Expression->FunctionCall.Params, struct Expression*, i), Depth + 1);
+			PrintParsedExpression(Vector_GetValueAt(Expression->FunctionCall.Params, struct Expression*, i), Depth + 1);
 		break;
 	case EXP_OP_SIZEOF:
 		printf("<SIZE_OF>\n");
-		PrintExpression(Expression->Sizeof.Operand, Depth + 1);
+		PrintParsedExpression(Expression->Sizeof.Operand, Depth + 1);
 		break;
 	case EXP_OP_CAST:
 		printf("<CAST: ");
-		PrintTypeSignature(Expression->Cast.TypeSignature);
+		PrintTypeSignature(Expression->ResultType);
 		printf(">\n");
-		PrintExpression(Expression->Cast.Operand, Depth + 1);
+		PrintParsedExpression(Expression->Cast.Operand, Depth + 1);
 		break;
 	case EXP_NOP:
 		PrintTypeSignature(Expression->ResultType);
@@ -182,7 +214,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 
 	if (Node->Type == AST_NODE_EXPRESSION)
 	{
-		PrintExpression(Node->Expression, Depth);
+		PrintParsedExpression(Node->Expression, Depth);
 		return;
 	}
 
@@ -212,7 +244,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 	case AST_NODE_OBJ_ENUM:
 		printf("<ENUM : '%s'>\n", Node->Obj.TypeSignature->TypeName.Str);
 		for (int i = 0; i < Node->Obj.Enum.Members.Size; i++)
-			PrintExpression(Vector_GetValueAt(Node->Obj.Enum.Members, struct Expression*, i), Depth + 1);
+			PrintParsedExpression(Vector_GetValueAt(Node->Obj.Enum.Members, struct Expression*, i), Depth + 1);
 		break;
 	case AST_NODE_OBJ_VAR:
 	case AST_NODE_OBJ_FUNC:
@@ -224,7 +256,7 @@ static void PrintNode(struct AST_Node* Node, ui32 Depth)
 		break;
 	case AST_NODE_STATEMENT_CONTROL:
 		printf("<%s>\n", Keyword_ToString(Node->Statement.Control.Keyword));
-		PrintNode(Node->Statement.Control.Expression, Depth + 1);
+		PrintParsedExpression(Node->Statement.Control.Expression, Depth + 1);
 		break;
 	case AST_NODE_STATEMENT_BLOCK:
 		if (Node->Statement.Block.Statements.Size > 0)
