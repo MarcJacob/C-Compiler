@@ -50,29 +50,6 @@ struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
 	return NewSymbol;
 }
 
-void FreeSymbol(struct ProgramSymbol* Symbol)
-{
-	if (Symbol == NULL) return;
-
-	switch (Symbol->Type)
-	{
-	case SYMBOL_TYPE_VARIABLE:
-		Vector_Destroy(&Symbol->Variable.ArraySizes);
-		break;
-	case SYMBOL_TYPE_FUNCTION:
-		FreeScope(Symbol->Function.Scope);
-		break;
-	case SYMBOL_TYPE_STRUCT:
-		FreeScope(Symbol->Struct.Scope);
-		break;
-	case SYMBOL_TYPE_ENUM:
-		Vector_Destroy(&Symbol->Enum.Values);
-		break;
-	default:
-		break;
-	}
-}
-
 struct SymbolScope* AllocScope(struct SymbolScope* Parent)
 {
 	struct SymbolScope* NewScope = calloc(1, sizeof(struct SymbolScope));
@@ -87,23 +64,6 @@ struct SymbolScope* AllocScope(struct SymbolScope* Parent)
 	}
 
 	return NewScope;
-}
-
-void FreeScope(struct SymbolScope* Scope)
-{
-	if (Scope == NULL) return;
-
-	for (int ChildIndex = 0; ChildIndex < Scope->ChildScopes.Size; ChildIndex++)
-	{
-		FreeScope(Vector_GetValueAt(Scope->ChildScopes, struct SymbolScope*, ChildIndex));
-	}
-	Vector_Destroy(&Scope->ChildScopes);
-
-	for (int SymbolIndex = 0; SymbolIndex < Scope->Symbols.Size; SymbolIndex++)
-	{
-		FreeSymbol(Vector_GetValueAt(Scope->Symbols, struct ProgramSymbol*, SymbolIndex));
-	}
-	Vector_Destroy(&Scope->Symbols);
 }
 
 void Scope_AddSymbol(struct SymbolScope* Scope, struct ProgramSymbol* Symbol)
@@ -270,11 +230,11 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 			if (TypeSymbol != NULL)
 			{
 				Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent usage of type '%s'.", TypeSig->TypeName.Str);
-				goto INTEGRATE_FAIL;
+				return NULL;
 			}
 
 			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", TypeSig->TypeName.Str);
-			goto INTEGRATE_FAIL;
+			return NULL;
 		}
 	}
 	else
@@ -297,8 +257,6 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 		if (!EvalConstantExpression(Integrator, Scope, ArraySizeExp, &EvalResult, &EvalType))
 		{
 			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Array size expression must be constant value.");
-		INTEGRATE_FAIL:
-			FreeSymbol(VarSymbol);
 			return NULL;
 		}
 
@@ -312,14 +270,14 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 		if (EvalType != DATATYPE_INT64)
 		{
 			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Array size expression must be an integral value.");
-			goto INTEGRATE_FAIL;
+			return NULL;
 		}
 
 		// Compare result against original var symbol's corresponding array size.
 		if (VarSymbol != NULL && Vector_GetValueAt(VarSymbol->Variable.ArraySizes, i64, ArraySizeExpIndex) != EvalResult)
 		{
 			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Incoherent array subscripts with existing declaration.");
-			goto INTEGRATE_FAIL;
+			return NULL;
 		}
 
 		Vector_Push(ArraySizes, i64, EvalResult);
@@ -357,7 +315,7 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 	return VarSymbol;
 }
 
-ui8 IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct ProgramSymbol* StructSymbol, struct ProgramSymbol* MemberSymbol, ui64* StructBitSize)
+void IntegrateStructMemberVariable(struct IntegratorProcess* Integrator, struct ProgramSymbol* StructSymbol, struct ProgramSymbol* MemberSymbol, ui64* StructBitSize)
 {
 	ASSERT(StructSymbol != NULL);
 	ASSERT(MemberSymbol != NULL);
@@ -449,7 +407,7 @@ struct ProgramSymbol* IntegrateObj_Structure(struct IntegratorProcess* Integrato
 			// Integrate any sub-structure found into the program's global scope, then copy their members over.
 
 			struct ProgramSymbol* SubStructSymbol = IntegrateASTObjectNode(Integrator, MemberASTNode, Scope); // Integrate into the same parent scope.
-			if (Integrator->HasError) goto INTEGRATE_FAIL;
+			if (Integrator->HasError) return NULL;
 			ASSERT(SubStructSymbol != NULL);
 
 			// Copy all the sub-structure members over to the parent, adjust the offsets (if required) and
@@ -487,8 +445,6 @@ struct ProgramSymbol* IntegrateObj_Structure(struct IntegratorProcess* Integrato
 		struct ProgramSymbol* MemberSymbol = IntegrateObj_Variable(Integrator, MemberASTNode, StructSymbol->Struct.Scope);
 		if (MemberSymbol == NULL)
 		{
-		INTEGRATE_FAIL:
-			FreeSymbol(StructSymbol);
 			return NULL;
 		}
 
@@ -515,10 +471,7 @@ struct ProgramSymbol* IntegrateObj_Structure(struct IntegratorProcess* Integrato
 			MemberSymbol->Variable.BitSize = BitSizeOverride;
 		}
 
-		if(!IntegrateStructMemberVariable(Integrator, StructSymbol, MemberSymbol, &StructBitSize))
-		{
-			goto INTEGRATE_FAIL;
-		}
+		IntegrateStructMemberVariable(Integrator, StructSymbol, MemberSymbol, &StructBitSize);
 	}
 
 	// Resolve final struct size. Make sure it reaches an alignment boundary.

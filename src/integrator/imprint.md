@@ -15,6 +15,7 @@ The Integrator code is split into multiple implementation files which are direct
 Every root AST Node, at this point, should be an Object (Variable, Function, Struct, Union, Enum or Typedef).
 
 Each Object is converted into a matching Symbol, triggering the recursive integration of sub-symbols (struct members, function instructions, types...).
+The Abstract Syntax Tree should provide enough guarantees that we don't need to really "try" anything and provide cleanup code when something fails. Instead just emit an error and return, and let the failed symbol / scope / instruction stay where it is (linked to a scope or function).
 
 An Object has been successfully integrated once its corresponding symbol(s) has been placed inside the *Scope Tree* starting from the program's root scope.
 The Scope system allows looking for a pre-integrated symbol given a name, optionally going up the hierarchy until the root scope is reached.

@@ -157,7 +157,7 @@ ui8 TypeSignaturesCompatible(struct TypeSignature* TargetType, struct TypeSignat
 	ASSERT(TargetType != NULL);
 	ASSERT(SourceType != NULL);
 
-
+	return 0;
 }
 
 // Wraps the passed expression inside a new Cast expression, casting it to the target type.
@@ -185,8 +185,6 @@ ui8 ResolveOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integ
 {
 	ASSERT(OpExpression != NULL);
 	ASSERT(OpExpression->Op.LeftOperand != NULL && OpExpression->Op.RightOperand != NULL);
-
-	// TODO: Handle assignment operators as a special case (left operand has to be an lvalue).
 
 	if (TypeSignaturesEquivalent(OpExpression->Op.LeftOperand->ResultType, OpExpression->Op.RightOperand->ResultType))
 	{
@@ -251,7 +249,6 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 		}
 
 		ConstExpression->ResultType = AllocPrimitiveTypeSignature(ConstType);
-
 		memcpy(&ConstExpression->Literal, &ConstResult, Type->Size);
 		return ConstExpression;
 	}
@@ -314,9 +311,6 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 			Integrator_Error(Integrator, Expression->BufferLocation, "Invalid usage of symbol '%s' in expression.", Expression->Variable.Name.Str);
 			return NULL;
 		}
-
-		Expression->Variable.Symbol = Symbol;
-
 		break;
 	case EXP_FUNC_CALL:
 		// Look for function symbol and use its return type as the expression's result type.
