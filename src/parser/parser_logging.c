@@ -7,7 +7,7 @@
 
 static void PrintIndent(ui32 Depth)
 {
-	for (ui32 i = 0; i < Depth; i++) printf("\t");
+	for (ui32 i = 0; i < Depth; i++) printf("  ");
 }
 
 // Prints a single character, escaping it (eg. '\n' -> "\n") if it is a common special / non-printable character. Shared between

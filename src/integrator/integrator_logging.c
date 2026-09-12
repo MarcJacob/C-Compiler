@@ -4,7 +4,7 @@
 
 void PrintStructSymbol(struct ProgramSymbol* StructSymbol, ui32 Depth)
 {
-	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+	PrintIndent(Depth);
 	StructSymbol->Struct.IsUnion ? printf("UNION ") : printf("STRUCT ");
 	printf("'%s', Size = %lld bytes, Align = %d bytes\n", StructSymbol->Name.Str, StructSymbol->Struct.Size, StructSymbol->Struct.Alignment);
 
@@ -15,7 +15,7 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol, ui32 Depth)
 		ASSERT(MemberSymbol != NULL);
 		if (MemberSymbol->Type != SYMBOL_TYPE_VARIABLE) continue;
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		PrintIndent(Depth + 1);
 		printf("VAR '%s' : ", MemberSymbol->Name.Str);
 		PrintTypeSignature(MemberSymbol->Variable.DeclarationType);
 		for (int i = 0; i < MemberSymbol->Variable.ArraySizes.Size; i++)
@@ -53,7 +53,7 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 			continue;
 		}
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf(SymbolIndex < ParamCount ? "PARAM '%s' : " : "LOCAL VAR '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Variable.DeclarationType);
 		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
@@ -66,7 +66,7 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 	if (Scope->ChildScopes.Size > 0)
 	{
 		printf("\n");
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("---------\n\n");
 	}
 	for (int ChildIndex = 0; ChildIndex < Scope->ChildScopes.Size; ChildIndex++)
@@ -74,12 +74,12 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 		struct SymbolScope* ChildScope = Vector_GetValueAt(Scope->ChildScopes, struct SymbolScope*, ChildIndex);
 		ASSERT(ChildScope != NULL);
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("SUB SCOPE {\n");
 
 		PrintFunctionScope(ChildScope, Depth + 1, 0);
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("}\n");
 	}
 }
@@ -91,7 +91,7 @@ void PrintIntegratedExpression(struct Expression* Expression, ui32 Depth)
 {
 	if (Expression == NULL) return;
 
-	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+	PrintIndent(Depth);
 
 	switch (Expression->Type)
 	{
@@ -183,7 +183,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		struct ProgramInstruction* Instruction = Vector_GetPtrAt(FuncSymbol->Function.Instructions, struct ProgramInstruction, InstructionIndex);
 		ASSERT(Instruction != NULL);
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("[%d] ", InstructionIndex);
 
 		switch (Instruction->Type)
@@ -235,7 +235,7 @@ void PrintFunctionInstructions(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 
 void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 {
-	for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+	PrintIndent(Depth);
 
 	if (FuncSymbol->Function.Scope == NULL)
 	{
@@ -272,10 +272,10 @@ void PrintFunctionSymbol(struct ProgramSymbol* FuncSymbol, ui32 Depth)
 		PrintFunctionScope(FuncSymbol->Function.Scope, Depth + 1, FuncSymbol->Function.ParamTypeSignatures.Size);
 
 		printf("\n");
-		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		PrintIndent(Depth + 1);
 		printf("---------\n\n");
 
-		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		PrintIndent(Depth + 1);
 		printf("INSTRUCTIONS:\n");
 		PrintFunctionInstructions(FuncSymbol, Depth + 2);
 		printf("\n");
@@ -289,7 +289,7 @@ void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 	switch (Symbol->Type)
 	{
 	case SYMBOL_TYPE_VARIABLE:
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("VAR '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Variable.DeclarationType);
 		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
@@ -306,16 +306,16 @@ void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 		PrintFunctionSymbol(Symbol, Depth);
 		break;
 	case SYMBOL_TYPE_ENUM:
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("ENUM '%s', Type Size = %lld\n", Symbol->Name.Str, Symbol->Enum.UnderlyingTypeSize);
 		break;
 	case SYMBOL_TYPE_ENUM_VAL:
 		// It's a little hacky but ENUM VAL symbols should always immediately follow their parent ENUM, so the extra indent level will make that look better.
-		for (ui32 IndentIndex = 0; IndentIndex < Depth + 1; IndentIndex++) printf("\t");
+		PrintIndent(Depth + 1);
 		printf("ENUM VAL '%s' = %lld\n", Symbol->Name.Str, Symbol->Enum_Member.NumericValue);
 		break;
 	case SYMBOL_TYPE_TYPEDEF:
-		for (ui32 IndentIndex = 0; IndentIndex < Depth; IndentIndex++) printf("\t");
+		PrintIndent(Depth);
 		printf("TYPEDEF '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Typedef.Type);
 		printf("\n");
