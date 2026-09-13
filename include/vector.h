@@ -49,6 +49,7 @@ void Vector_SetCapacity(struct Vector* Vec, ui64 Capacity)
 
 	Vec->_Mem = NewMem;
 	Vec->_Capacity = Capacity;
+	Vec->Size = Vec->Size > Capacity ? Capacity : Vec->Size;
 }
 
 // Creates a new vector with the provided start capacity and item size. Both parameters must be greater than 0 !
