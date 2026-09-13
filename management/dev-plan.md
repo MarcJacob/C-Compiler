@@ -120,8 +120,8 @@ Tasks:
 - Function instructions integration: [WIP]
     - `ProgramInstruction` representation covering expression, unconditional jump, conditional jump, and return kinds (jump targets stored as an index during Integration, resolved to a direct pointer once the owning function is fully integrated). [DONE]
     - Expression-statement instructions. [DONE]
-    - `return` statement integration. [WIP]
-        - Check the returned expression's type against the function's declared return type.
+    - `return` statement integration. [DONE]
+        - Check the returned expression's type against the function's declared return type. [DONE]
     - Logging for a function's integrated instructions, including integrated expressions with resolved symbol links (`PrintIntegratedExpression`). [DONE]
     - `if` / `while` / `for` / `break` / `continue` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 - Expression integration: symbol linking (variable access / function call expressions resolved to their symbol) and result type resolution, attempting constant-folding first. [WIP]
@@ -151,13 +151,22 @@ Tasks:
 ## Backlog (To be added to existing or new steps later).
 
 - Error handling: Associate errors with their exact file, line and column, and print a snippet of the source line to show the error in context.
+    - Consider switching to a numerical error system which indexes into a table for the message format.
+    - Add Warning system. Warnings can be accumulated harmlessly before being presented to the user.
+        - Later add a way to consider specific warnings as errors.
+    - Multiple errors handling (may require major rethinking of how parser & integrator are structured).
 - Handle multiple input files.
 - Preprocessor.
 - Parser: More flexible specifier keyword order + check compatibility (like forbidding "static extern").
 - Switch statement support.
 - Goto statement support.
-- `do`/`while` loop support.
-
+- do-while loop support.
+- Parallelized work for each stage (May be linked to multi-error handling).
+- Element location overhaul (AST Node located on token, Symbol / Instruction located on AST Node and so on).
+    - Links into error handling: "resolve" element location until reaching earliest available level, usually input file(s).
+- Use Arena Allocators for each stage for cleanliness and locality's sake.
+    - Especially advantageous for Parser with its "try and cleanup on non-critical failure" approach.
+    - Set a strict policy on whether common data structures like Type Signatures and Expressions are copied, moved or pointed to accross stages.
 ---
 
  

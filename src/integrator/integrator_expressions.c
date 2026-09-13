@@ -151,21 +151,15 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolSc
 	}
 }
 
-// Returns whether the passed type signatures are compatible in the context of a cast from SourceType to TargetType.
-ui8 TypeSignaturesCompatible(struct TypeSignature* TargetType, struct TypeSignature* SourceType)
-{
-	ASSERT(TargetType != NULL);
-	ASSERT(SourceType != NULL);
-
-	return 0;
-}
-
 // Wraps the passed expression inside a new Cast expression, casting it to the target type.
 // The types are assumed to be compatible. TODO: Emit warning when reducing bit size.
+// If the expression's return type and the target type are equivalent, nothing happens.
 void WrapExpressionInCast(struct Expression* Expression, struct TypeSignature* TargetType)
 {
 	ASSERT(Expression != NULL);
 	ASSERT(TargetType != NULL);
+
+	if (TypeSignaturesEquivalent(Expression->ResultType, TargetType)) return;
 
 	// Move the expression to a new spot in memory and replace the previous spot with the cast expression. That way, anything that pointed to it will automatically point to the cast instead.
 	struct Expression* NewPtr = AllocExpression();
@@ -177,6 +171,125 @@ void WrapExpressionInCast(struct Expression* Expression, struct TypeSignature* T
 	Expression->BufferLocation = NewPtr->BufferLocation;
 	Expression->ResultType = TargetType;
 	Expression->Cast.Operand = NewPtr;
+}
+
+// Checks the passed expression's result type against the target type for compatibility in the context of a cast.
+// The expression's type is NOT resolved if it maps to a typedef.
+// IsExplicit set at 1 prevents implicit conversion warnings from being emitted.
+// IsExplicit set at 0 has the function wrap the expression in a cast expression to the target type, if needed.
+// Returns compatibility / equivalence between the types. If 1, it is safe to wrap the expression in a cast to the target type.
+ui8 EnsureExpressionCompatibility(struct IntegratorProcess* Integrator, struct TypeSignature* TargetType, struct Expression* Expression, ui8 IsExplicit)
+{
+	ASSERT(TargetType != NULL);
+	ASSERT(Expression != NULL);
+
+	struct TypeSignature* SourceType = Expression->ResultType;
+
+	// If either type is void, reject immediately as they should never be involved in any cast operation.
+	if (TypeSignature_IsVoid(TargetType) || TypeSignature_IsVoid(SourceType)) return 0;
+
+	// If the types are straight-up equivalent, no further operations are necessary.
+	if (TypeSignaturesEquivalent(TargetType, SourceType)) return 1;
+
+	// If the two types are pointer types, simply check if they have the same level.
+	// If not, consider them incompatible. TODO: Warning system, output a warning about indirection level and accept.
+
+	if (TargetType->PointerLevel > 0 && SourceType->PointerLevel > 0)
+	{
+		if (TargetType->PointerLevel == SourceType->PointerLevel)
+		{
+			if (!IsExplicit)
+			{
+				// TODO: Emit warning if non-explicit and not casting from void-pointer.
+				WrapExpressionInCast(Expression, TargetType);
+			}
+			return 1;
+		}
+		Integrator_Error(Integrator, Expression->BufferLocation, "Cannot implicitly convert between pointer types of different indirection levels.");
+		return 0;
+	}
+
+	// If one of the two types is a function pointer then they must be strictly equivalent.
+	// They've already been checked for equivalence, so reaching this point has to be a failure case.
+	if (TargetType->IsFunctionPointer || SourceType->IsFunctionPointer)
+	{
+		Integrator_Error(Integrator, Expression->BufferLocation, "Cannot implicitly convert function pointer of type '%s' to type '%s'.",
+			TypeSignature_GetName(SourceType), TypeSignature_GetName(TargetType));
+		return 0;
+	}
+
+	// We're left with non-equivalent value types, leaving usual numeric conversions.
+	if (TargetType->Type == DATATYPE_USER_DEFINED || SourceType->Type == DATATYPE_USER_DEFINED)
+	{
+		Integrator_Error(Integrator, Expression->BufferLocation, "Cannot implicitly convert value of type '%s' to type '%s'.",
+			TypeSignature_GetName(SourceType), TypeSignature_GetName(TargetType));
+		return 0;
+	}
+
+	// Primitive conversions. TODO: Emit warning when going to lower-sized type.
+
+	// Integer <-> Integer.
+	if (TypeSignature_IsInteger(SourceType) && TypeSignature_IsInteger(TargetType))
+	{
+		if (!IsExplicit)
+		{
+			if (SourceType->Size > TargetType->Size)
+			{
+				// TODO: Emit warning if non-explicit.
+			}
+			WrapExpressionInCast(Expression, TargetType);
+		}
+		return 1;
+	}
+
+	// Integer <-> Float
+	if (TypeSignature_IsInteger(SourceType) && TypeSignature_IsPrimitive(TargetType, DATATYPE_FLOAT)
+		|| TypeSignature_IsInteger(TargetType) && TypeSignature_IsPrimitive(SourceType, DATATYPE_FLOAT))
+	{
+		if (!IsExplicit)
+		{
+			if (SourceType->Size > TargetType->Size)
+			{
+				// TODO: Emit warning if non-explicit.
+			}
+			WrapExpressionInCast(Expression, TargetType);
+		}
+		return 1;
+	}
+
+	// Integer <-> Double
+	if (TypeSignature_IsInteger(SourceType) && TypeSignature_IsPrimitive(TargetType, DATATYPE_DOUBLE)
+		|| TypeSignature_IsInteger(TargetType) && TypeSignature_IsPrimitive(SourceType, DATATYPE_DOUBLE))
+	{
+		if (!IsExplicit)
+		{
+			if (SourceType->Size < TargetType->Size)
+			{
+				// TODO: Emit warning if non-explicit.
+			}
+			WrapExpressionInCast(Expression, TargetType);
+		}
+		return 1;
+	}
+
+	// Double <-> Float
+	if (TypeSignature_IsPrimitive(SourceType, DATATYPE_FLOAT) && TypeSignature_IsPrimitive(TargetType, DATATYPE_DOUBLE)
+		|| TypeSignature_IsPrimitive(TargetType, DATATYPE_DOUBLE) && TypeSignature_IsPrimitive(SourceType, DATATYPE_FLOAT))
+	{
+		if (!IsExplicit)
+		{
+			if (SourceType->Size < TargetType->Size)
+			{
+				// TODO: Emit warning if non-explicit.
+			}
+			WrapExpressionInCast(Expression, TargetType);
+		}
+		return 1;
+	}
+
+	Integrator_Error(Integrator, Expression->BufferLocation, "Invalid implicit conversion from %s to %s.",
+		TypeSignature_GetName(SourceType), TypeSignature_GetName(TargetType));
+	return 0;
 }
 
 // Resolves type compatibility between the operands of a binary operator expression.
@@ -281,13 +394,10 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 		// Integrate operand expression, then check for type compatibility between target type signature and operand's.
 		if ((Expression->Cast.Operand = IntegrateExpression(Integrator, Scope, Expression->Cast.Operand)) == NULL)
 			return NULL;
-		if (!TypeSignaturesCompatible(Expression->ResultType, Expression->Cast.Operand->ResultType))
-		{
-			Integrator_Error(Integrator, Expression->BufferLocation, 
-				"Incompatible types for cast: '%s' <- '%s'.", 
-				TypeSignature_GetName(Expression->ResultType), TypeSignature_GetName(Expression->Cast.Operand->ResultType));
+		
+		// Ensure the explicit cast works.
+		if (!EnsureExpressionCompatibility(Integrator, Expression->ResultType, Expression->Cast.Operand, 1))
 			return NULL;
-		}
 		break;
 	case EXP_VAR_ACCESS:
 		// Look for the variable symbol, link the expression to it and take its declaration type as the expression's return type.
@@ -312,6 +422,8 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 			Integrator_Error(Integrator, Expression->BufferLocation, "Invalid usage of symbol '%s' in expression.", Expression->Variable.Name.Str);
 			return NULL;
 		}
+
+		Expression->Variable.Symbol = Symbol;
 		break;
 	case EXP_FUNC_CALL:
 		// Look for function symbol and use its return type as the expression's result type.
@@ -353,17 +465,11 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 			if ((ParamExpression = IntegrateExpression(Integrator, Scope, ParamExpression)) == NULL)
 				return 0;
 
-			if (!TypeSignaturesEquivalent(ParamTargetType, ParamExpression->ResultType))
+			if (!EnsureExpressionCompatibility(Integrator, ParamTargetType, ParamExpression, 0))
 			{
-				if (!TypeSignaturesCompatible(ParamTargetType, ParamExpression->ResultType))
-				{
-					Integrator_Error(Integrator, ParamExpression->BufferLocation, "Invalid Function call parameter: Cannot implicitly convert from type '%s' to '%s'.",
-						TypeSignature_GetName(ParamExpression->ResultType), TypeSignature_GetName(ParamTargetType));
-					return NULL;
-				}
-
-				// Wrap the param expression in a cast to the parameter target type.
-				WrapExpressionInCast(ParamExpression, ParamTargetType);
+				Integrator_Error(Integrator, ParamExpression->BufferLocation, "Invalid Function call parameter: Cannot implicitly convert from type '%s' to '%s'.",
+					TypeSignature_GetName(ParamExpression->ResultType), TypeSignature_GetName(ParamTargetType));
+				return NULL;
 			}
 		}
 		break;

@@ -196,6 +196,31 @@ static inline struct TypeSignature* AllocPrimitiveTypeSignature(enum DATATYPE Pr
 	return Def;
 }
 
+// Returns whether the passed type signature is a primitive value of the specified type.
+static inline ui8 TypeSignature_IsPrimitive(const struct TypeSignature* TypeSig, enum DATATYPE PrimitiveType)
+{
+	ASSERT(TypeSig != NULL);
+	ASSERT(PrimitiveType != DATATYPE_USER_DEFINED);
+	return TypeSig->Type == PrimitiveType && TypeSig->PointerLevel == 0 && !TypeSig->IsFunctionPointer;
+}
+
+static inline ui8 TypeSignature_IsVoid(const struct TypeSignature* TypeSig)
+{
+	ASSERT(TypeSig != NULL);
+	return TypeSignature_IsPrimitive(TypeSig, DATATYPE_VOID);
+}
+
+static inline ui8 TypeSignature_IsInteger(const struct TypeSignature* TypeSig)
+{
+	ASSERT(TypeSig != NULL);
+
+	return !TypeSig->IsFunctionPointer && TypeSig->PointerLevel == 0
+		&& (TypeSig->Type == DATATYPE_CHAR
+			|| TypeSig->Type == DATATYPE_SHORT
+			|| TypeSig->Type == DATATYPE_INT32
+			|| TypeSig->Type == DATATYPE_INT64);
+}
+
 // Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
 static inline const char* TypeSignature_GetName(const struct TypeSignature* TypeSig)
 {
@@ -229,6 +254,8 @@ static inline const char* TypeSignature_GetName(const struct TypeSignature* Type
 static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const struct TypeSignature* B)
 {
 	ASSERT(A != NULL && B != NULL);
+
+	if (A == B) return 1;
 
 	// Basic properties check
 	ui8 Equivalent = A->Type == B->Type

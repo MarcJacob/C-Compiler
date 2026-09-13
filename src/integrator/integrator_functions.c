@@ -54,23 +54,20 @@ void IntegrateStatementNode(struct IntegratorProcess* Integrator, struct Instruc
 			if (NewInstruction->Exp != NULL && NewInstruction->Exp->Type != EXP_NOP)
 			{
 				NewInstruction->Exp = IntegrateExpression(Integrator, InstructionsIntegrator->Scope, NewInstruction->Exp);
+				if (NewInstruction->Exp == NULL) return;
 
 				// Check return expression against function's return type.
 				struct TypeSignature* ReturnExpType = NewInstruction->Exp->ResultType;
 
-				if (TypeSignaturesEquivalent(ReturnExpType, FuncReturnType)) break;
+				ui8 ExpCompatible = EnsureExpressionCompatibility(Integrator, FuncReturnType, NewInstruction->Exp, 0);
 
-				if (TypeSignaturesCompatible(FuncReturnType, ReturnExpType))
-				{
-					WrapExpressionInCast(NewInstruction->Exp, FuncReturnType);
-				}
-				else if (FuncReturnType->Type != DATATYPE_VOID || FuncReturnType->PointerLevel > 0)
+				if (!ExpCompatible && (FuncReturnType->Type != DATATYPE_VOID || FuncReturnType->PointerLevel > 0))
 				{
 					Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Cannot implicitly convert return value of type '%s' to function return type '%s'.",
 						TypeSignature_GetName(ReturnExpType), TypeSignature_GetName(FuncReturnType));
 					return;
 				}
-				else
+				else if (!ExpCompatible)
 				{
 					Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Unexpected return expression.");
 					return;
@@ -80,7 +77,7 @@ void IntegrateStatementNode(struct IntegratorProcess* Integrator, struct Instruc
 			else if (FuncReturnType->Type != DATATYPE_VOID|| FuncReturnType->PointerLevel > 0)
 			{
 				Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Expected return value.");
-				return NULL;
+				return;
 			}
 			break;
 		}
