@@ -80,7 +80,6 @@ struct ProgramSymbol
 		struct
 		{
 			struct TypeSignature* DeclarationType; // Type signature this variable was resolved to have.
-			struct Vector ArraySizes; // Vector type = i64. Array sizes specified.
 
 			ui64 BitSize; // Size of the variable in bits (so it supports bit count specifier).
 			ui64 Offset; // Memory offset for struct member variables.

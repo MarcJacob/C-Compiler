@@ -180,7 +180,7 @@ struct ProgramSymbol* IntegrateObj_Function(struct IntegratorProcess* Integrator
 		}
 
 		// Compare return types.
-		if (!TypeSignaturesEquivalent(FuncSymbol->Function.ReturnType, FuncASTNode->Obj.TypeSignature))
+		if (!TypeSignaturesEquivalent(FuncSymbol->Function.ReturnType, FuncASTNode->Obj.TypeSignature, 1))
 		{
 			Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Inconsistent return type for function '%s' redeclaration.", FuncASTNode->Obj.Name.Str);
 			return NULL;
@@ -201,7 +201,7 @@ struct ProgramSymbol* IntegrateObj_Function(struct IntegratorProcess* Integrator
 			struct AST_Node* ASTFuncParamNode = Vector_GetValueAt(FuncASTNode->Obj.Func.Params, struct AST_Node*, ParamIndex);
 			ASSERT(ASTFuncParamNode != NULL);
 			ASSERT(ASTFuncParamNode->Obj.TypeSignature != NULL);
-			if (!TypeSignaturesEquivalent(SymbolParamTypeSig, ASTFuncParamNode->Obj.TypeSignature))
+			if (!TypeSignaturesEquivalent(SymbolParamTypeSig, ASTFuncParamNode->Obj.TypeSignature, 1))
 			{
 				Integrator_Error(Integrator, FuncASTNode->BufferLocation, "Inconsistent param types for function '%s' redeclaration.", FuncASTNode->Obj.Name.Str);
 				return NULL;

@@ -37,9 +37,6 @@ struct ProgramSymbol* AllocSymbol(enum SYMBOL_TYPE Type)
 
 	switch (Type)
 	{
-	case SYMBOL_TYPE_VARIABLE:
-		NewSymbol->Variable.ArraySizes = Vector_Create(ui64, 0);
-		break;
 	case SYMBOL_TYPE_ENUM:
 		NewSymbol->Enum.Values = Vector_Create(struct ProgramSymbol*, 2);
 		break;
@@ -94,7 +91,7 @@ struct ProgramSymbol* Scope_FindSymbol(const struct SymbolScope* Scope, const st
 	return (Scope->Parent != NULL && SearchParent) ? Scope_FindSymbol(Scope->Parent, Name, 1) : NULL;
 }
 
-// Returns the resolved size of a passed in type signature.
+// Returns the resolved size of a passed in type signature. If array sizes were pre-assigned, they are IGNORED !
 // Returns 0 if trying to use an incomplete type, non-pointer signature.
 // 
 // If the type is primitive or a pointer then this is trivial and just returns the type's size.
@@ -107,21 +104,19 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct SymbolS
 	ASSERT(TypeSig != NULL);
 	ASSERT(OutTypeSymbol != NULL);
 
-	ui64 TypeSize = 0;
 	if (TypeSig->IsFunctionPointer || TypeSig->PointerLevel)
 	{
-		TypeSize = POINTER_SIZE;
+		TypeSig->Size = POINTER_SIZE;
 		if (TypeSig->Type != DATATYPE_USER_DEFINED)
 		{
 			// Type is pointer to primitive.
-			return TypeSize;
+			goto TYPE_INTEGRATE_SUCCESS;
 		}
 	}
 	else if (TypeSig->Type != DATATYPE_USER_DEFINED)
 	{
-		// Type is non-pointer primitive.
-		TypeSize = TypeSig->Size;
-		return TypeSize;
+		// Type is non-pointer primitive. Its size is already set.
+		goto TYPE_INTEGRATE_SUCCESS;
 	}
 
 	// From here we're dealing with a non-primitive type.
@@ -170,7 +165,8 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct SymbolS
 			Scope_AddSymbol(Integrator->ProgramTree->RootScope, TypeSymbol);
 		}
 
-		return TypeSize;
+		TypeSig->Size = POINTER_SIZE;
+		goto TYPE_INTEGRATE_SUCCESS;
 	}
 
 	// At this point we know we're dealing with a value. Find out the size of the Type Symbol, if any.
@@ -187,6 +183,7 @@ ui64 IntegrateTypeSignature(struct IntegratorProcess* Integrator, struct SymbolS
 		TypeSig->Size = TypeSymbol->Typedef.Type->Size;
 	}
 
+TYPE_INTEGRATE_SUCCESS:
 	return TypeSig->Size; // Will be 0 if the type exists but is incomplete.
 }
 
@@ -202,51 +199,23 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 	if (VarSymbol != NULL)
 	{
 		// Check type coherence and redefinition.
-		if (!TypeSignaturesEquivalent(VarSymbol->Variable.DeclarationType, VarASTNode->Obj.TypeSignature))
+		if (!TypeSignaturesEquivalent(VarSymbol->Variable.DeclarationType, VarASTNode->Obj.TypeSignature, 1))
 		{
 			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent types in variable '%s' redeclaration.", VarASTNode->Obj.Name.Str);
 			return NULL;
 		}
 		
-		if (VarASTNode->Obj.Var.Initializer.Expression != NULL && VarSymbol->Variable.HasInitializer
-			|| VarASTNode->Obj.Var.ArraySizes.Size != VarSymbol->Variable.ArraySizes.Size)
+		if (VarASTNode->Obj.Var.Initializer.Expression != NULL && VarSymbol->Variable.HasInitializer)
 		{
 			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Variable '%s' redefinition.", VarASTNode->Obj.Name.Str);
 			return NULL;
 		}
 	}
 
-	struct TypeSignature* TypeSig = NULL;
-	ui64 VarBitSize = 0;
-
-	if (VarSymbol == NULL)
-	{
-		struct ProgramSymbol* TypeSymbol = NULL;
-		TypeSig = VarASTNode->Obj.TypeSignature;
-		VarBitSize = IntegrateTypeSignature(Integrator, Scope, TypeSig, &TypeSymbol) * 8;
-
-		if (VarBitSize == 0)
-		{
-			if (TypeSymbol != NULL)
-			{
-				Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent usage of type '%s'.", TypeSig->TypeName.Str);
-				return NULL;
-			}
-
-			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", TypeSig->TypeName.Str);
-			return NULL;
-		}
-	}
-	else
-	{
-		TypeSig = VarSymbol->Variable.DeclarationType;
-		VarBitSize = VarSymbol->Variable.BitSize;
-	}
-
 	// Handle array size(s).
 	// Resolve array size expressions. Error out if any of the expressions cannot be resolved at compile-time.
 	// If the Var Symbol already exists, also error out if the array sizes differ from original declaration.
-	struct Vector ArraySizes = Vector_Create(ui64, 0);
+	struct Vector ArraySizes = Vector_Create(i64, 0);
 	for (int ArraySizeExpIndex = 0; ArraySizeExpIndex < VarASTNode->Obj.Var.ArraySizes.Size; ArraySizeExpIndex++)
 	{
 		struct Expression* ArraySizeExp = Vector_GetValueAt(VarASTNode->Obj.Var.ArraySizes, struct Expression*, ArraySizeExpIndex);
@@ -273,28 +242,78 @@ struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator
 			return NULL;
 		}
 
-		// Compare result against original var symbol's corresponding array size.
-		if (VarSymbol != NULL && Vector_GetValueAt(VarSymbol->Variable.ArraySizes, i64, ArraySizeExpIndex) != EvalResult)
+		if (EvalResult == 0 && ArraySizeExpIndex > 0)
 		{
-			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Incoherent array subscripts with existing declaration.");
+			Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Only the first array subscript can be empty.");
 			return NULL;
 		}
 
+		// Compare result against original var symbol's corresponding array size.
+		if (VarSymbol != NULL && (ArraySizeExpIndex > 0 || EvalResult != 0))
+		{
+			if (Vector_GetValueAt(VarSymbol->Variable.DeclarationType->ArraySizes, i64, ArraySizeExpIndex) != EvalResult)
+			{
+				Integrator_Error(Integrator, ArraySizeExp->BufferLocation, "Incoherent array subscripts with existing declaration.");
+				return NULL;
+			}
+		}
+
 		Vector_Push(ArraySizes, i64, EvalResult);
-		// Multiply size by each array layer's resolved size.
-		VarBitSize *= EvalResult;
 	}
+
+	struct TypeSignature* TypeSig = NULL;
+	if (VarSymbol == NULL)
+	{
+		TypeSig = AllocTypeSignatureCopy(VarASTNode->Obj.TypeSignature);
+	}
+	else
+	{
+		TypeSig = VarSymbol->Variable.DeclarationType;
+	}
+
+	ui8 DefinedArray = ArraySizes.Size > 0 && Vector_GetValueAt(ArraySizes, i64, 0) > 0; // If the first dimension of the array has a specified size, then this is a full definition.
+	ui8 ExistingArrayDefined = VarSymbol != NULL && (Vector_GetValueAt(TypeSig->ArraySizes, i64, 0) > 0);
 
 	// If Var Symbol doesn't already exist, create it now.
 	if (VarSymbol == NULL)
 	{
 		VarSymbol = AllocSymbol(SYMBOL_TYPE_VARIABLE);
 		VarSymbol->Name = String_Copy_ANSI(VarASTNode->Obj.Name);
-		VarSymbol->Variable.ArraySizes = ArraySizes;
 		VarSymbol->Variable.DeclarationType = TypeSig;
-		VarSymbol->Variable.BitSize = VarBitSize;
-		
+
 		Scope_AddSymbol(Scope, VarSymbol);
+
+		// Integrate type into program as a symbol and make sure it is usable.
+		struct ProgramSymbol* TypeSymbol = NULL;
+		VarSymbol->Variable.BitSize = IntegrateTypeSignature(Integrator, Scope, TypeSig, &TypeSymbol) * 8;
+		if (VarSymbol->Variable.BitSize == 0)
+		{
+			if (TypeSymbol != NULL)
+			{
+				Integrator_Error(Integrator, VarASTNode->BufferLocation, "Incoherent usage of type '%s'.", TypeSig->TypeName.Str);
+				return NULL;
+			}
+
+			Integrator_Error(Integrator, VarASTNode->BufferLocation, "Use of incomplete type '%s'.", TypeSig->TypeName.Str);
+			return NULL;
+		}
+
+		// Give the type its array sizes.
+		TypeSig->ArraySizes = ArraySizes;
+	}
+	else if (DefinedArray)
+	{
+		*Vector_GetPtrAt(TypeSig->ArraySizes, i64, 0) = Vector_GetValueAt(ArraySizes, i64, 0);
+		Vector_Destroy(&ArraySizes);
+	}
+
+	// Compute final var size if we now have a defined array.
+	if (DefinedArray && !ExistingArrayDefined)
+	{
+		for (int i = 0; i < TypeSig->ArraySizes.Size; i++)
+		{
+			VarSymbol->Variable.BitSize *= Vector_GetValueAt(TypeSig->ArraySizes, i64, i);
+		}
 	}
 
 	// Check for initializer.

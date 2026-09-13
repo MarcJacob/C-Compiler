@@ -477,7 +477,7 @@ struct AST_Node* ParseStatementNode(struct ParserProcess* Parser)
 		struct TypeSignature* ObjectsType = AllocTypeSignature();
 
 		int TypeTokenIndex = Parser->TokenIndex;
-		if (ParseTypeSignature(Parser, ObjectsType))
+		if (ParseBaseTypeSignature(Parser, ObjectsType))
 		{
 			StatementNode = ParseObjectDeclarationStatementNode(Parser, IsTypedef, ObjectsType, SYMBOL_SEMICOLON);
 		}

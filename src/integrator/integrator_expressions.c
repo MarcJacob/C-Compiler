@@ -112,6 +112,9 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolSc
 	switch (Expression->Type)
 	{
 		// Valid base cases
+	case EXP_NOP:
+		*OutResult = 0;
+		*OutResultType = DATATYPE_INT64;
 	case EXP_LITERAL_CHAR:
 		*OutResult = Expression->Literal.Character;
 		*OutResultType = DATATYPE_CHAR;
@@ -140,7 +143,6 @@ ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolSc
 	}
 		// Invalid base cases
 	case EXP_LITERAL_STRING:
-	case EXP_NOP:
 	case EXP_FUNC_CALL:
 	default:
 		Integrator_Error(Integrator, Expression->BufferLocation, "Expression must be constant integral.");
@@ -159,7 +161,7 @@ void WrapExpressionInCast(struct Expression* Expression, struct TypeSignature* T
 	ASSERT(Expression != NULL);
 	ASSERT(TargetType != NULL);
 
-	if (TypeSignaturesEquivalent(Expression->ResultType, TargetType)) return;
+	if (TypeSignaturesEquivalent(Expression->ResultType, TargetType, 1)) return;
 
 	// Move the expression to a new spot in memory and replace the previous spot with the cast expression. That way, anything that pointed to it will automatically point to the cast instead.
 	struct Expression* NewPtr = AllocExpression();
@@ -189,7 +191,7 @@ ui8 EnsureExpressionCompatibility(struct IntegratorProcess* Integrator, struct T
 	if (TypeSignature_IsVoid(TargetType) || TypeSignature_IsVoid(SourceType)) return 0;
 
 	// If the types are straight-up equivalent, no further operations are necessary.
-	if (TypeSignaturesEquivalent(TargetType, SourceType)) return 1;
+	if (TypeSignaturesEquivalent(TargetType, SourceType, 1)) return 1;
 
 	// If the two types are pointer types, simply check if they have the same level.
 	// If not, consider them incompatible. TODO: Warning system, output a warning about indirection level and accept.
@@ -295,8 +297,9 @@ ui8 EnsureExpressionCompatibility(struct IntegratorProcess* Integrator, struct T
 // Ensure that the passed operator expression (specifically one of the access operators) is valid and resolves its final type,
 // and integrates its right operand with correct scoping logic if required.
 // The left operand must already be integrated !
-ui8 IntegrateAccessOpExpression(struct IntegratorProcess* Integrator, struct Expression* AccessOpExpression)
+ui8 IntegrateAccessOpExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct Expression* AccessOpExpression)
 {
+	ASSERT(Scope != NULL);
 	ASSERT(AccessOpExpression != NULL);
 
 	enum TOKEN_SYMBOL AccessOp = AccessOpExpression->Op.OperatorSymbol;
@@ -323,24 +326,14 @@ ui8 IntegrateAccessOpExpression(struct IntegratorProcess* Integrator, struct Exp
 		// Check left operand. It must either be a pointer value or a variable in scope which is itself a pointer or an array.
 		if (AccessOpExpression->Op.LeftOperand->ResultType->PointerLevel == 0)
 		{
-			// Not a pointer value expression / pointer variable.
-			if (AccessOpExpression->Op.LeftOperand->Type != EXP_VAR_ACCESS)
+			if (AccessOpExpression->Op.LeftOperand->ResultType->ArraySizes.Size == 0)
 			{
 				Integrator_Error(Integrator, AccessOpExpression->Op.LeftOperand->BufferLocation, "Expected pointer value or array variable.");
 				return 0;
 			}
 
-			struct ProgramSymbol* VarSymbol = AccessOpExpression->Op.LeftOperand->Variable.Symbol;
-			ASSERT(VarSymbol != NULL);
-
-			if (VarSymbol->Variable.ArraySizes.Size == 0)
-			{
-				Integrator_Error(Integrator, AccessOpExpression->Op.LeftOperand->BufferLocation, 
-					"Variable '%s' is not an array or pointer.", VarSymbol->Name.Str);
-				return 0;
-			}
-
-			// Result Type stays the variable's.
+			// Remove one array size from the resulting type.
+			Vector_Pop(&AccessOpExpression->ResultType->ArraySizes);
 		}
 		else // Left operand is a pointer.
 		{
@@ -355,6 +348,102 @@ ui8 IntegrateAccessOpExpression(struct IntegratorProcess* Integrator, struct Exp
 	// Handle struct access operators.
 	// For the operands to be valid, the left operand must be a structured type and defined.
 	// The right operand must then be integrated within the structured type's scope *exclusively*.
+
+	// First look for the struct symbol we're accessing.
+	struct ProgramSymbol* StructSymbol = NULL;
+	struct TypeSignature* LeftOpType = AccessOpExpression->Op.LeftOperand->ResultType;
+	ASSERT(LeftOpType);
+
+	if (!(LeftOpType->Flags & TYPE_IS_STRUCTURED)
+		|| LeftOpType->IsFunctionPointer)
+	{
+		Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Access operator used on a non-structured type.");
+		return 0;
+	}
+
+	if (AccessOpExpression->Op.OperatorSymbol == SYMBOL_OP_STRUCT_ACCESS)
+	{
+		if (LeftOpType->PointerLevel > 0)
+		{
+			Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Struct access operator used on pointer-to-struct. Did you mean to use '->' ?");
+			return 0;
+		}
+	}
+	else
+	{
+		if (LeftOpType->PointerLevel == 0)
+		{
+			Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Struct deref operator used on struct value. Did you mean to use '.' ?");
+			return 0;
+		}
+		if (LeftOpType->PointerLevel > 1)
+		{
+			Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Struct deref operator used on multi-level pointer-to-struct.");
+			return 0;
+		}
+	}
+
+	// Find the structure symbol within any currently-accessible symbols.
+	StructSymbol = Scope_FindSymbol(Scope, &LeftOpType->TypeName, 1);
+
+	if (StructSymbol == NULL)
+	{
+		Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Usage of undeclared type '%s'.", LeftOpType->TypeName.Str);
+		return 0;
+	}
+	
+	if (StructSymbol->Struct.Scope == NULL)
+	{
+		Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Usage of incomplete structure '%s'.", StructSymbol->Name.Str);
+		return 0;
+	}
+
+	// Determine accessed variable.
+
+	// If right operand is a var access then the access chain ends here. The operator can be set to return whatever type the variable returns after integration.
+	struct Expression* RightOperand = AccessOpExpression->Op.RightOperand;
+	if (RightOperand->Type == EXP_VAR_ACCESS)
+	{
+		// Integrate the expression "in place".
+		struct ProgramSymbol* VarSymbol = Scope_FindSymbol(StructSymbol->Struct.Scope, &RightOperand->Variable.Name, 0);
+		if (VarSymbol == NULL)
+		{
+			Integrator_Error(Integrator, RightOperand->BufferLocation, "Structure '%s' does not have a member '%s'.", StructSymbol->Name.Str, RightOperand->Variable.Name.Str);
+			return 0;
+		}
+		ASSERT(VarSymbol->Type == SYMBOL_TYPE_VARIABLE);
+
+		RightOperand->Variable.Symbol = VarSymbol;
+		RightOperand->ResultType = VarSymbol->Variable.DeclarationType;
+	}
+	// Otherwise it must be a struct access or struct deref operand.
+	else
+	{
+		ASSERT(RightOperand->Type == EXP_OP 
+			&& (RightOperand->Op.OperatorSymbol == SYMBOL_OP_STRUCT_DEREF 
+				|| RightOperand->Op.OperatorSymbol == SYMBOL_OP_STRUCT_ACCESS));
+
+		ASSERT(RightOperand->Op.LeftOperand->Type == EXP_VAR_ACCESS); // Has to be a var access because access operators are right-associative.
+
+		// Integrate the left operand of the right operand the same way as above.
+		struct ProgramSymbol* VarSymbol = Scope_FindSymbol(StructSymbol->Struct.Scope, &RightOperand->Op.LeftOperand->Variable.Name, 0);
+		if (VarSymbol == NULL)
+		{
+			Integrator_Error(Integrator, RightOperand->BufferLocation, "Structure '%s' does not have a member '%s'.", StructSymbol->Name.Str, RightOperand->Op.LeftOperand->Variable.Name.Str);
+			return 0;
+		}
+		ASSERT(VarSymbol->Type == SYMBOL_TYPE_VARIABLE);
+
+		RightOperand->Op.LeftOperand->Variable.Symbol = VarSymbol;
+		RightOperand->Op.LeftOperand->ResultType = VarSymbol->Variable.DeclarationType;
+		RightOperand->ResultType = VarSymbol->Variable.DeclarationType;
+
+		// Then ensure the validity of the sub-access operator recursively, and take whatever type it ends up with.
+		if (!IntegrateAccessOpExpression(Integrator, Scope, RightOperand)) return 0;
+	}
+
+	// Use Right Operand's result type as our own.
+	AccessOpExpression->ResultType = RightOperand->ResultType;
 }
 
 // Returns whether the result of an expression is an lvalue, an actual place in stack or heap memory which can be assigned a value.
@@ -379,7 +468,7 @@ ui8 EnsureExpressionResultAssignability(struct IntegratorProcess* Integrator, st
 		struct ProgramSymbol* VarSymbol = Expression->Variable.Symbol;
 		ASSERT(VarSymbol != NULL);
 
-		if (VarSymbol->Variable.ArraySizes.Size > 0)
+		if (VarSymbol->Variable.DeclarationType->ArraySizes.Size > 0)
 		{
 			Integrator_Error(Integrator, Expression->BufferLocation, "Cannot assign to array variable. Specify which index to assign to.");
 			return 0;
@@ -444,7 +533,7 @@ ui8 EnsureOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integr
 	// Handle equivalent types. 
 	// A comparison or logical operator between them always returns a in32 value (0 or 1).
 	// Other operators use the type of the left operand.
-	if (TypeSignaturesEquivalent(LeftType, RightType))
+	if (TypeSignaturesEquivalent(LeftType, RightType, 1))
 	{
 		OpExpression->ResultType = Symbol_IsComparisonOp(OpExpression->Op.OperatorSymbol)
 			|| Symbol_IsLogicalOp(OpExpression->Op.OperatorSymbol)
@@ -587,7 +676,7 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 			if ((Expression->Op.LeftOperand = IntegrateExpression(Integrator, Scope, Expression->Op.LeftOperand)) == NULL)
 				return NULL;
 
-			if (!IntegrateAccessOpExpression(Integrator, Expression)) return NULL;
+			if (!IntegrateAccessOpExpression(Integrator, Scope, Expression)) return NULL;
 		}
 		else
 		{

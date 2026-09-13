@@ -105,7 +105,7 @@ void FreeASTNode(struct AST_Node* Node)
 			FreeExpressionVector(&Node->Obj.Var.Initializer.List);
 		else
 			FreeExpression(Node->Obj.Var.Initializer.Expression);
-		Vector_Destroy(&Node->Obj.Var.ArraySizes);
+		FreeExpressionVector(&Node->Obj.Var.ArraySizes);
 		break;
 	case AST_NODE_OBJ_FUNC:
 		String_Free_ANSI(&Node->Obj.Name);
@@ -166,7 +166,7 @@ void FreeASTNodeVector(struct Vector* NodeVec)
 	Vector_Destroy(NodeVec);
 }
 
-static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef)
+static ui8 ParseBaseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef)
 {
 	ui32 StartIndex = Parser->TokenIndex;
 
@@ -453,7 +453,7 @@ void Parser_Run(struct ParserProcess* Parser)
 
 		// Parse next set of objects from a base type.
 		struct TypeSignature* BaseType = AllocTypeSignature();
-		if (!ParseTypeSignature(Parser, BaseType))
+		if (!ParseBaseTypeSignature(Parser, BaseType))
 		{
 			Parser_Error(Parser, Parser_PeekToken(Parser)->BufferLocation, "Expected type specifier.");
 			FreeTypeSignature(BaseType);

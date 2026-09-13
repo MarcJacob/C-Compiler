@@ -60,6 +60,10 @@ static void PrintTypeSignature(struct TypeSignature* TypeSig)
 
 	for (ui8 i = 0; i < TypeSig->PointerLevel; i++) printf("*");
 
+	// Array sizes are only resolved by Integration, so this stays empty for a type signature still being parsed.
+	for (int i = 0; i < TypeSig->ArraySizes.Size; i++)
+		printf("[%lld]", Vector_GetValueAt(TypeSig->ArraySizes, i64, i));
+
 	if (!TypeSig->IsFunctionPointer) return;
 
 	printf("(");

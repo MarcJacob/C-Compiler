@@ -18,10 +18,6 @@ void PrintStructSymbol(struct ProgramSymbol* StructSymbol, ui32 Depth)
 		PrintIndent(Depth + 1);
 		printf("VAR '%s' : ", MemberSymbol->Name.Str);
 		PrintTypeSignature(MemberSymbol->Variable.DeclarationType);
-		for (int i = 0; i < MemberSymbol->Variable.ArraySizes.Size; i++)
-		{
-			printf("[%lld]", Vector_GetValueAt(MemberSymbol->Variable.ArraySizes, i64, i));
-		}
 		if (MemberSymbol->Variable.BitSize % 8 == 0)
 		{
 			printf(", Size = %lld bytes, Offset = %lld\n", MemberSymbol->Variable.BitSize / 8, MemberSymbol->Variable.Offset);
@@ -56,10 +52,6 @@ void PrintFunctionScope(struct SymbolScope* Scope, ui32 Depth, ui32 ParamCount)
 		PrintIndent(Depth);
 		printf(SymbolIndex < ParamCount ? "PARAM '%s' : " : "LOCAL VAR '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Variable.DeclarationType);
-		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
-		{
-			printf("[%lld]", Vector_GetValueAt(Symbol->Variable.ArraySizes, i64, i));
-		}
 		printf("\n");
 	}
 
@@ -292,10 +284,6 @@ void PrintSymbol(struct ProgramSymbol* Symbol, ui32 Depth)
 		PrintIndent(Depth);
 		printf("VAR '%s' : ", Symbol->Name.Str);
 		PrintTypeSignature(Symbol->Variable.DeclarationType);
-		for (int i = 0; i < Symbol->Variable.ArraySizes.Size; i++)
-		{
-			printf("[%lld]", Vector_GetValueAt(Symbol->Variable.ArraySizes, i64, i));
-		}
 		printf(", Size = %lld bytes\n", Symbol->Variable.BitSize / 8, Symbol->Variable.Offset);
 		break;
 	case SYMBOL_TYPE_STRUCT:

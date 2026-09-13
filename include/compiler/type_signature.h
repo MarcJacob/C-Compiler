@@ -35,7 +35,7 @@ struct TypeSignature
 	enum DATATYPE Type;
 	enum TYPE_SIG_FLAGS Flags;
 
-	ui16 Size; // Total size in bytes. Resolved during integration except for primitive types.
+	ui16 Size; // Total size in bytes. Resolved during integration except for primitive types. Does NOT account for array sizes !
 	struct String_ANSI TypeName; // String representation of the type / actual type name for USER_DEFINED types.
 
 	ui8 PointerLevel; // How many dereferences are required to reach the base data. If this is a function pointer, applies to the return value.
@@ -46,6 +46,8 @@ struct TypeSignature
 		ui8 PointerLevel; // How many dereferences are required to reach function (callable when == 1, always > 0).
 		struct Vector ParamTypes; // Vector type = TypeSignature*. Type signature of parameters.
 	} FuncPtr;
+
+	struct Vector ArraySizes; // Contains the sizes of the array dimensions carried by this type, if any. Vector type = i64. Determined on Integration.
 };
 
 #define POINTER_SIZE (_WIN64 ? 8 : 4)
@@ -142,6 +144,11 @@ static inline struct TypeSignature* AllocTypeSignatureCopy(struct TypeSignature*
 		}
 	}
 
+	if (SrcType->ArraySizes.Size > 0)
+	{
+		New->ArraySizes = Vector_Copy(&SrcType->ArraySizes);
+	}
+
 	return New;
 }
 
@@ -157,6 +164,8 @@ static inline void FreeTypeSignature(struct TypeSignature* TypeSig)
 		}
 		Vector_Destroy(&TypeSig->FuncPtr.ParamTypes);
 	}
+
+	Vector_Destroy(&TypeSig->ArraySizes);
 }
 
 // Returns a newly-allocated type signature from the specified primitive DATATYPE enum value.
@@ -272,16 +281,20 @@ static inline const char* TypeSignature_GetName(const struct TypeSignature* Type
 // Returns whether the two type signatures are equal / equivalent.
 // "Equivalent" in this case means that the types are exactly the same memory size and interpretation. This is NOT a compatibility test, IE two pointers
 // of different types or levels will NOT be considered equivalent.
-static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const struct TypeSignature* B)
+// DecayArray will make arrays of any dimension count be considered an extra pointer level instead.
+static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const struct TypeSignature* B, ui8 DecayArray)
 {
 	ASSERT(A != NULL && B != NULL);
 
 	if (A == B) return 1;
 
+	ui8 PointerLevelA = A->PointerLevel + (A->ArraySizes.Size > 0 && DecayArray);
+	ui8 PointerLevelB = B->PointerLevel + (B->ArraySizes.Size > 0 && DecayArray);
+
 	// Basic properties check
 	ui8 Equivalent = A->Type == B->Type
 		&& A->Flags == B->Flags
-		&& A->PointerLevel == B->PointerLevel
+		&& PointerLevelA == PointerLevelB 
 		&& A->Size == B->Size
 		&& A->IsFunctionPointer == B->IsFunctionPointer;
 
@@ -305,10 +318,23 @@ static inline ui8 TypeSignaturesEquivalent(const struct TypeSignature* A, const 
 			{
 				const struct TypeSignature* AParamType = Vector_GetValueAt(A->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex);
 				const struct TypeSignature* BParamType = Vector_GetValueAt(B->FuncPtr.ParamTypes, struct TypeSignature*, ParamIndex);
-				Equivalent = TypeSignaturesEquivalent(AParamType, BParamType);
+				Equivalent = TypeSignaturesEquivalent(AParamType, BParamType, 1);
 			}
 		}
 	}
+
+	// Check array sizes if not decayed.
+	if (!DecayArray)
+		if (A->ArraySizes.Size != B->ArraySizes.Size)
+			return 0;
+		else
+			for (int i = 0; i < A->ArraySizes.Size; i++)
+			{
+				i64 ArraySizeA = Vector_GetValueAt(A->ArraySizes, i64, i);
+				i64 ArraySizeB = Vector_GetValueAt(B->ArraySizes, i64, i);
+
+				if (ArraySizeA != ArraySizeB) return 0;
+			}
 
 	return Equivalent;
 }

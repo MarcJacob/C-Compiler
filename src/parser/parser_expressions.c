@@ -289,7 +289,7 @@ static struct Expression* ParseExpressionable_Sizeof(struct ParserProcess* Parse
 
 		struct TypeSignature* BaseType = AllocTypeSignature();
 		struct AST_Node* ObjNode = NULL; // "Host object node" to build the full signature with.
-		if (ParseTypeSignature(Parser, BaseType)
+		if (ParseBaseTypeSignature(Parser, BaseType)
 			&& (ObjNode = ParseObject_VarFunc(Parser, BaseType, 1, 0, 0)) != NULL)
 		{
 			if (ObjNode->Obj.Name.Length > 0)
@@ -381,7 +381,7 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 	Parser_ConsumeToken(Parser); // Consume '('.
 
 	struct TypeSignature* TargetTypeSig = AllocTypeSignature();
-	if (!ParseTypeSignature(Parser, TargetTypeSig))
+	if (!ParseBaseTypeSignature(Parser, TargetTypeSig))
 	{
 		FreeTypeSignature(TargetTypeSig);
 		goto PARSE_FAIL; // Don't error out as this could still be a valid expression.
@@ -406,7 +406,7 @@ static struct Expression* ParseExpressionable_Cast(struct ParserProcess* Parser)
 		goto PARSE_FAIL;
 	}
 
-	if (ObjNode->Obj.Var.ArraySizes.Size > 0)
+	if (ObjNode->Obj.TypeSignature->ArraySizes.Size > 0)
 	{
 		Parser_Error(Parser, NextToken->BufferLocation, "Target type of a cast cannot be an array.");
 		goto PARSE_FAIL;

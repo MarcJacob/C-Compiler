@@ -13,9 +13,15 @@ struct test_struct
 	int foo;
 	int bar;
 
+	int member_array[2];
+
 	struct
 	{
 		int zil;
+		struct
+		{
+			int nil;
+		} test_subsubstruct;
 	} test_substruct;
 };
 
@@ -28,7 +34,9 @@ int main(int argc, char** argv)
 	struct test_struct b = { 0 };
 	b.foo = 4;
 
-	b.test_substruct.zil = 5;
+	b.member_array[1] = 5;
+
+	b.test_substruct.test_subsubstruct.nil = 5;
 
 	printf("Hello, World !\n");
 	return a * 2 / 2 - (4 / 2); // Compile-time expression resolution test.

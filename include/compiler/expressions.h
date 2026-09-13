@@ -19,12 +19,6 @@ struct OperatorParseRulesGroup
 
 static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
 {
-	// The ultimate, untouchable Array Access special operator.
-	{
-		{
-			SYMBOL_OP_ARRAY_ACCESS,
-		}, 0 // So chained array accesses apply over the combination of all preceding accesses.
-	},
 
 	// Unaries
 	{
@@ -39,6 +33,13 @@ static struct OperatorParseRulesGroup OPERATOR_PARSE_RULES_TABLE[] =
 			SYMBOL_OP_STRUCT_ACCESS,
 			SYMBOL_OP_STRUCT_DEREF,
 		}, 1
+	},
+
+	// The ultimate, untouchable Array Access special operator.
+	{
+		{
+			SYMBOL_OP_ARRAY_ACCESS,
+		}, 0 // So chained array accesses apply over the combination of all preceding accesses.
 	},
 
 	// Arithmetic groups

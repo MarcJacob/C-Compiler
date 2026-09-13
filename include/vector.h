@@ -133,7 +133,7 @@ void Vector_PushZero(struct Vector* Vec)
 
 // Adds all the content inside the Src vector into the Dest vector.
 // Both vectors must have the same item size.
-void Vector_Append(struct Vector* Dest, struct Vector* Src)
+void Vector_Append(struct Vector* Dest, const struct Vector* Src)
 {
 	ASSERT(Dest != NULL);
 	ASSERT(Src != NULL);
@@ -157,6 +157,18 @@ void Vector_Pop(struct Vector* Vec)
 
 	// Just decrement size and pretend the popped item doesn't exist anymore.
 	Vec->Size--;
+}
+
+// Creates a new vector from the provided source vector, performing a shallow copy.
+struct Vector Vector_Copy(const struct Vector* Src)
+{
+	ASSERT(Src != NULL);
+
+	struct Vector NewVec = { 0 };
+	NewVec._ItemSize = Src->_ItemSize;
+
+	Vector_Append(&NewVec, Src);
+	return NewVec;
 }
 
 #define Vector_Create(Type, StartCapacity) (Vector_New((StartCapacity), sizeof(Type)))

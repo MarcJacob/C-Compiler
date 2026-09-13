@@ -106,7 +106,7 @@ struct AST_Node* ParseObject_Struct_Def(struct ParserProcess* Parser)
 	while (!Token_IsSymbol(NextToken, SYMBOL_BRACE_CLOSE))
 	{
 		struct TypeSignature* MemberType = AllocTypeSignature();
-		if (!ParseTypeSignature(Parser, MemberType))
+		if (!ParseBaseTypeSignature(Parser, MemberType))
 		{
 			Parser_Error(Parser, NextToken->BufferLocation, "Expected type declaration");
 			goto PARSE_FAIL;
@@ -330,7 +330,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 		while (!Token_IsSymbol(NextToken, SYMBOL_PARENTHESIS_CLOSE))
 		{
 			struct TypeSignature* ParamDatatype = AllocTypeSignature();
-			if (!ParseTypeSignature(Parser, ParamDatatype))
+			if (!ParseBaseTypeSignature(Parser, ParamDatatype))
 			{
 				// This isn't a function / function ptr declarator. It may be a function call so do not error out.
 				FreeTypeSignature(ParamDatatype);
@@ -420,7 +420,7 @@ struct AST_Node* ParseObject_VarFunc(struct ParserProcess* Parser, struct TypeSi
 		// If any array sizes are provided, disallow bit count assignment.
 		AllowBitCount = 0;
 
-		ObjNode->Obj.Var.ArraySizes = Vector_Create(struct AST_Node*, 0);
+		ObjNode->Obj.Var.ArraySizes = Vector_Create(struct Expression*, 0);
 		while (Token_IsSymbol(NextToken, SYMBOL_BRACKET_OPEN))
 		{
 			struct Expression* ArrayExpressionNode = ParseExpressionable_ArrayAccess(Parser);

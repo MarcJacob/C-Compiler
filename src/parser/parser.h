@@ -40,7 +40,9 @@ void FreeASTNodeVector(struct Vector* NodeVec);
 void Parser_PrintTree(struct ParserProcess* Parser);
 
 // Attempts to parse the "base" of a TypeSignature with the next few tokens.
-static ui8 ParseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef);
+// The "base" of a type signature contains its raw "direct" data type, with no pointer levels or array sizes which can only be completed
+// when parsing an associated object.
+static ui8 ParseBaseTypeSignature(struct ParserProcess* Parser, struct TypeSignature* OutDatatypeDef);
 
 // Parses an expression tree.
 // If NULL is returned, then the parser has encountered an error. When no expression can be parsed until next end character,

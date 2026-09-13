@@ -125,7 +125,7 @@ Tasks:
     - Logging for a function's integrated instructions, including integrated expressions with resolved symbol links (`PrintIntegratedExpression`). [DONE]
     - `if` / `while` / `for` / `break` / `continue` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 - Expression integration: symbol linking (variable access / function call expressions resolved to their symbol) and result type resolution, attempting constant-folding first. [WIP]
-    - Access operator integration (array access, struct/union member access, and pointer-to-struct member access). [WIP]
+    - Access operator integration (array access, struct/union member access, and pointer-to-struct member access). [DONE]
     - Type compatibility / implicit conversion resolution between expression operands and function call arguments. [DONE]
 
 ## Step 7 - Code Generator [TO BE DONE]
