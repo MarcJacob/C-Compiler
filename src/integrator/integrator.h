@@ -41,6 +41,11 @@ void Integrator_PrintTree(struct IntegratorProcess* Integrator);
 // Attempts to evaluate an expression as a constant expression. Outputs the value (using OutResult as an 8-bytes as memory to be correctly interpreted) and the value type.
 ui8 EvalConstantExpression(struct IntegratorProcess* Integrator, struct SymbolScope* Scope, struct Expression* Expression, i64* OutResult, enum DATATYPE* OutResultType);
 
+// Wraps the passed expression with a cast expression for the target type.
+// The Cast expression takes the place in memory of the expression, to ease pointer management,
+// while the wrapped expression is moved to a newly allocated spot in memory.
+void WrapExpressionInCast(struct Expression* Expression, struct TypeSignature* TargetType);
+
 struct ProgramSymbol* IntegrateObj_Variable(struct IntegratorProcess* Integrator, struct AST_Node* VarASTNode, struct SymbolScope* Scope);
 
 // Creates a new Program Symbol from an AST Object Node object and adds it to the passed scope.

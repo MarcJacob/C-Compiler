@@ -176,6 +176,7 @@ void WrapExpressionInCast(struct Expression* Expression, struct TypeSignature* T
 	Expression->Type = EXP_OP_CAST;
 	Expression->BufferLocation = NewPtr->BufferLocation;
 	Expression->ResultType = TargetType;
+	Expression->Cast.Operand = NewPtr;
 }
 
 // Resolves type compatibility between the operands of a binary operator expression.

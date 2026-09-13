@@ -47,10 +47,42 @@ void IntegrateStatementNode(struct IntegratorProcess* Integrator, struct Instruc
 	case AST_NODE_STATEMENT_CONTROL:
 		if (InstructionASTNode->Statement.Control.Keyword == KEYWORD_RETURN)
 		{
+			struct TypeSignature* FuncReturnType = InstructionsIntegrator->FunctionSymbol->Function.ReturnType;
+
 			NewInstruction = AllocInstruction(InstructionsIntegrator->FunctionSymbol, INSTRUCTION_TYPE_RETURN);
 			NewInstruction->Exp = InstructionASTNode->Statement.Control.Expression;
-			if (NewInstruction->Exp != NULL)
+			if (NewInstruction->Exp != NULL && NewInstruction->Exp->Type != EXP_NOP)
+			{
 				NewInstruction->Exp = IntegrateExpression(Integrator, InstructionsIntegrator->Scope, NewInstruction->Exp);
+
+				// Check return expression against function's return type.
+				struct TypeSignature* ReturnExpType = NewInstruction->Exp->ResultType;
+
+				if (TypeSignaturesEquivalent(ReturnExpType, FuncReturnType)) break;
+
+				if (TypeSignaturesCompatible(FuncReturnType, ReturnExpType))
+				{
+					WrapExpressionInCast(NewInstruction->Exp, FuncReturnType);
+				}
+				else if (FuncReturnType->Type != DATATYPE_VOID || FuncReturnType->PointerLevel > 0)
+				{
+					Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Cannot implicitly convert return value of type '%s' to function return type '%s'.",
+						TypeSignature_GetName(ReturnExpType), TypeSignature_GetName(FuncReturnType));
+					return;
+				}
+				else
+				{
+					Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Unexpected return expression.");
+					return;
+				}
+			}
+			// If function returns anything other than a void value, error out on the lack of a return expression.
+			else if (FuncReturnType->Type != DATATYPE_VOID|| FuncReturnType->PointerLevel > 0)
+			{
+				Integrator_Error(Integrator, InstructionASTNode->BufferLocation, "Expected return value.");
+				return NULL;
+			}
+			break;
 		}
 	default:
 		// TEMP: Do nothing.
