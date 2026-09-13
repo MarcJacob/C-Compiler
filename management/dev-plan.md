@@ -125,6 +125,7 @@ Tasks:
     - Logging for a function's integrated instructions, including integrated expressions with resolved symbol links (`PrintIntegratedExpression`). [DONE]
     - `if` / `while` / `for` / `break` / `continue` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 - Expression integration: symbol linking (variable access / function call expressions resolved to their symbol) and result type resolution, attempting constant-folding first. [WIP]
+    - Access operator integration (array access, struct/union member access, and pointer-to-struct member access). [WIP]
     - Type compatibility / implicit conversion resolution between expression operands and function call arguments. [DONE]
 
 ## Step 7 - Code Generator [TO BE DONE]
@@ -168,6 +169,8 @@ Tasks:
     - Especially advantageous for Parser with its "try and cleanup on non-critical failure" approach.
     - Set a strict & consistent policy on whether common data structures like Type Signatures and Expressions are copied, moved or pointed to accross stages.
 - Separate token symbols from operators into an independent operator abstraction, allowing Integrator/operator logic to stop depending directly on `tokens.h`.
+- Integrator support for multi-dimensional arrays.
+    - Need to be able to expression a multi-dimensional array access expression. Probably requires changes to Parser.
 ---
 
  

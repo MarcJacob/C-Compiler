@@ -292,6 +292,119 @@ ui8 EnsureExpressionCompatibility(struct IntegratorProcess* Integrator, struct T
 	return 0;
 }
 
+// Ensure that the passed operator expression (specifically one of the access operators) is valid and resolves its final type,
+// and integrates its right operand with correct scoping logic if required.
+// The left operand must already be integrated !
+ui8 IntegrateAccessOpExpression(struct IntegratorProcess* Integrator, struct Expression* AccessOpExpression)
+{
+	ASSERT(AccessOpExpression != NULL);
+
+	enum TOKEN_SYMBOL AccessOp = AccessOpExpression->Op.OperatorSymbol;
+	ASSERT(AccessOp == SYMBOL_OP_ARRAY_ACCESS || AccessOp == SYMBOL_OP_STRUCT_ACCESS || AccessOp == SYMBOL_OP_STRUCT_DEREF);
+
+	// Handle array access operator.
+	if (AccessOp == SYMBOL_OP_ARRAY_ACCESS)
+	{
+		// Right operand is the access index, and must be an integer.
+		// Left operand is the accessed array, which must be a pointer or specifically a variable with array size(s).
+		// TODO: Handle multi-dimensional arrays. We can't right now because we'd end up with a complex array access expression tree,
+		// when we should really just have the array access operator just contain the whole chain.
+		// We could read through the whole tree here and re-constitute that chain but I think it's cleaner to do so in the Parser.
+		// Check right operand.
+		if (!TypeSignature_IsInteger(AccessOpExpression->Op.RightOperand->ResultType))
+		{
+			Integrator_Error(Integrator, AccessOpExpression->BufferLocation, "Array access index must be an integer.");
+			return 0;
+		}
+
+		// By default the array access just returns the same type as whatever the left expression returns.
+		AccessOpExpression->ResultType = AllocTypeSignatureCopy(AccessOpExpression->Op.LeftOperand->ResultType);
+
+		// Check left operand. It must either be a pointer value or a variable in scope which is itself a pointer or an array.
+		if (AccessOpExpression->Op.LeftOperand->ResultType->PointerLevel == 0)
+		{
+			// Not a pointer value expression / pointer variable.
+			if (AccessOpExpression->Op.LeftOperand->Type != EXP_VAR_ACCESS)
+			{
+				Integrator_Error(Integrator, AccessOpExpression->Op.LeftOperand->BufferLocation, "Expected pointer value or array variable.");
+				return 0;
+			}
+
+			struct ProgramSymbol* VarSymbol = AccessOpExpression->Op.LeftOperand->Variable.Symbol;
+			ASSERT(VarSymbol != NULL);
+
+			if (VarSymbol->Variable.ArraySizes.Size == 0)
+			{
+				Integrator_Error(Integrator, AccessOpExpression->Op.LeftOperand->BufferLocation, 
+					"Variable '%s' is not an array or pointer.", VarSymbol->Name.Str);
+				return 0;
+			}
+
+			// Result Type stays the variable's.
+		}
+		else // Left operand is a pointer.
+		{
+			// Array access is used as deref with offset, so the result type has to lose a pointer level.
+			AccessOpExpression->ResultType->PointerLevel--;
+		}
+
+		// Array access checks passed.
+		return 1;
+	}
+
+	// Handle struct access operators.
+	// For the operands to be valid, the left operand must be a structured type and defined.
+	// The right operand must then be integrated within the structured type's scope *exclusively*.
+}
+
+// Returns whether the result of an expression is an lvalue, an actual place in stack or heap memory which can be assigned a value.
+ui8 EnsureExpressionResultAssignability(struct IntegratorProcess* Integrator, struct Expression* Expression)
+{
+	ASSERT(Expression);
+
+	// To be assignable, an expression must be an access to a non-array variable,
+	// an array access operator, or a dereference operator.
+	// Check recursively on the right operand of struct member access operators.
+	// In all case the underlying type must also be non-const.
+
+	if (Expression->ResultType->Flags & TYPE_IS_CONST)
+	{
+		Integrator_Error(Integrator, Expression->BufferLocation, "Cannot assign to const value.");
+		return 0;
+	}
+
+	// If assigning to a variable directly, then it must not be an array.
+	if (Expression->Type == EXP_VAR_ACCESS)
+	{
+		struct ProgramSymbol* VarSymbol = Expression->Variable.Symbol;
+		ASSERT(VarSymbol != NULL);
+
+		if (VarSymbol->Variable.ArraySizes.Size > 0)
+		{
+			Integrator_Error(Integrator, Expression->BufferLocation, "Cannot assign to array variable. Specify which index to assign to.");
+			return 0;
+		}
+
+		return 1;
+	}
+
+	if (Expression->Type == EXP_OP)
+	{
+		if (Expression->Op.OperatorSymbol == SYMBOL_OP_STRUCT_ACCESS
+			|| Expression->Op.OperatorSymbol == SYMBOL_OP_STRUCT_DEREF)
+		{
+			return EnsureExpressionResultAssignability(Integrator, Expression->Op.RightOperand);
+		}
+
+		// Always allow assignment to deref or array access operator result, as in the circumstance of an
+		// assignment they are interpreted as offset address lookups.
+		return Expression->Op.OperatorSymbol == SYMBOL_OP_DEREF
+			|| Expression->Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS;
+	}
+
+	return 0;
+}
+
 // Resolves type compatibility between the operands of a binary operator expression.
 // Numeric operands are promoted to their common type. Assignment operators use the
 // left operand's type as their target. Comparison and logical operators produce int.
@@ -310,6 +423,9 @@ ui8 EnsureOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integr
 	// Handle assignment operators. The left type must not be void, and the right type must be equivalent or compatible.
 	if (Symbol_IsAssignmentOp(OpExpression->Op.OperatorSymbol))
 	{
+		if (!EnsureExpressionResultAssignability(Integrator, LeftOperand))
+			return 0;
+
 		if (!EnsureExpressionCompatibility(Integrator, LeftType, RightOperand, 0)) 
 			return 0;
 
@@ -384,6 +500,13 @@ ui8 EnsureOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integr
 	return 1;
 }
 
+// Returns whether a unary operator's operand is valid for it and resolves its result type.
+ui8 EnsureUnaryOpExpressionValidity(struct IntegratorProcess* Integrator, struct Expression* UnaryOpExpression)
+{
+	Integrator_Error(Integrator, UnaryOpExpression->BufferLocation, "Unary op expression integration not implemented.");
+	return 0;
+}
+
 // Goes through an expression tree recursively and resolves the expression's symbolic links and final type(s).
 // Checks for symbolic integrity of the expression but does not check type compatibility.
 // Will also attempt to resolve constant expressions. If successful, the integrated expression is not the passed expression itself but a new, literal one.
@@ -452,17 +575,42 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 	switch (Expression->Type)
 	{
 	case EXP_OP:
-		// Integrate operand expressions.
-		if (Expression->Op.LeftOperand != NULL)
+
+		// If operator is an access operator, first integrate left operand as normal,
+		// then go into the access operand validity logic which will take care of integrating the right
+		// operand correctly in case it needs special scoping logic.
+		if (Expression->Op.OperatorSymbol == SYMBOL_OP_ARRAY_ACCESS
+			|| Expression->Op.OperatorSymbol == SYMBOL_OP_STRUCT_ACCESS
+			|| Expression->Op.OperatorSymbol == SYMBOL_OP_STRUCT_DEREF)
+		{
+			ASSERT(Expression->Op.LeftOperand != NULL);
 			if ((Expression->Op.LeftOperand = IntegrateExpression(Integrator, Scope, Expression->Op.LeftOperand)) == NULL)
 				return NULL;
-		if (Expression->Op.RightOperand != NULL)
-			if ((Expression->Op.RightOperand = IntegrateExpression(Integrator, Scope, Expression->Op.RightOperand)) == NULL)
-				return NULL;
 
-		// If operator is binary, resolve their mutual compatibility.
-		if (Expression->Op.LeftOperand != NULL && Expression->Op.RightOperand != NULL)
-			if (!EnsureOpExpressionOperandTypesCompatibility(Integrator, Expression)) return NULL;
+			if (!IntegrateAccessOpExpression(Integrator, Expression)) return NULL;
+		}
+		else
+		{
+			// Integrate operand expressions.
+			if (Expression->Op.LeftOperand != NULL)
+				if ((Expression->Op.LeftOperand = IntegrateExpression(Integrator, Scope, Expression->Op.LeftOperand)) == NULL)
+					return NULL;
+			if (Expression->Op.RightOperand != NULL)
+				if ((Expression->Op.RightOperand = IntegrateExpression(Integrator, Scope, Expression->Op.RightOperand)) == NULL)
+					return NULL;
+
+			// If operator is binary, resolve their mutual compatibility.
+			if (Expression->Op.LeftOperand != NULL && Expression->Op.RightOperand != NULL)
+			{
+				// Function will pick the expression's result type if the operands are compatible.
+				if (!EnsureOpExpressionOperandTypesCompatibility(Integrator, Expression)) return NULL;
+			}
+			else
+			{
+				// Otherwise resolve the operator expression's type as a unary operator.
+				if (!EnsureUnaryOpExpressionValidity(Integrator, Expression)) return NULL;
+			}
+		}
 		break;
 	case EXP_OP_CAST:
 		// Integrate operand expression, then check for type compatibility between target type signature and operand's.
