@@ -221,6 +221,27 @@ static inline ui8 TypeSignature_IsInteger(const struct TypeSignature* TypeSig)
 			|| TypeSig->Type == DATATYPE_INT64);
 }
 
+static inline ui8 TypeSignature_IsNumeric(const struct TypeSignature* TypeSig)
+{
+	ASSERT(TypeSig != NULL);
+	return TypeSignature_IsInteger(TypeSig)
+		|| TypeSignature_IsPrimitive(TypeSig, DATATYPE_FLOAT)
+		|| TypeSignature_IsPrimitive(TypeSig, DATATYPE_DOUBLE);
+}
+
+static inline ui8 TypeSignature_GetNumericRank(const struct TypeSignature* TypeSig)
+{
+	ASSERT(TypeSig != NULL);
+
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_CHAR)) return 1;
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_SHORT)) return 2;
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_INT32)) return 3;
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_INT64)) return 4;
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_FLOAT)) return 5;
+	if (TypeSignature_IsPrimitive(TypeSig, DATATYPE_DOUBLE)) return 6;
+	return 0;
+}
+
 // Returns a human-readable name for a datatype: its specified type name for USER_DEFINED types (struct/union/enum/typedef), or a fixed string for primitive types.
 static inline const char* TypeSignature_GetName(const struct TypeSignature* TypeSig)
 {

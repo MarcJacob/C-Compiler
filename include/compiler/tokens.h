@@ -192,6 +192,72 @@ static inline ui8 Symbol_IsOp(enum TOKEN_SYMBOL Symbol)
 	return Symbol_IsBinaryOp(Symbol) || Symbol_IsUnaryOp(Symbol);
 }
 
+// Returns whether an operator performs a comparison and therefore produces an int result.
+static inline ui8 Symbol_IsComparisonOp(enum TOKEN_SYMBOL Operator)
+{
+	ASSERT(Symbol_IsOp(Operator));
+
+	switch (Operator)
+	{
+	case SYMBOL_OP_EQUAL:
+	case SYMBOL_OP_UNEQUAL:
+	case SYMBOL_OP_LOWER:
+	case SYMBOL_OP_LOWER_EQUAL:
+	case SYMBOL_OP_GREATER:
+	case SYMBOL_OP_GREATER_EQUAL:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static inline ui8 Symbol_IsLogicalOp(enum TOKEN_SYMBOL Operator)
+{
+	ASSERT(Symbol_IsOp(Operator));
+	return Operator == SYMBOL_OP_AND || Operator == SYMBOL_OP_OR;
+}
+
+static inline ui8 Symbol_IsAssignmentOp(enum TOKEN_SYMBOL Operator)
+{
+	ASSERT(Symbol_IsOp(Operator));
+	switch (Operator)
+	{
+	case SYMBOL_OP_ASSIGN:
+	case SYMBOL_OP_ADD_ASSIGN:
+	case SYMBOL_OP_SUB_ASSIGN:
+	case SYMBOL_OP_MULT_ASSIGN:
+	case SYMBOL_OP_DIV_ASSIGN:
+	case SYMBOL_OP_MOD_ASSIGN:
+	case SYMBOL_OP_BITWISE_AND_ASSIGN:
+	case SYMBOL_OP_BITWISE_OR_ASSIGN:
+	case SYMBOL_OP_BITWISE_XOR_ASSIGN:
+	case SYMBOL_OP_LEFT_SHIFT_ASSIGN:
+	case SYMBOL_OP_RIGHT_SHIFT_ASSIGN:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+// Returns whether the operator symbol requires its operands to be integers (mostly bitwise operations).
+static inline ui8 Symbol_IsIntegerOp(enum TOKEN_SYMBOL Operator)
+{
+	ASSERT(Symbol_IsOp(Operator));
+
+	switch (Operator)
+	{
+	case SYMBOL_OP_MOD:
+	case SYMBOL_OP_BITWISE_AND:
+	case SYMBOL_OP_BITWISE_OR:
+	case SYMBOL_OP_BITWISE_XOR:
+	case SYMBOL_OP_LEFT_SHIFT:
+	case SYMBOL_OP_RIGHT_SHIFT:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static inline enum TOKEN_SYMBOL Symbol_DeambiguateLeftUnaryOp(enum TOKEN_SYMBOL Op)
 {
 	ASSERT(Symbol_IsLeftUnaryOp(Op));

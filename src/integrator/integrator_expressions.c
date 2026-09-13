@@ -293,21 +293,95 @@ ui8 EnsureExpressionCompatibility(struct IntegratorProcess* Integrator, struct T
 }
 
 // Resolves type compatibility between the operands of a binary operator expression.
-// If the operand types are the same, nothing is changed. If they are implicitly compatible, one of the operands gets wrapped inside a Cast expression (TODO: Output a warning in cases where type size goes down).
-// Otherwise an error is produced. Returns whether the compatibility was successfully resolved.
-ui8 ResolveOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integrator, struct Expression* OpExpression)
+// Numeric operands are promoted to their common type. Assignment operators use the
+// left operand's type as their target. Comparison and logical operators produce int.
+// The function also resolves implicit casts through EnsureExpressionCompatibility().
+ui8 EnsureOpExpressionOperandTypesCompatibility(struct IntegratorProcess* Integrator, struct Expression* OpExpression)
 {
 	ASSERT(OpExpression != NULL);
 	ASSERT(OpExpression->Op.LeftOperand != NULL && OpExpression->Op.RightOperand != NULL);
 
-	if (TypeSignaturesEquivalent(OpExpression->Op.LeftOperand->ResultType, OpExpression->Op.RightOperand->ResultType))
+	struct Expression* LeftOperand = OpExpression->Op.LeftOperand;
+	struct Expression* RightOperand = OpExpression->Op.RightOperand;
+	struct TypeSignature* LeftType = LeftOperand->ResultType;
+	struct TypeSignature* RightType = RightOperand->ResultType;
+	ASSERT(LeftType != NULL && RightType != NULL);
+
+	// Handle assignment operators. The left type must not be void, and the right type must be equivalent or compatible.
+	if (Symbol_IsAssignmentOp(OpExpression->Op.OperatorSymbol))
 	{
-		OpExpression->ResultType = OpExpression->Op.LeftOperand->ResultType;
+		if (!EnsureExpressionCompatibility(Integrator, LeftType, RightOperand, 0)) 
+			return 0;
+
+		OpExpression->ResultType = LeftType;
 		return 1;
 	}
 
-	Integrator_Error(Integrator, OpExpression->BufferLocation, "Op expression operands type compatibility check unimplemented.");
-	return 0;
+	// The comma operator evaluates to its right operand and does not require
+	// the two operand types to be compatible.
+	if (OpExpression->Op.OperatorSymbol == SYMBOL_OP_COMMA)
+	{
+		OpExpression->ResultType = RightType;
+		return 1;
+	}
+
+	// Handle equivalent types. 
+	// A comparison or logical operator between them always returns a in32 value (0 or 1).
+	// Other operators use the type of the left operand.
+	if (TypeSignaturesEquivalent(LeftType, RightType))
+	{
+		OpExpression->ResultType = Symbol_IsComparisonOp(OpExpression->Op.OperatorSymbol)
+			|| Symbol_IsLogicalOp(OpExpression->Op.OperatorSymbol)
+			? AllocPrimitiveTypeSignature(DATATYPE_INT32)
+			: LeftType;
+		return 1;
+	}
+
+	// Comparison between pointers. The pointer types do not need to be cast-compatible
+	// since we'll just be comparing the raw adresses (TODO: Still log a warning if they are not compatible).
+	if (Symbol_IsComparisonOp(OpExpression->Op.OperatorSymbol)
+		&& LeftType->PointerLevel > 0 && RightType->PointerLevel > 0)
+	{
+		OpExpression->ResultType = AllocPrimitiveTypeSignature(DATATYPE_INT32);
+		return 1;
+	}
+
+	// At this point we've dealt with pointers, assignments and comparators / logical operators.
+	// Any remaining valid scenario needs the types to both be numerical.
+	if (!TypeSignature_IsNumeric(LeftType) || !TypeSignature_IsNumeric(RightType))
+	{
+		Integrator_Error(Integrator, OpExpression->BufferLocation,
+			"Incompatible operand types '%s' and '%s' for operator '%s'.",
+			TypeSignature_GetName(LeftType), TypeSignature_GetName(RightType),
+			Symbol_ToString(OpExpression->Op.OperatorSymbol));
+		return 0;
+	}
+
+	// Ensure both operands are integers when dealing with an Integer operator.
+	if (Symbol_IsIntegerOp(OpExpression->Op.OperatorSymbol)
+		&& (!TypeSignature_IsInteger(LeftType) || !TypeSignature_IsInteger(RightType)))
+	{
+		Integrator_Error(Integrator, OpExpression->BufferLocation,
+			"Operator '%s' requires integral operands.",
+			Symbol_ToString(OpExpression->Op.OperatorSymbol));
+		return 0;
+	}
+
+	// From here we need to determine which operand's type will take priority.
+	// Check the numeric type ranks, use the higher ranked one, ensure compatibility.
+	struct TypeSignature* CommonType = TypeSignature_GetNumericRank(LeftType) >= TypeSignature_GetNumericRank(RightType)
+		? LeftType
+		: RightType;
+
+	if (!EnsureExpressionCompatibility(Integrator, CommonType, LeftOperand, 0)) return 0;
+	if (!EnsureExpressionCompatibility(Integrator, CommonType, RightOperand, 0)) return 0;
+
+	// Finally, determine result type: int32 for comparison / logical like above, or the common type we just determined.
+	OpExpression->ResultType = Symbol_IsComparisonOp(OpExpression->Op.OperatorSymbol)
+		|| Symbol_IsLogicalOp(OpExpression->Op.OperatorSymbol)
+		? AllocPrimitiveTypeSignature(DATATYPE_INT32)
+		: CommonType;
+	return 1;
 }
 
 // Goes through an expression tree recursively and resolves the expression's symbolic links and final type(s).
@@ -388,7 +462,7 @@ struct Expression* IntegrateExpression(struct IntegratorProcess* Integrator, str
 
 		// If operator is binary, resolve their mutual compatibility.
 		if (Expression->Op.LeftOperand != NULL && Expression->Op.RightOperand != NULL)
-			if (!ResolveOpExpressionOperandTypesCompatibility(Integrator, Expression)) return NULL;
+			if (!EnsureOpExpressionOperandTypesCompatibility(Integrator, Expression)) return NULL;
 		break;
 	case EXP_OP_CAST:
 		// Integrate operand expression, then check for type compatibility between target type signature and operand's.

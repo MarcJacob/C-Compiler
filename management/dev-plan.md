@@ -125,7 +125,7 @@ Tasks:
     - Logging for a function's integrated instructions, including integrated expressions with resolved symbol links (`PrintIntegratedExpression`). [DONE]
     - `if` / `while` / `for` / `break` / `continue` statement integration into instructions, including jump target resolution and loop context tracking for `break`/`continue`.
 - Expression integration: symbol linking (variable access / function call expressions resolved to their symbol) and result type resolution, attempting constant-folding first. [WIP]
-    - Type compatibility / implicit conversion resolution between expression operands and function call arguments.
+    - Type compatibility / implicit conversion resolution between expression operands and function call arguments. [DONE]
 
 ## Step 7 - Code Generator [TO BE DONE]
 
@@ -166,7 +166,8 @@ Tasks:
     - Links into error handling: "resolve" element location until reaching earliest available level, usually input file(s).
 - Use Arena Allocators for each stage for cleanliness and locality's sake.
     - Especially advantageous for Parser with its "try and cleanup on non-critical failure" approach.
-    - Set a strict policy on whether common data structures like Type Signatures and Expressions are copied, moved or pointed to accross stages.
+    - Set a strict & consistent policy on whether common data structures like Type Signatures and Expressions are copied, moved or pointed to accross stages.
+- Separate token symbols from operators into an independent operator abstraction, allowing Integrator/operator logic to stop depending directly on `tokens.h`.
 ---
 
  
